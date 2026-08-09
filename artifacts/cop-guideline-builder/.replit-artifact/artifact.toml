@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "COP Guideline Builder"
+description = "A browser-based healthcare compliance tool that generates CMS Conditions of Participation guideline breakdowns and inspection-readiness surveys."
+version = "1.0.0"
+id = "artifacts/cop-guideline-builder"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18915
+
+[services.development]
+run = "pnpm --filter @workspace/cop-guideline-builder run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/cop-guideline-builder", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/cop-guideline-builder/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18915"
+BASE_PATH = "/"
