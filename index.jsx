@@ -115,41 +115,34 @@ const DEPARTMENTS_BY_INSTITUTION = {
 };
 
 async function callModelForJson(systemPrompt, userContent, maxTokens) {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userContent }],
-    }),
-  });
-
-  const responseText = await response.text();
-  if (!responseText || !responseText.trim()) {
-    throw new Error("Empty response from API");
-  }
-
-  let data;
   try {
-    data = JSON.parse(responseText);
+    const response = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemPrompt,
+        userContent,
+        maxTokens,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.error) throw new Error(data.error.message);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!data.content) throw new Error("No content in response");
+
+    const textBlock = data.content.find((c) => c.type === "text");
+    if (!textBlock) throw new Error("No text in response");
+
+    const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch (e) {
+      throw new Error("Generated text wasn't valid JSON");
+    }
   } catch (e) {
-    throw new Error("API response wasn't valid JSON");
-  }
-
-  if (data.error) throw new Error(data.error.message);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  if (!data.content) throw new Error("No content in response");
-
-  const textBlock = data.content.find((c) => c.type === "text");
-  if (!textBlock) throw new Error("No text in response");
-
-  const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch (e) {
-    throw new Error("Generated text wasn't valid JSON");
+    throw new Error(`Failed: ${e.message}`);
   }
 }
 
