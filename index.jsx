@@ -1375,7 +1375,7 @@ export default function CoPGuidelineBuilder() {
               Output is <strong>not legal advice</strong> and must be reviewed by qualified compliance counsel before implementation.
               Regulatory citations should be verified against current official sources. User assumes all liability.
             </div>
-            <a href="mailto:?subject=CMS CoP Compliance Suite Feedback&body=Institution type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
+            <a href="mailto:HectorSamlut@outlook.com?subject=CMS CoP Compliance Suite Feedback&body=Institution type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
               style={{ display: "inline-block", marginTop: "14px", padding: "8px 14px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
               ✉ Share Feedback
             </a>
