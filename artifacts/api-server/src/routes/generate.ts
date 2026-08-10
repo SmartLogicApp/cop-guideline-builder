@@ -46,7 +46,7 @@ router.post("/generate", async (req, res): Promise<void> => {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: parsed.data.maxTokens,
+          max_tokens: Math.max(parsed.data.maxTokens, 1500),
           system: parsed.data.systemPrompt,
           messages: [{ role: "user", content: parsed.data.userContent }],
         }),
