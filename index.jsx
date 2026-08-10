@@ -1,5 +1,42 @@
 import React, { useState, useEffect } from "react";
 
+// Attempt to repair truncated JSON by closing open braces/brackets
+// and stripping the last incomplete key-value pair.
+function repairJson(raw) {
+  const s = raw.replace(/```json|```/g, "").trim();
+  try { return JSON.parse(s); } catch {}
+
+  // Walk the string to find open braces/brackets outside strings
+  const stack = [];
+  let inStr = false, esc = false;
+  let lastSafeIdx = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (esc) { esc = false; continue; }
+    if (c === "\\" && inStr) { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === "{" || c === "[") stack.push(c === "{" ? "}" : "]");
+    else if (c === "}" || c === "]") {
+      stack.pop();
+      if (stack.length === 0) lastSafeIdx = i + 1;
+    }
+  }
+
+  const closing = stack.slice().reverse().join("");
+  // Strip trailing incomplete key: value pairs
+  const stripped = s
+    .replace(/,\s*"[^"]*"\s*:\s*(?:"[^"]*)?$/, "")
+    .replace(/,\s*"[^"]*"\s*:?\s*$/, "");
+  try { return JSON.parse(stripped + closing); } catch {}
+
+  // Last resort: parse only up to the last fully closed top-level object
+  if (lastSafeIdx > 0) {
+    try { return JSON.parse(s.substring(0, lastSafeIdx)); } catch {}
+  }
+  throw new Error("Generated text wasn't valid JSON");
+}
+
 const INSTITUTION_TYPES = [
   { value: "hospital", label: "Hospital", cfr: "42 CFR 482" },
   { value: "cah", label: "Critical Access Hospital", cfr: "42 CFR 485" },
@@ -81,8 +118,7 @@ export default function CoPGuidelineBuilder() {
         const job = await res.json();
         if (job.status === "done") {
           const text = job.content[0].text;
-          const cleaned = text.replace(/```json|```/g, "").trim();
-          setGuidelineResult(JSON.parse(cleaned));
+          setGuidelineResult(repairJson(text));
           setGuidelineLoading(false);
           setGuidelineJobId(null);
           clearInterval(poll);
@@ -112,8 +148,7 @@ export default function CoPGuidelineBuilder() {
         const job = await res.json();
         if (job.status === "done") {
           const text = job.content[0].text;
-          const cleaned = text.replace(/```json|```/g, "").trim();
-          setInspectionResult(JSON.parse(cleaned));
+          setInspectionResult(repairJson(text));
           setInspectionLoading(false);
           setInspectionJobId(null);
           clearInterval(poll);
@@ -289,7 +324,7 @@ Format as a professional, ready-to-use policy document. Use [BRACKETED PLACEHOLD
     const userContent = `Institution Type: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}\n\nGenerate a complete, professional policy template that this institution can adopt, customize, and implement immediately.`;
 
     try {
-      const res = await fetch("/api/generate-policy", {
+      const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
