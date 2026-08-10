@@ -17,5 +17,11 @@
   "devDependencies": {
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "js-yaml": ">=4.3.1",
+      "nanoid": ">=3.3.18"
+    }
   }
 }
