@@ -1,10 +1,15 @@
 const express = require("express");
-const { Readable } = require("stream");
+const { randomUUID } = require("crypto");
 const app = express();
 app.use(express.json());
 
+// In-memory job store. Each job lives for 10 minutes then is cleaned up.
+const jobs = new Map();
+
+// POST /api/generate — validates input, starts the Anthropic call in the
+// background, and returns a jobId immediately (< 100 ms).
+// The API key is never sent to the browser.
 app.post("/api/generate", async (req, res) => {
-  // Secret is read server-side only and never returned to the browser.
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     res.status(500).json({ error: { message: "AI generation is not configured" } });
@@ -22,44 +27,62 @@ app.post("/api/generate", async (req, res) => {
     return;
   }
 
-  try {
-    const upstream = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,            // stays on the server, never sent to browser
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: maxTokens,
-        stream: true,                    // stream so the connection stays alive
-        system: systemPrompt,
-        messages: [{ role: "user", content: userContent }],
-      }),
-    });
+  const jobId = randomUUID();
+  jobs.set(jobId, { status: "pending" });
 
-    if (!upstream.ok) {
+  // Respond immediately so the HTTP connection closes right away.
+  res.json({ jobId });
+
+  // Run the Anthropic call after the response is sent.
+  (async () => {
+    try {
+      const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,           // never returned to the browser
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userContent }],
+        }),
+      });
+
       const data = await upstream.json();
-      const message = data?.error?.message || "The AI service rejected the request";
-      res.status(502).json({ error: { message } });
-      return;
+
+      if (!upstream.ok) {
+        jobs.set(jobId, {
+          status: "error",
+          error: data?.error?.message || "The AI service rejected the request",
+        });
+      } else {
+        jobs.set(jobId, { status: "done", content: data.content });
+      }
+    } catch {
+      jobs.set(jobId, { status: "error", error: "Unable to reach the AI service" });
     }
 
-    // Pipe Anthropic's SSE stream straight to the browser.
-    // The API key is in the request headers only — it never appears in the body.
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // Auto-cleanup after 10 minutes.
+    setTimeout(() => jobs.delete(jobId), 10 * 60 * 1000);
+  })();
+});
 
-    const nodeStream = Readable.fromWeb(upstream.body);
-    nodeStream.pipe(res);
-  } catch (err) {
-    if (!res.headersSent) {
-      res.status(502).json({ error: { message: "Unable to reach the AI service" } });
-    }
+// GET /api/generate/result?jobId=... — fast poll; returns immediately.
+app.get("/api/generate/result", (req, res) => {
+  const { jobId } = req.query;
+  if (!jobId || typeof jobId !== "string") {
+    res.status(400).json({ error: { message: "Missing jobId" } });
+    return;
   }
+  const job = jobs.get(jobId);
+  if (!job) {
+    res.status(404).json({ error: { message: "Job not found or expired" } });
+    return;
+  }
+  res.json(job);
 });
 
 const PORT = process.env.PORT || 3000;

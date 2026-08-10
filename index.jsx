@@ -115,61 +115,45 @@ const DEPARTMENTS_BY_INSTITUTION = {
 };
 
 async function callModelForJson(systemPrompt, userContent, maxTokens) {
-  try {
-    const response = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ systemPrompt, userContent, maxTokens }),
-    });
+  // POST starts the job and returns immediately (< 100 ms).
+  // No long-lived connection is held open, so proxy timeouts can't interfere.
+  const startRes = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ systemPrompt, userContent, maxTokens }),
+  });
 
-    // Non-streaming error (e.g. 400 validation, 500 config, 502 upstream)
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error?.message || `HTTP ${response.status}`);
-    }
+  if (!startRes.ok) {
+    const data = await startRes.json();
+    throw new Error(data.error?.message || `HTTP ${startRes.status}`);
+  }
 
-    // Read Anthropic's SSE stream and accumulate text_delta chunks.
-    // Data flows continuously so no proxy timeout occurs.
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let fullText = "";
+  const { jobId } = await startRes.json();
+  if (!jobId) throw new Error("Server did not return a job ID");
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
+  // Poll every 2 seconds until done (max 2 minutes).
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
 
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const payload = line.slice(6).trim();
-        try {
-          const event = JSON.parse(payload);
-          if (
-            event.type === "content_block_delta" &&
-            event.delta?.type === "text_delta"
-          ) {
-            fullText += event.delta.text;
-          }
-        } catch {
-          // ignore malformed SSE lines
-        }
+    const pollRes = await fetch(`/api/generate/result?jobId=${jobId}`);
+    if (!pollRes.ok) throw new Error("Polling failed");
+
+    const job = await pollRes.json();
+    if (job.status === "error") throw new Error(job.error);
+    if (job.status === "done") {
+      const textBlock = job.content?.find((c) => c.type === "text");
+      if (!textBlock) throw new Error("No text in response");
+      const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
+      try {
+        return JSON.parse(cleaned);
+      } catch {
+        throw new Error("Generated text wasn't valid JSON");
       }
     }
-
-    if (!fullText) throw new Error("No content in response");
-
-    const cleaned = fullText.replace(/```json|```/g, "").trim();
-    try {
-      return JSON.parse(cleaned);
-    } catch {
-      throw new Error("Generated text wasn't valid JSON");
-    }
-  } catch (e) {
-    throw new Error(`Failed: ${e.message}`);
+    // status === "pending" → keep polling
   }
+
+  throw new Error("Generation timed out after 2 minutes");
 }
 
 export default function CoPGuidelineBuilder() {
