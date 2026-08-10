@@ -15,16 +15,24 @@ const jobs = new Map();
 app.post("/api/generate", async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: { message: "AI generation is not configured" } });
+    res
+      .status(500)
+      .json({ error: { message: "AI generation is not configured" } });
     return;
   }
 
   const { systemPrompt, userContent, maxTokens } = req.body ?? {};
 
   if (
-    typeof systemPrompt !== "string" || systemPrompt.length < 1 || systemPrompt.length > 30000 ||
-    typeof userContent  !== "string" || userContent.length  < 1 || userContent.length  > 30000 ||
-    !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 8192
+    typeof systemPrompt !== "string" ||
+    systemPrompt.length < 1 ||
+    systemPrompt.length > 30000 ||
+    typeof userContent !== "string" ||
+    userContent.length < 1 ||
+    userContent.length > 30000 ||
+    !Number.isInteger(maxTokens) ||
+    maxTokens < 1 ||
+    maxTokens > 8192
   ) {
     res.status(400).json({ error: { message: "Invalid generation request" } });
     return;
@@ -43,7 +51,7 @@ app.post("/api/generate", async (req, res) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": apiKey,           // never returned to the browser
+          "x-api-key": apiKey, // never returned to the browser
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
@@ -65,7 +73,10 @@ app.post("/api/generate", async (req, res) => {
         jobs.set(jobId, { status: "done", content: data.content });
       }
     } catch {
-      jobs.set(jobId, { status: "error", error: "Unable to reach the AI service" });
+      jobs.set(jobId, {
+        status: "error",
+        error: "Unable to reach the AI service",
+      });
     }
 
     // Auto-cleanup after 10 minutes.
