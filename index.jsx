@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -267,6 +267,42 @@ async function extractTextFromFile(file) {
     reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsText(file);
   });
+}
+
+// ─── Gap Analysis History (localStorage) ─────────────────────────────────────
+
+const GAP_HISTORY_KEY = "cop_gap_analysis_history";
+const GAP_HISTORY_MAX = 50; // cap stored entries
+
+function loadGapHistory() {
+  try {
+    const raw = localStorage.getItem(GAP_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGapEntry(entry) {
+  try {
+    const existing = loadGapHistory();
+    const updated = [entry, ...existing].slice(0, GAP_HISTORY_MAX);
+    localStorage.setItem(GAP_HISTORY_KEY, JSON.stringify(updated));
+    return updated;
+  } catch {
+    return [];
+  }
+}
+
+function deleteGapEntry(id) {
+  try {
+    const existing = loadGapHistory();
+    const updated = existing.filter((e) => e.id !== id);
+    localStorage.setItem(GAP_HISTORY_KEY, JSON.stringify(updated));
+    return updated;
+  } catch {
+    return [];
+  }
 }
 
 // ─── Gap Scanner helpers ──────────────────────────────────────────────────────
@@ -913,6 +949,15 @@ function GapScannerTab({ institution }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [resultMeta, setResultMeta] = useState(null); // { institution, topic, timestamp }
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [loadedEntryId, setLoadedEntryId] = useState(null); // which history entry is currently shown
+
+  // Load history from localStorage on mount
+  useEffect(() => {
+    setHistory(loadGapHistory());
+  }, []);
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
   const topicFinal = customTopic.trim() || topic;
@@ -1000,11 +1045,50 @@ ${truncated}`;
 
     try {
       const raw = await callApi(systemPrompt, userContent, 4000);
-      setResult(repairJson(raw));
+      const parsed = repairJson(raw);
+      setResult(parsed);
+      const meta = { institution, topic: topicFinal };
+      setResultMeta(meta);
+      setLoadedEntryId(null); // fresh scan, not a loaded entry
+      // Persist to localStorage
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        institution,
+        institutionLabel: inst.label,
+        topic: topicFinal,
+        score: parsed.score ?? null,
+        timestamp: new Date().toISOString(),
+        result: parsed,
+      };
+      const updated = saveGapEntry(entry);
+      setHistory(updated);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  function loadHistoryEntry(entry) {
+    setResult(entry.result);
+    setResultMeta({ institution: entry.institution, topic: entry.topic });
+    setLoadedEntryId(entry.id);
+    setShowHistory(false);
+    // Sync selectors to match the loaded entry
+    const matchedTopic = TOPICS.includes(entry.topic) ? entry.topic : TOPICS[0];
+    setTopic(matchedTopic);
+    setCustomTopic(TOPICS.includes(entry.topic) ? "" : entry.topic);
+    setError(null);
+  }
+
+  function handleDeleteEntry(e, id) {
+    e.stopPropagation();
+    const updated = deleteGapEntry(id);
+    setHistory(updated);
+    if (loadedEntryId === id) {
+      setResult(null);
+      setResultMeta(null);
+      setLoadedEntryId(null);
     }
   }
 
@@ -1015,6 +1099,13 @@ ${truncated}`;
 
   const scoreColor = score === null ? "#64748B" : score >= 75 ? "#065F46" : score >= 50 ? "#92400E" : "#991B1B";
   const scoreBg    = score === null ? "#F1F5F9"  : score >= 75 ? "#D1FAE5"  : score >= 50 ? "#FEF3C7"  : "#FEE2E2";
+
+  // Resolve institution + topic from saved metadata (used for display, copy, and export)
+  // so that loading a historical entry from a different institution produces correct labels.
+  const effectiveInst = resultMeta
+    ? (INSTITUTION_TYPES.find((i) => i.value === resultMeta.institution) || inst)
+    : inst;
+  const effectiveTopic = resultMeta?.topic || topicFinal;
 
   const GapItem = ({ item, status }) => {
     const colors = {
@@ -1094,28 +1185,110 @@ ${truncated}`;
           )}
         </div>
 
-        <button style={S.btnPrimary(loading || fileLoading)} onClick={analyze} disabled={loading || fileLoading}>
-          {loading ? "Analyzing…" : "🔍 Scan for Compliance Gaps"}
-        </button>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button style={{ ...S.btnPrimary(loading || fileLoading), flex: 1, marginTop: 0 }} onClick={analyze} disabled={loading || fileLoading}>
+            {loading ? "Analyzing…" : "🔍 Scan for Compliance Gaps"}
+          </button>
+          <button
+            style={{ padding: "12px 16px", fontSize: "13px", fontWeight: 600, border: "1px solid #CBD5E1", borderRadius: "7px", background: showHistory ? "#0D5C6B" : "#fff", color: showHistory ? "#fff" : "#475569", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
+            onClick={() => setShowHistory((v) => !v)}
+          >
+            🕒 History{history.length > 0 ? ` (${history.length})` : ""}
+          </button>
+        </div>
         {error && <div style={S.error}>⚠️ {error}</div>}
       </div>
+
+      {/* History panel */}
+      {showHistory && (
+        <div style={S.card}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#1A2332" }}>Past Gap Analyses</div>
+            <div style={{ fontSize: "11px", color: "#94A3B8" }}>Click a row to reload a result</div>
+          </div>
+          {history.length === 0 ? (
+            <div style={{ color: "#94A3B8", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>No saved analyses yet. Run a scan to start tracking history.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {history.map((entry) => {
+                const scoreColor = entry.score === null ? "#64748B" : entry.score >= 75 ? "#065F46" : entry.score >= 50 ? "#92400E" : "#991B1B";
+                const scoreBg   = entry.score === null ? "#F1F5F9"  : entry.score >= 75 ? "#D1FAE5"  : entry.score >= 50 ? "#FEF3C7"  : "#FEE2E2";
+                const isLoaded  = loadedEntryId === entry.id;
+                const instLabel = INSTITUTION_TYPES.find((i) => i.value === entry.institution)?.label || entry.institutionLabel || entry.institution;
+                const date = new Date(entry.timestamp);
+                const dateStr = date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+                const timeStr = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+                return (
+                  <div
+                    key={entry.id}
+                    onClick={() => loadHistoryEntry(entry)}
+                    style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px", borderRadius: "7px", border: `1px solid ${isLoaded ? "#0D5C6B" : "#E2E8F0"}`, background: isLoaded ? "#E8F4F5" : "#FAFAFA", cursor: "pointer", transition: "border-color 0.15s" }}
+                  >
+                    {entry.score !== null && (
+                      <div style={{ padding: "4px 10px", borderRadius: "6px", background: scoreBg, color: scoreColor, fontWeight: 700, fontSize: "15px", flexShrink: 0, minWidth: "52px", textAlign: "center" }}>
+                        {entry.score}%
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#1A2332", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.topic}</div>
+                      <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{instLabel}</div>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8", flexShrink: 0, textAlign: "right" }}>
+                      <div>{dateStr}</div>
+                      <div>{timeStr}</div>
+                    </div>
+                    {isLoaded && <span style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B", background: "#E8F4F5", padding: "2px 7px", borderRadius: "4px", border: "1px solid #0D5C6B", flexShrink: 0 }}>Loaded</span>}
+                    <button
+                      onClick={(e) => handleDeleteEntry(e, entry.id)}
+                      style={{ padding: "3px 7px", fontSize: "11px", border: "1px solid #FCA5A5", borderRadius: "4px", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", flexShrink: 0 }}
+                      title="Delete this entry"
+                    >✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {loading && <div style={S.card}><LoadingSpinner message="Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…" /></div>}
 
       {result && !loading && (
         <div>
+          {/* History banner when viewing a loaded entry */}
+          {loadedEntryId && (() => {
+            const entry = history.find((e) => e.id === loadedEntryId);
+            if (!entry) return null;
+            const date = new Date(entry.timestamp);
+            const dateStr = date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+            const timeStr = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+            return (
+              <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "7px", padding: "10px 14px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                <span style={{ fontSize: "12.5px", color: "#1E40AF", fontWeight: 600 }}>
+                  📂 Viewing saved result from {dateStr} at {timeStr}
+                </span>
+                <button
+                  onClick={() => { setResult(null); setResultMeta(null); setLoadedEntryId(null); }}
+                  style={{ padding: "4px 10px", fontSize: "12px", fontWeight: 600, border: "1px solid #93C5FD", borderRadius: "5px", background: "#DBEAFE", color: "#1E40AF", cursor: "pointer" }}
+                >
+                  Clear
+                </button>
+              </div>
+            );
+          })()}
+
           {/* Score summary */}
           <div style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
               <div>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  Gap Analysis — {inst.label} · {topicFinal}
+                  Gap Analysis — {effectiveInst.label} · {effectiveTopic}
                 </div>
-                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{inst.cfr}</div>
+                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{effectiveInst.cfr}</div>
               </div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                <CopyButton text={gapToText(result, inst, topicFinal)} />
-                <ExcelButton onClick={() => exportGapXlsx(result, inst, topicFinal)} />
+                <CopyButton text={gapToText(result, effectiveInst, effectiveTopic)} />
+                <ExcelButton onClick={() => exportGapXlsx(result, effectiveInst, effectiveTopic)} />
               </div>
             </div>
 
