@@ -1,15 +1,75 @@
-import React, { useState, useEffect } from "react";
+import { useState } from "react";
 
-// Attempt to repair truncated JSON by closing open braces/brackets
-// and stripping the last incomplete key-value pair.
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const INSTITUTION_TYPES = [
+  { value: "hospital",  label: "Hospital",                    cfr: "42 CFR 482" },
+  { value: "cah",       label: "Critical Access Hospital",    cfr: "42 CFR 485 Subpart F" },
+  { value: "snf",       label: "Skilled Nursing Facility",    cfr: "42 CFR 483 Subpart B" },
+  { value: "hha",       label: "Home Health Agency",          cfr: "42 CFR 484" },
+  { value: "hospice",   label: "Hospice",                     cfr: "42 CFR 418" },
+  { value: "asc",       label: "Ambulatory Surgery Center",   cfr: "42 CFR 416" },
+  { value: "esrd",      label: "ESRD Facility",               cfr: "42 CFR 494" },
+  { value: "rhc",       label: "Rural Health Clinic / FQHC", cfr: "42 CFR 491" },
+];
+
+const TOPICS = [
+  "Infection Control & Prevention",
+  "Patient Rights & Grievances",
+  "Quality Assessment & Performance Improvement",
+  "Nursing Services",
+  "Medical Staff",
+  "Medication Management",
+  "Medical Records",
+  "Emergency Preparedness",
+  "Physical Environment & Safety",
+  "Discharge Planning",
+  "Surgical Services",
+  "Anesthesia Services",
+  "Governing Body Oversight",
+  "Staff Competency & Training",
+  "Patient Safety & Fall Prevention",
+  "Restraint & Seclusion",
+  "Laboratory Services",
+];
+
+const DEPARTMENTS = [
+  "Nursing / Patient Care",
+  "Infection Prevention & Control",
+  "Quality & Compliance",
+  "Medical Records / HIM",
+  "Pharmacy",
+  "Laboratory",
+  "Radiology / Imaging",
+  "Surgery / Operating Room",
+  "Emergency Department",
+  "ICU / Critical Care",
+  "Rehabilitation Services",
+  "Food & Nutrition",
+  "Environmental Services",
+  "Maintenance / Facilities",
+  "Administration",
+  "Human Resources",
+];
+
+// Regulatory body display config
+const BODIES = [
+  { key: "cms",  label: "CMS Conditions of Participation", color: "#1E40AF", bg: "#EFF6FF" },
+  { key: "tjc",  label: "Joint Commission",                color: "#5B21B6", bg: "#F5F3FF" },
+  { key: "dnv",  label: "DNV NIAHO",                       color: "#065F46", bg: "#ECFDF5" },
+  { key: "iso",  label: "ISO 9001:2015",                   color: "#92400E", bg: "#FFFBEB" },
+];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 function repairJson(raw) {
-  const s = raw.replace(/```json|```/g, "").trim();
+  const s = raw.replace(/```json\n?|```/g, "").trim();
   try { return JSON.parse(s); } catch {}
 
-  // Walk the string to find open braces/brackets outside strings
   const stack = [];
-  let inStr = false, esc = false;
-  let lastSafeIdx = 0;
+  let inStr = false, esc = false, lastSafe = 0;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (esc) { esc = false; continue; }
@@ -17,1143 +77,599 @@ function repairJson(raw) {
     if (c === '"') { inStr = !inStr; continue; }
     if (inStr) continue;
     if (c === "{" || c === "[") stack.push(c === "{" ? "}" : "]");
-    else if (c === "}" || c === "]") {
-      stack.pop();
-      if (stack.length === 0) lastSafeIdx = i + 1;
-    }
+    else if (c === "}" || c === "]") { stack.pop(); if (!stack.length) lastSafe = i + 1; }
   }
 
-  const closing = stack.slice().reverse().join("");
-  // Strip trailing incomplete key: value pairs
+  const close = stack.slice().reverse().join("");
   const stripped = s
     .replace(/,\s*"[^"]*"\s*:\s*(?:"[^"]*)?$/, "")
     .replace(/,\s*"[^"]*"\s*:?\s*$/, "");
-  try { return JSON.parse(stripped + closing); } catch {}
-
-  // Last resort: parse only up to the last fully closed top-level object
-  if (lastSafeIdx > 0) {
-    try { return JSON.parse(s.substring(0, lastSafeIdx)); } catch {}
-  }
-  throw new Error("Generated text wasn't valid JSON");
+  try { return JSON.parse(stripped + close); } catch {}
+  if (lastSafe > 0) { try { return JSON.parse(s.slice(0, lastSafe)); } catch {} }
+  throw new Error("Response was not valid JSON — please try again");
 }
 
-const INSTITUTION_TYPES = [
-  { value: "hospital", label: "Hospital", cfr: "42 CFR 482" },
-  { value: "cah", label: "Critical Access Hospital", cfr: "42 CFR 485" },
-  { value: "snf", label: "Skilled Nursing Facility", cfr: "42 CFR 483" },
-  { value: "hh", label: "Home Health Agency", cfr: "42 CFR 484" },
-  { value: "hospice", label: "Hospice", cfr: "42 CFR 418" },
-  { value: "asc", label: "Ambulatory Surgery Center", cfr: "42 CFR 416" },
-  { value: "esrd", label: "ESRD Facility", cfr: "42 CFR 494" },
-  { value: "rhc", label: "Rural Health Clinic/FQHC", cfr: "42 CFR 491" },
-];
-
-const TOPIC_PRESETS = [
-  "Infection Control & Prevention",
-  "Patient Safety & Fall Prevention",
-  "Staff Competency & Training",
-  "Medical Records & Documentation",
-  "Medication Management",
-  "Quality Assurance & Performance Improvement",
-  "Governing Body Oversight",
-];
-
-const DEPARTMENTS = [
-  "Nursing Services",
-  "Quality & Compliance",
-  "Infection Prevention",
-  "Medical Records",
-  "Pharmacy",
-  "Laboratory",
-  "Radiology",
-  "Surgery",
-  "Emergency Department",
-  "ICU",
-  "Maternal/Child Health",
-  "Rehabilitation Services",
-  "Food & Nutrition",
-  "Environmental Services",
-  "Maintenance",
-  "Administration",
-  "Human Resources",
-  "Finance",
-];
-
-export default function CoPGuidelineBuilder() {
-  const [activeTab, setActiveTab] = useState("guidelines");
-
-  // Guidelines state
-  const [guidelineInst, setGuidelineInst] = useState("hospital");
-  const [guidelineTopic, setGuidelineTopic] = useState(TOPIC_PRESETS[0]);
-  const [guidelineCustomTopic, setGuidelineCustomTopic] = useState("");
-  const [guidelineLoading, setGuidelineLoading] = useState(false);
-  const [guidelineError, setGuidelineError] = useState(null);
-  const [guidelineResult, setGuidelineResult] = useState(null);
-  const [guidelineJobId, setGuidelineJobId] = useState(null);
-
-  // Inspection state
-  const [inspectionInst, setInspectionInst] = useState("hospital");
-  const [inspectionDept, setInspectionDept] = useState(DEPARTMENTS[0]);
-  const [inspectionGovBodies, setInspectionGovBodies] = useState(["cms"]);
-  const [inspectionLoading, setInspectionLoading] = useState(false);
-  const [inspectionError, setInspectionError] = useState(null);
-  const [inspectionResult, setInspectionResult] = useState(null);
-  const [inspectionJobId, setInspectionJobId] = useState(null);
-
-  // Policy state
-  const [policyInst, setPolicyInst] = useState("hospital");
-  const [policyTopic, setPolicyTopic] = useState(TOPIC_PRESETS[0]);
-  const [policyCustomTopic, setPolicyCustomTopic] = useState("");
-  const [policyLoading, setPolicyLoading] = useState(false);
-  const [policyError, setPolicyError] = useState(null);
-  const [policyResult, setPolicyResult] = useState(null);
-  const [policyJobId, setPolicyJobId] = useState(null);
-
-  // Poll for job results
-  useEffect(() => {
-    if (!guidelineJobId) return;
-    const poll = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/generate/result?jobId=${guidelineJobId}`);
-        const job = await res.json();
-        if (job.status === "done") {
-          const text = job.content[0].text;
-          setGuidelineResult(repairJson(text));
-          setGuidelineLoading(false);
-          setGuidelineJobId(null);
-          clearInterval(poll);
-        } else if (job.status === "error") {
-          setGuidelineError(job.error);
-          setGuidelineLoading(false);
-          setGuidelineJobId(null);
-          clearInterval(poll);
-        }
-      } catch (e) {
-        setGuidelineError(e.message);
-        setGuidelineLoading(false);
-        setGuidelineJobId(null);
-        clearInterval(poll);
-      }
-    }, 1000);
-    return () => clearInterval(poll);
-  }, [guidelineJobId]);
-
-  useEffect(() => {
-    if (!inspectionJobId) return;
-    const poll = setInterval(async () => {
-      try {
-        const res = await fetch(
-          `/api/generate/result?jobId=${inspectionJobId}`,
-        );
-        const job = await res.json();
-        if (job.status === "done") {
-          const text = job.content[0].text;
-          setInspectionResult(repairJson(text));
-          setInspectionLoading(false);
-          setInspectionJobId(null);
-          clearInterval(poll);
-        } else if (job.status === "error") {
-          setInspectionError(job.error);
-          setInspectionLoading(false);
-          setInspectionJobId(null);
-          clearInterval(poll);
-        }
-      } catch (e) {
-        setInspectionError(e.message);
-        setInspectionLoading(false);
-        setInspectionJobId(null);
-        clearInterval(poll);
-      }
-    }, 1000);
-    return () => clearInterval(poll);
-  }, [inspectionJobId]);
-
-  useEffect(() => {
-    if (!policyJobId) return;
-    const poll = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/generate/result?jobId=${policyJobId}`);
-        const job = await res.json();
-        if (job.status === "done") {
-          const text = job.content[0].text;
-          setPolicyResult(text);
-          setPolicyLoading(false);
-          setPolicyJobId(null);
-          clearInterval(poll);
-        } else if (job.status === "error") {
-          setPolicyError(job.error);
-          setPolicyLoading(false);
-          setPolicyJobId(null);
-          clearInterval(poll);
-        }
-      } catch (e) {
-        setPolicyError(e.message);
-        setPolicyLoading(false);
-        setPolicyJobId(null);
-        clearInterval(poll);
-      }
-    }, 1000);
-    return () => clearInterval(poll);
-  }, [policyJobId]);
-
-  async function generateGuideline() {
-    const inst = INSTITUTION_TYPES.find((i) => i.value === guidelineInst);
-    const topicFinal = guidelineCustomTopic.trim() || guidelineTopic;
-    setGuidelineLoading(true);
-    setGuidelineError(null);
-    setGuidelineResult(null);
-
-    const systemPrompt = `You are a healthcare compliance expert specializing in CMS Conditions of Participation, Joint Commission standards, DNV NIAHO, and ISO 9001:2015.
-
-Generate a comprehensive guideline covering the topic with:
-1. 15-20+ standards from multiple sources
-2. Each standard must cite: CMS CFR section, Joint Commission standard code, DNV NIAHO standard, and ISO 9001 clause
-3. For each standard: requirement and practical implementation guideline
-4. Include surveyor expectations and deficiency risks
-5. Reference exact regulatory text and current industry best practices
-
-Output ONLY valid JSON:
-{
-  "standards": [
-    {
-      "number": "482.42(a)",
-      "title": "Standard Title",
-      "sources": ["CMS §482.42(a)", "JC IC.01.01.01", "DNV NIAHO 4.1.2", "ISO 9001:2015 8.5"],
-      "requirement": "...",
-      "practicalGuideline": "...",
-      "surveyorExpectations": "...",
-      "commonDeficiencies": ["..."]
-    }
-  ]
-}`;
-
-    const userContent = `Institution: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}\n\nGenerate comprehensive, detailed guidelines covering all applicable CMS, Joint Commission, DNV, and ISO standards for this topic.`;
-
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemPrompt,
-          userContent,
-          maxTokens: 7000,
-        }),
-      });
-      const { jobId } = await res.json();
-      setGuidelineJobId(jobId);
-    } catch (e) {
-      setGuidelineError(`Failed: ${e.message}`);
-      setGuidelineLoading(false);
-    }
+async function callApi(systemPrompt, userContent, maxTokens) {
+  const startRes = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ systemPrompt, userContent, maxTokens }),
+  });
+  if (!startRes.ok) {
+    const err = await startRes.json().catch(() => ({}));
+    throw new Error(err.error || `Server error (${startRes.status})`);
   }
+  const { jobId } = await startRes.json();
+  if (!jobId) throw new Error("Server did not return a job ID");
 
-  async function generateInspection() {
-    const inst = INSTITUTION_TYPES.find((i) => i.value === inspectionInst);
-    const deptFinal = inspectionDept;
-    const bodies = inspectionGovBodies.map((b) => {
-      if (b === "cms") return "CMS";
-      if (b === "tjc") return "Joint Commission";
-      if (b === "dnv") return "DNV NIAHO";
-      return b;
-    });
+  for (let i = 0; i < 90; i++) {
+    await sleep(2000);
+    const poll = await fetch(`/api/generate/result?jobId=${jobId}`);
+    const job = await poll.json();
+    if (job.status === "error") throw new Error(job.error);
+    if (job.status === "done") return job.content?.[0]?.text ?? "";
+  }
+  throw new Error("Request timed out — please try again");
+}
 
-    setInspectionLoading(true);
-    setInspectionError(null);
-    setInspectionResult(null);
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
-    const systemPrompt = `You are a healthcare inspection compliance expert. Generate an inspection readiness survey.
+const S = {
+  page: { minHeight: "100vh", background: "#F4F7FA", fontFamily: "system-ui, -apple-system, sans-serif", color: "#1A2332" },
+  header: { background: "#0D5C6B", color: "#fff", padding: "20px 32px" },
+  headerTitle: { margin: 0, fontSize: "22px", fontWeight: 700, letterSpacing: "-0.3px" },
+  headerSub: { margin: "4px 0 0", fontSize: "13px", opacity: 0.75 },
+  disclaimer: { background: "#FEF3C7", border: "1px solid #F59E0B", borderRadius: "6px", padding: "10px 14px", marginTop: "14px", fontSize: "11.5px", color: "#78350F", lineHeight: 1.5 },
+  container: { maxWidth: "960px", margin: "0 auto", padding: "24px 24px 48px" },
+  card: { background: "#fff", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "20px", marginBottom: "16px" },
+  label: { display: "block", fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" },
+  select: { width: "100%", padding: "9px 12px", fontSize: "13px", border: "1px solid #CBD5E1", borderRadius: "6px", background: "#fff", boxSizing: "border-box", color: "#1A2332" },
+  input: { width: "100%", padding: "9px 12px", fontSize: "13px", border: "1px solid #CBD5E1", borderRadius: "6px", boxSizing: "border-box", color: "#1A2332" },
+  row: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" },
+  row3: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" },
+  btnPrimary: (loading) => ({ width: "100%", padding: "12px", background: loading ? "#64748B" : "#0D5C6B", color: "#fff", border: "none", borderRadius: "7px", fontSize: "14px", fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", marginTop: "4px" }),
+  btnSm: { padding: "6px 12px", fontSize: "12px", fontWeight: 600, border: "1px solid #CBD5E1", borderRadius: "5px", background: "#fff", cursor: "pointer", color: "#475569" },
+  error: { color: "#DC2626", fontSize: "13px", marginTop: "10px", padding: "10px 12px", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "6px" },
+  tabs: { display: "flex", gap: "4px", marginBottom: "20px" },
+  tag: (color, bg) => ({ display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, color, background: bg }),
+  riskBadge: (level) => ({
+    display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700,
+    color: level === "High" ? "#991B1B" : level === "Medium" ? "#92400E" : "#065F46",
+    background: level === "High" ? "#FEE2E2" : level === "Medium" ? "#FEF3C7" : "#D1FAE5",
+  }),
+  sectionHead: (color, bg) => ({ background: bg, borderLeft: `4px solid ${color}`, padding: "10px 14px", borderRadius: "0 6px 6px 0", marginBottom: "10px" }),
+  sectionTitle: (color) => ({ margin: 0, fontSize: "13px", fontWeight: 700, color }),
+  standardCard: { border: "1px solid #E2E8F0", borderRadius: "7px", padding: "12px 14px", marginBottom: "8px", background: "#FAFAFA" },
+  fieldLabel: { fontSize: "10.5px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "2px" },
+  fieldValue: { fontSize: "13px", color: "#1A2332", lineHeight: 1.55 },
+  pre: { whiteSpace: "pre-wrap", fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "13px", lineHeight: 1.65, color: "#1A2332", margin: 0 },
+  divider: { border: "none", borderTop: "1px solid #E2E8F0", margin: "12px 0" },
+};
 
-Output ONLY valid JSON:
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+function Tab({ label, active, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: "9px 18px", fontSize: "13px", fontWeight: 600, border: "none", borderRadius: "7px", cursor: "pointer",
+      background: active ? "#0D5C6B" : "#E2E8F0", color: active ? "#fff" : "#475569",
+      transition: "all 0.15s",
+    }}>{label}</button>
+  );
+}
+
+function LoadingSpinner({ message }) {
+  return (
+    <div style={{ textAlign: "center", padding: "40px 20px" }}>
+      <div style={{ width: "36px", height: "36px", border: "3px solid #E2E8F0", borderTop: "3px solid #0D5C6B", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
+      <p style={{ color: "#64748B", fontSize: "13px", margin: 0 }}>{message}</p>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button style={{ ...S.btnSm, color: copied ? "#065F46" : "#475569" }} onClick={() => {
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }}>{copied ? "✓ Copied" : "Copy"}</button>
+  );
+}
+
+// ─── Guidelines Tab ──────────────────────────────────────────────────────────
+
+function GuidelinesTab({ institution }) {
+  const [topic, setTopic] = useState(TOPICS[0]);
+  const [customTopic, setCustomTopic] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+
+  const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
+
+  async function generate() {
+    const topicFinal = customTopic.trim() || topic;
+    setLoading(true); setError(null); setResult(null);
+
+    const systemPrompt = `You are a healthcare regulatory compliance expert with deep knowledge of CMS Conditions of Participation, Joint Commission, DNV NIAHO, and ISO 9001:2015.
+
+Output ONLY valid JSON with this exact structure:
 {
-  "surveyItems": [
+  "overview": "2-3 sentence summary of the regulatory landscape for this topic",
+  "sources": [
     {
-      "id": "item-1",
-      "question": "specific question",
-      "riskLevel": "High|Medium|Low",
-      "governingBody": "CMS|JC|DNV",
-      "standard": "exact standard reference",
-      "commonDeficiencies": ["issue1"],
-      "readinessChecklist": ["check1"]
+      "key": "cms",
+      "body": "CMS Conditions of Participation",
+      "cfr": "${inst.cfr}",
+      "standards": [
+        {
+          "code": "§482.XX",
+          "tag": "A-XXXX",
+          "title": "Standard title",
+          "requirement": "Core requirement in 1-2 sentences",
+          "surveyorFocus": "What surveyors look for in 1 sentence"
+        }
+      ]
+    },
+    {
+      "key": "tjc",
+      "body": "Joint Commission",
+      "standards": [
+        {
+          "code": "IC.01.01.01",
+          "title": "Standard title",
+          "requirement": "Core requirement in 1-2 sentences",
+          "surveyorFocus": "What reviewers look for in 1 sentence"
+        }
+      ]
+    },
+    {
+      "key": "dnv",
+      "body": "DNV NIAHO",
+      "standards": [
+        {
+          "code": "IC.1",
+          "title": "Standard title",
+          "requirement": "Core requirement in 1-2 sentences",
+          "surveyorFocus": "What reviewers look for in 1 sentence"
+        }
+      ]
+    },
+    {
+      "key": "iso",
+      "body": "ISO 9001:2015",
+      "standards": [
+        {
+          "code": "Clause 8.5",
+          "title": "Clause title",
+          "requirement": "How this clause applies to healthcare compliance in 1-2 sentences",
+          "surveyorFocus": "Key evidence/documentation required in 1 sentence"
+        }
+      ]
     }
   ]
 }
 
-Generate 15-20 items distributed across ALL selected governing bodies.`;
+Include 3-4 standards per source. Use real, accurate regulatory codes and citations. Be concise but specific.`;
 
-    const userContent = `Institution: ${inst.label}\nDepartment: ${deptFinal}\nGoverning Bodies: ${bodies.join(", ")}\n\nGenerate inspection readiness items covering EACH governing body with clear attribution.`;
+    const userContent = `Institution: ${inst.label} (${inst.cfr})\nCompliance Topic: ${topicFinal}`;
 
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemPrompt,
-          userContent,
-          maxTokens: 5000,
-        }),
-      });
-      const { jobId } = await res.json();
-      setInspectionJobId(jobId);
+      const raw = await callApi(systemPrompt, userContent, 3000);
+      setResult(repairJson(raw));
     } catch (e) {
-      setInspectionError(`Failed: ${e.message}`);
-      setInspectionLoading(false);
+      setError(e.message);
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function generatePolicy() {
-    const inst = INSTITUTION_TYPES.find((i) => i.value === policyInst);
-    const topicFinal = policyCustomTopic.trim() || policyTopic;
-    setPolicyLoading(true);
-    setPolicyError(null);
-    setPolicyResult(null);
+  return (
+    <div>
+      {/* Form */}
+      <div style={S.card}>
+        <div style={S.row}>
+          <div>
+            <label style={S.label}>Topic Preset</label>
+            <select style={S.select} value={topic} onChange={(e) => { setTopic(e.target.value); setCustomTopic(""); }}>
+              {TOPICS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Custom Topic (overrides preset)</label>
+            <input style={S.input} type="text" value={customTopic} onChange={(e) => setCustomTopic(e.target.value)} placeholder="e.g. Hand Hygiene Compliance" />
+          </div>
+        </div>
+        <button style={S.btnPrimary(loading)} onClick={generate} disabled={loading}>
+          {loading ? "Generating…" : "Generate Compliance Guidelines"}
+        </button>
+        {error && <div style={S.error}>⚠️ {error}</div>}
+      </div>
 
-    const systemPrompt = `You are a healthcare compliance policy expert. Generate a professional, comprehensive policy template that institutions can immediately adopt and customize.
+      {/* Loading */}
+      {loading && <div style={S.card}><LoadingSpinner message="Compiling standards from CMS, Joint Commission, DNV, and ISO 9001…" /></div>}
 
-The policy must include:
-1. Header with [INSTITUTION NAME] and [DATE] placeholders
-2. Purpose section citing CMS §482, Joint Commission, DNV NIAHO, ISO 9001:2015
-3. Scope with [SPECIFY DEPARTMENTS/ROLES] placeholders
-4. Detailed policy requirements with [INSTITUTION-SPECIFIC] sections for customization
-5. Compliance monitoring and audit procedures
-6. Reference to exact regulatory standards with CFR citations
-7. Roles and responsibilities with [TITLE] placeholders
-8. Documentation and record-keeping requirements
+      {/* Results */}
+      {result && !loading && (
+        <div>
+          {/* Overview */}
+          <div style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  {inst.label} · {customTopic.trim() || topic}
+                </div>
+                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{inst.cfr}</div>
+              </div>
+              <CopyButton text={JSON.stringify(result, null, 2)} />
+            </div>
+            <p style={{ margin: 0, fontSize: "14px", color: "#334155", lineHeight: 1.6 }}>{result.overview}</p>
+          </div>
 
-Format as a professional, ready-to-use policy document. Use [BRACKETED PLACEHOLDERS IN CAPS] where the institution must enter their own information.`;
+          {/* Standards by body */}
+          {result.sources?.map((src) => {
+            const bodyConfig = BODIES.find((b) => b.key === src.key) || BODIES[0];
+            return (
+              <div key={src.key} style={S.card}>
+                <div style={S.sectionHead(bodyConfig.color, bodyConfig.bg)}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <h3 style={{ ...S.sectionTitle(bodyConfig.color), fontSize: "14px" }}>{src.body}</h3>
+                      {src.cfr && <div style={{ fontSize: "11px", color: bodyConfig.color, opacity: 0.75, marginTop: "2px" }}>{src.cfr}</div>}
+                    </div>
+                    <span style={S.tag(bodyConfig.color, bodyConfig.bg)}>{src.standards?.length || 0} standards</span>
+                  </div>
+                </div>
 
-    const userContent = `Institution Type: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}\n\nGenerate a complete, professional policy template that this institution can adopt, customize, and implement immediately.`;
+                {src.standards?.map((std, idx) => (
+                  <div key={idx} style={S.standardCard}>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "8px", flexWrap: "wrap" }}>
+                      <span style={{ fontFamily: "monospace", fontSize: "12px", fontWeight: 700, color: bodyConfig.color }}>{std.code}</span>
+                      {std.tag && <span style={S.tag(bodyConfig.color, bodyConfig.bg)}>{std.tag}</span>}
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#1A2332" }}>{std.title}</span>
+                    </div>
+                    <div style={{ marginBottom: "6px" }}>
+                      <div style={S.fieldLabel}>Requirement</div>
+                      <div style={S.fieldValue}>{std.requirement}</div>
+                    </div>
+                    {std.surveyorFocus && (
+                      <div>
+                        <div style={S.fieldLabel}>Surveyor Focus</div>
+                        <div style={{ ...S.fieldValue, color: "#475569" }}>🔍 {std.surveyorFocus}</div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Policy Tab ──────────────────────────────────────────────────────────────
+
+function PolicyTab({ institution }) {
+  const [topic, setTopic] = useState(TOPICS[0]);
+  const [customTopic, setCustomTopic] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+
+  const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
+
+  async function generate() {
+    const topicFinal = customTopic.trim() || topic;
+    setLoading(true); setError(null); setResult(null);
+
+    const systemPrompt = `You are a healthcare compliance policy expert. Generate a complete, professional policy template that a ${inst.label} can immediately adopt and customize.
+
+Use [BRACKETED PLACEHOLDERS IN CAPS] where the institution must enter specific information.
+
+Structure the policy as follows:
+POLICY TITLE
+Policy Number: [POLICY-XXX] | Effective Date: [DATE] | Review Date: [DATE] | Approved By: [TITLE]
+
+PURPOSE
+Cite the regulatory basis (CMS §, Joint Commission, DNV NIAHO, ISO 9001:2015).
+
+SCOPE
+Define who and what this policy covers.
+
+POLICY STATEMENT
+The core policy commitment.
+
+DEFINITIONS
+Key terms.
+
+PROCEDURE
+Numbered step-by-step procedures.
+
+ROLES AND RESPONSIBILITIES
+Bullet list by role/title.
+
+MONITORING AND COMPLIANCE
+How compliance will be measured and reported.
+
+REFERENCES
+Exact regulatory citations: CMS CFR, Joint Commission standard codes, DNV NIAHO codes, ISO 9001:2015 clauses.
+
+DOCUMENT HISTORY
+Version table.
+
+Output as plain text only (no JSON, no markdown headers with #).`;
+
+    const userContent = `Institution: ${inst.label} (${inst.cfr})\nPolicy Topic: ${topicFinal}`;
 
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemPrompt,
-          userContent,
-          maxTokens: 6000,
-        }),
-      });
-      const { jobId } = await res.json();
-      setPolicyJobId(jobId);
+      const text = await callApi(systemPrompt, userContent, 4000);
+      setResult(text.replace(/```[\w]*\n?|```/g, "").trim());
     } catch (e) {
-      setPolicyError(`Failed: ${e.message}`);
-      setPolicyLoading(false);
+      setError(e.message);
+    } finally {
+      setLoading(false);
     }
   }
 
-  function copyToClipboard(text) {
-    navigator.clipboard.writeText(text);
-    alert("Copied to clipboard!");
-  }
-
-  function downloadAsText(text, filename) {
-    const blob = new Blob([text], { type: "text/plain" });
+  function download() {
+    const topicFinal = customTopic.trim() || topic;
+    const blob = new Blob([result], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename;
+    a.download = `${inst.label.replace(/\s+/g, "_")}_${topicFinal.replace(/\s+/g, "_")}_Policy.txt`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#F7F6F2",
-        padding: "20px",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-      }}
-    >
-      {/* Disclaimer Banner */}
-      <div
-        style={{
-          background: "#FDB913",
-          border: "1px solid #F59E0B",
-          borderRadius: "6px",
-          padding: "12px 16px",
-          marginBottom: "20px",
-          color: "#78350F",
-          fontSize: "12px",
-          lineHeight: 1.5,
-        }}
-      >
-        ⚠️ <strong>AI-Generated Content Disclaimer:</strong> This tool generates
-        compliance guidance based on AI analysis. It is NOT legal advice. All
-        output must be reviewed and approved by qualified healthcare compliance
-        counsel and legal advisors before implementation.
+    <div>
+      <div style={S.card}>
+        <div style={S.row}>
+          <div>
+            <label style={S.label}>Topic Preset</label>
+            <select style={S.select} value={topic} onChange={(e) => { setTopic(e.target.value); setCustomTopic(""); }}>
+              {TOPICS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Custom Topic (overrides preset)</label>
+            <input style={S.input} type="text" value={customTopic} onChange={(e) => setCustomTopic(e.target.value)} placeholder="e.g. Sharps Safety Program" />
+          </div>
+        </div>
+        <button style={S.btnPrimary(loading)} onClick={generate} disabled={loading}>
+          {loading ? "Generating…" : "Generate Policy Template"}
+        </button>
+        {error && <div style={S.error}>⚠️ {error}</div>}
       </div>
 
-      <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
-        <h1 style={{ fontSize: "24px", fontWeight: 700, marginBottom: "8px" }}>
-          CMS CoP Guideline Builder & Inspection Readiness
-        </h1>
-        <p style={{ fontSize: "14px", color: "#5C6B72", marginBottom: "20px" }}>
-          Generate compliance guidelines, inspection checklists, and policy
-          templates
-        </p>
+      {loading && <div style={S.card}><LoadingSpinner message="Drafting policy template with regulatory references…" /></div>}
 
-        {/* Tabs */}
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            marginBottom: "20px",
-            borderBottom: "2px solid #D9D5C7",
-          }}
-        >
-          <button
-            onClick={() => setActiveTab("guidelines")}
-            style={{
-              padding: "12px 16px",
-              fontSize: "13px",
-              fontWeight: 600,
-              background:
-                activeTab === "guidelines" ? "#2C6E6E" : "transparent",
-              color: activeTab === "guidelines" ? "#F7F6F2" : "#5C6B72",
-              border: "none",
-              borderBottom:
-                activeTab === "guidelines" ? "2px solid #2C6E6E" : "none",
-              cursor: "pointer",
-            }}
-          >
-            Generate Guidelines
-          </button>
-          <button
-            onClick={() => setActiveTab("inspection")}
-            style={{
-              padding: "12px 16px",
-              fontSize: "13px",
-              fontWeight: 600,
-              background:
-                activeTab === "inspection" ? "#2C6E6E" : "transparent",
-              color: activeTab === "inspection" ? "#F7F6F2" : "#5C6B72",
-              border: "none",
-              borderBottom:
-                activeTab === "inspection" ? "2px solid #2C6E6E" : "none",
-              cursor: "pointer",
-            }}
-          >
-            Inspection Readiness
-          </button>
-          <button
-            onClick={() => setActiveTab("policy")}
-            style={{
-              padding: "12px 16px",
-              fontSize: "13px",
-              fontWeight: 600,
-              background: activeTab === "policy" ? "#2C6E6E" : "transparent",
-              color: activeTab === "policy" ? "#F7F6F2" : "#5C6B72",
-              border: "none",
-              borderBottom:
-                activeTab === "policy" ? "2px solid #2C6E6E" : "none",
-              cursor: "pointer",
-            }}
-          >
-            Generate Policy
-          </button>
+      {result && !loading && (
+        <div style={S.card}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+            <div>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#0D5C6B" }}>Policy Template</div>
+              <div style={{ fontSize: "11px", color: "#64748B" }}>{inst.label} · {customTopic.trim() || topic}</div>
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <CopyButton text={result} />
+              <button style={S.btnSm} onClick={download}>↓ Download</button>
+            </div>
+          </div>
+          <hr style={S.divider} />
+          <pre style={S.pre}>{result}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Inspection Tab ──────────────────────────────────────────────────────────
+
+function InspectionTab({ institution }) {
+  const [dept, setDept] = useState(DEPARTMENTS[0]);
+  const [govBodies, setGovBodies] = useState({ cms: true, tjc: false, dnv: false });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+  const [responses, setResponses] = useState({});
+
+  const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
+  const selectedBodies = Object.entries(govBodies).filter(([, v]) => v).map(([k]) => k.toUpperCase());
+
+  async function generate() {
+    setLoading(true); setError(null); setResult(null); setResponses({});
+
+    const systemPrompt = `You are a healthcare inspection readiness expert. Generate a practical inspection readiness checklist.
+
+Output ONLY valid JSON:
+{
+  "items": [
+    {
+      "id": "1",
+      "area": "Documentation",
+      "question": "Specific question a surveyor will ask or verify",
+      "riskLevel": "High",
+      "regulatoryBasis": "§482.42(a) / IC.01.01.01",
+      "commonDeficiency": "What typically fails during surveys",
+      "recommendation": "Specific action to prepare"
+    }
+  ]
+}
+
+Generate exactly 12 items. Cover these areas proportionally: Documentation, Policies & Procedures, Staff Training & Competency, Physical Environment, Patient Safety, and Ongoing Monitoring. Include a mix of High (4), Medium (5), and Low (3) risk items. Use real regulatory codes from the selected governing bodies.`;
+
+    const bodies = selectedBodies.length ? selectedBodies.join(", ") : "CMS";
+    const userContent = `Institution: ${inst.label} (${inst.cfr})\nDepartment: ${dept}\nGoverning Bodies: ${bodies}`;
+
+    try {
+      const raw = await callApi(systemPrompt, userContent, 3000);
+      const data = repairJson(raw);
+      setResult(data.items || data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const riskOrder = { High: 0, Medium: 1, Low: 2 };
+  const sorted = result ? [...result].sort((a, b) => (riskOrder[a.riskLevel] ?? 3) - (riskOrder[b.riskLevel] ?? 3)) : [];
+
+  const score = sorted.length
+    ? Math.round((Object.values(responses).filter((v) => v === "yes").length / sorted.length) * 100)
+    : null;
+
+  return (
+    <div>
+      <div style={S.card}>
+        <div style={S.row}>
+          <div>
+            <label style={S.label}>Department / Service Area</label>
+            <select style={S.select} value={dept} onChange={(e) => setDept(e.target.value)}>
+              {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Governing Bodies</label>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", paddingTop: "6px" }}>
+              {[["cms", "CMS"], ["tjc", "Joint Commission"], ["dnv", "DNV NIAHO"]].map(([key, lbl]) => (
+                <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" }}>
+                  <input type="checkbox" checked={govBodies[key]} onChange={(e) => setGovBodies({ ...govBodies, [key]: e.target.checked })} />
+                  {lbl}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <button style={S.btnPrimary(loading)} onClick={generate} disabled={loading}>
+          {loading ? "Generating…" : "Generate Inspection Readiness Checklist"}
+        </button>
+        {error && <div style={S.error}>⚠️ {error}</div>}
+      </div>
+
+      {loading && <div style={S.card}><LoadingSpinner message="Building inspection readiness checklist…" /></div>}
+
+      {sorted.length > 0 && !loading && (
+        <div>
+          {/* Score bar */}
+          {Object.keys(responses).length > 0 && (
+            <div style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>Readiness Score</span>
+                <span style={{ fontSize: "20px", fontWeight: 700, color: score >= 80 ? "#065F46" : score >= 60 ? "#92400E" : "#991B1B" }}>{score}%</span>
+              </div>
+              <div style={{ background: "#E2E8F0", borderRadius: "4px", height: "8px" }}>
+                <div style={{ background: score >= 80 ? "#10B981" : score >= 60 ? "#F59E0B" : "#EF4444", borderRadius: "4px", height: "8px", width: `${score}%`, transition: "width 0.4s" }} />
+              </div>
+              <div style={{ fontSize: "11px", color: "#64748B", marginTop: "6px" }}>
+                {Object.values(responses).filter((v) => v === "yes").length} of {sorted.length} items ready
+              </div>
+            </div>
+          )}
+
+          {/* Checklist items */}
+          {sorted.map((item) => (
+            <div key={item.id} style={{ ...S.card, borderLeft: `4px solid ${item.riskLevel === "High" ? "#DC2626" : item.riskLevel === "Medium" ? "#F59E0B" : "#10B981"}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginBottom: "6px" }}>
+                    <span style={S.riskBadge(item.riskLevel)}>{item.riskLevel} Risk</span>
+                    <span style={{ fontSize: "11px", fontWeight: 600, color: "#64748B" }}>{item.area}</span>
+                    {item.regulatoryBasis && <span style={{ fontSize: "11px", color: "#94A3B8", fontFamily: "monospace" }}>{item.regulatoryBasis}</span>}
+                  </div>
+                  <div style={{ fontSize: "14px", fontWeight: 600, color: "#1A2332", marginBottom: "10px" }}>{item.question}</div>
+
+                  {item.commonDeficiency && (
+                    <div style={{ marginBottom: "6px" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#DC2626" }}>⚠ Common Deficiency: </span>
+                      <span style={{ fontSize: "12px", color: "#475569" }}>{item.commonDeficiency}</span>
+                    </div>
+                  )}
+                  {item.recommendation && (
+                    <div>
+                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#065F46" }}>✓ Recommendation: </span>
+                      <span style={{ fontSize: "12px", color: "#475569" }}>{item.recommendation}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Response buttons */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0 }}>
+                  {[["yes", "✓ Ready", "#065F46", "#D1FAE5"], ["no", "✗ Gap", "#991B1B", "#FEE2E2"], ["na", "N/A", "#475569", "#F1F5F9"]].map(([val, lbl, color, bg]) => (
+                    <button key={val} onClick={() => setResponses({ ...responses, [item.id]: val })}
+                      style={{ padding: "5px 10px", fontSize: "11px", fontWeight: 700, border: `1px solid ${responses[item.id] === val ? color : "#CBD5E1"}`, borderRadius: "5px", cursor: "pointer", background: responses[item.id] === val ? bg : "#fff", color: responses[item.id] === val ? color : "#475569", minWidth: "70px" }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+
+export default function CoPGuidelineBuilder() {
+  const [tab, setTab] = useState("guidelines");
+  const [institution, setInstitution] = useState("hospital");
+
+  return (
+    <div style={S.page}>
+      {/* Header */}
+      <div style={S.header}>
+        <div style={{ maxWidth: "960px", margin: "0 auto" }}>
+          <h1 style={S.headerTitle}>CMS CoP Compliance Suite</h1>
+          <p style={S.headerSub}>Guidelines · Policy Templates · Inspection Readiness — CMS, Joint Commission, DNV NIAHO, ISO 9001:2015</p>
+          <div style={S.disclaimer}>
+            <strong>⚠ Important Disclaimer:</strong> This tool generates AI-assisted content for educational and preparation purposes only.
+            Output is <strong>not legal advice</strong> and must be reviewed by qualified compliance counsel before implementation.
+            Regulatory citations should be verified against current official sources. User assumes all liability.
+          </div>
+        </div>
+      </div>
+
+      <div style={S.container}>
+        {/* Institution selector */}
+        <div style={{ ...S.card, marginBottom: "20px" }}>
+          <label style={S.label}>Institution Type</label>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
+            {INSTITUTION_TYPES.map((inst) => (
+              <button key={inst.value} onClick={() => setInstitution(inst.value)} style={{
+                padding: "10px 12px", fontSize: "12px", fontWeight: 600, textAlign: "left",
+                border: `2px solid ${institution === inst.value ? "#0D5C6B" : "#E2E8F0"}`,
+                borderRadius: "7px", cursor: "pointer",
+                background: institution === inst.value ? "#E8F4F5" : "#fff",
+                color: institution === inst.value ? "#0D5C6B" : "#475569",
+              }}>
+                <div>{inst.label}</div>
+                <div style={{ fontSize: "10px", fontWeight: 400, marginTop: "2px", opacity: 0.7 }}>{inst.cfr}</div>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Guidelines Tab */}
-        {activeTab === "guidelines" && (
-          <div>
-            <div
-              style={{
-                background: "#FFFFFF",
-                border: "1px solid #D9D5C7",
-                borderRadius: "6px",
-                padding: "20px",
-                marginBottom: "20px",
-              }}
-            >
-              <div style={{ marginBottom: "16px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "11.5px",
-                    fontWeight: 700,
-                    color: "#5C6B72",
-                    marginBottom: "6px",
-                  }}
-                >
-                  Institution Type
-                </label>
-                <select
-                  value={guidelineInst}
-                  onChange={(e) => setGuidelineInst(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {INSTITUTION_TYPES.map((i) => (
-                    <option key={i.value} value={i.value}>
-                      {i.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {/* Tabs */}
+        <div style={S.tabs}>
+          <Tab label="📋 Compliance Guidelines" active={tab === "guidelines"} onClick={() => setTab("guidelines")} />
+          <Tab label="📄 Policy Templates" active={tab === "policy"} onClick={() => setTab("policy")} />
+          <Tab label="🔍 Inspection Readiness" active={tab === "inspection"} onClick={() => setTab("inspection")} />
+        </div>
 
-              <div style={{ marginBottom: "16px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "11.5px",
-                    fontWeight: 700,
-                    color: "#5C6B72",
-                    marginBottom: "6px",
-                  }}
-                >
-                  Topic
-                </label>
-                <select
-                  value={guidelineTopic}
-                  onChange={(e) => {
-                    setGuidelineTopic(e.target.value);
-                    setGuidelineCustomTopic("");
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                    marginBottom: "8px",
-                  }}
-                >
-                  {TOPIC_PRESETS.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={guidelineCustomTopic}
-                  onChange={(e) => setGuidelineCustomTopic(e.target.value)}
-                  placeholder="Or enter custom topic..."
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <button
-                onClick={generateGuideline}
-                disabled={guidelineLoading}
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  background: guidelineLoading ? "#8A8272" : "#2C6E6E",
-                  color: "#F7F6F2",
-                  border: "none",
-                  borderRadius: "5px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                {guidelineLoading ? "Generating..." : "Generate guideline"}
-              </button>
-
-              {guidelineError && (
-                <div
-                  style={{
-                    color: "#A8390A",
-                    fontSize: "13px",
-                    marginTop: "10px",
-                  }}
-                >
-                  {guidelineError}
-                </div>
-              )}
-            </div>
-
-            {guidelineResult && (
-              <div
-                style={{
-                  background: "#FFFFFF",
-                  border: "1px solid #D9D5C7",
-                  borderRadius: "6px",
-                  padding: "20px",
-                }}
-              >
-                <div
-                  style={{ display: "flex", gap: "8px", marginBottom: "16px" }}
-                >
-                  <button
-                    onClick={() =>
-                      copyToClipboard(JSON.stringify(guidelineResult, null, 2))
-                    }
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "12px",
-                      background: "#2C6E6E",
-                      color: "#F7F6F2",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Copy Full Text
-                  </button>
-                  <button
-                    onClick={() =>
-                      downloadAsText(
-                        JSON.stringify(guidelineResult, null, 2),
-                        "guidelines.txt",
-                      )
-                    }
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "12px",
-                      background: "#5C6B72",
-                      color: "#F7F6F2",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Download .txt
-                  </button>
-                </div>
-
-                {guidelineResult.standards &&
-                  guidelineResult.standards.map((std, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        marginBottom: "24px",
-                        borderBottom: "1px solid #D9D5C7",
-                        paddingBottom: "16px",
-                      }}
-                    >
-                      <h3
-                        style={{
-                          fontSize: "14px",
-                          fontWeight: 700,
-                          marginBottom: "6px",
-                        }}
-                      >
-                        {std.number} — {std.title}
-                      </h3>
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          color: "#5C6B72",
-                          marginBottom: "8px",
-                        }}
-                      >
-                        <strong>Sources:</strong> {std.sources.join(" • ")}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          lineHeight: 1.6,
-                          marginBottom: "8px",
-                        }}
-                      >
-                        <strong>Requirement:</strong> {std.requirement}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          lineHeight: 1.6,
-                          marginBottom: "8px",
-                        }}
-                      >
-                        <strong>Practical Guideline:</strong>{" "}
-                        {std.practicalGuideline}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          lineHeight: 1.6,
-                          marginBottom: "8px",
-                        }}
-                      >
-                        <strong>Surveyor Expectations:</strong>{" "}
-                        {std.surveyorExpectations}
-                      </p>
-                      {std.commonDeficiencies &&
-                        std.commonDeficiencies.length > 0 && (
-                          <p
-                            style={{
-                              fontSize: "12px",
-                              lineHeight: 1.6,
-                              color: "#A8390A",
-                            }}
-                          >
-                            <strong>Common Deficiencies:</strong>{" "}
-                            {std.commonDeficiencies.join(", ")}
-                          </p>
-                        )}
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Inspection Tab */}
-        {activeTab === "inspection" && (
-          <div>
-            <div
-              style={{
-                background: "#FFFFFF",
-                border: "1px solid #D9D5C7",
-                borderRadius: "6px",
-                padding: "20px",
-                marginBottom: "20px",
-              }}
-            >
-              <div style={{ marginBottom: "16px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "11.5px",
-                    fontWeight: 700,
-                    color: "#5C6B72",
-                    marginBottom: "6px",
-                  }}
-                >
-                  Institution Type
-                </label>
-                <select
-                  value={inspectionInst}
-                  onChange={(e) => setInspectionInst(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {INSTITUTION_TYPES.map((i) => (
-                    <option key={i.value} value={i.value}>
-                      {i.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ marginBottom: "16px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "11.5px",
-                    fontWeight: 700,
-                    color: "#5C6B72",
-                    marginBottom: "6px",
-                  }}
-                >
-                  Department
-                </label>
-                <select
-                  value={inspectionDept}
-                  onChange={(e) => setInspectionDept(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ marginBottom: "16px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "11.5px",
-                    fontWeight: 700,
-                    color: "#5C6B72",
-                    marginBottom: "6px",
-                  }}
-                >
-                  Governing Bodies
-                </label>
-                <div>
-                  {["cms", "tjc", "dnv"].map((body) => (
-                    <label
-                      key={body}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        marginBottom: "8px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={inspectionGovBodies.includes(body)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setInspectionGovBodies([
-                              ...inspectionGovBodies,
-                              body,
-                            ]);
-                          } else {
-                            setInspectionGovBodies(
-                              inspectionGovBodies.filter((b) => b !== body),
-                            );
-                          }
-                        }}
-                        style={{ marginRight: "8px" }}
-                      />
-                      {body === "cms" && "CMS"}
-                      {body === "tjc" && "Joint Commission"}
-                      {body === "dnv" && "DNV NIAHO"}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={generateInspection}
-                disabled={inspectionLoading}
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  background: inspectionLoading ? "#8A8272" : "#2C6E6E",
-                  color: "#F7F6F2",
-                  border: "none",
-                  borderRadius: "5px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                {inspectionLoading ? "Generating..." : "Generate survey"}
-              </button>
-
-              {inspectionError && (
-                <div
-                  style={{
-                    color: "#A8390A",
-                    fontSize: "13px",
-                    marginTop: "10px",
-                  }}
-                >
-                  {inspectionError}
-                </div>
-              )}
-            </div>
-
-            {inspectionResult && (
-              <div
-                style={{
-                  background: "#FFFFFF",
-                  border: "1px solid #D9D5C7",
-                  borderRadius: "6px",
-                  padding: "20px",
-                }}
-              >
-                <div
-                  style={{ display: "flex", gap: "8px", marginBottom: "16px" }}
-                >
-                  <button
-                    onClick={() =>
-                      copyToClipboard(JSON.stringify(inspectionResult, null, 2))
-                    }
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "12px",
-                      background: "#2C6E6E",
-                      color: "#F7F6F2",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Copy Full Text
-                  </button>
-                  <button
-                    onClick={() =>
-                      downloadAsText(
-                        JSON.stringify(inspectionResult, null, 2),
-                        "inspection-survey.txt",
-                      )
-                    }
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "12px",
-                      background: "#5C6B72",
-                      color: "#F7F6F2",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Download .txt
-                  </button>
-                </div>
-
-                {inspectionResult.surveyItems &&
-                  inspectionResult.surveyItems.map((item, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        marginBottom: "16px",
-                        borderBottom: "1px solid #D9D5C7",
-                        paddingBottom: "12px",
-                      }}
-                    >
-                      <h4
-                        style={{
-                          fontSize: "13px",
-                          fontWeight: 700,
-                          marginBottom: "4px",
-                        }}
-                      >
-                        {item.question}
-                      </h4>
-                      <p
-                        style={{
-                          fontSize: "11px",
-                          color: "#5C6B72",
-                          marginBottom: "4px",
-                        }}
-                      >
-                        <strong>Risk:</strong>{" "}
-                        <span
-                          style={{
-                            color:
-                              item.riskLevel === "High"
-                                ? "#A8390A"
-                                : item.riskLevel === "Medium"
-                                  ? "#F59E0B"
-                                  : "#059669",
-                          }}
-                        >
-                          {item.riskLevel}
-                        </span>
-                        {" | "}
-                        <strong>Body:</strong> {item.governingBody}
-                        {" | "}
-                        <strong>Standard:</strong> {item.standard}
-                      </p>
-                      {item.readinessChecklist &&
-                        item.readinessChecklist.length > 0 && (
-                          <ul
-                            style={{
-                              fontSize: "11px",
-                              marginTop: "6px",
-                              paddingLeft: "16px",
-                            }}
-                          >
-                            {item.readinessChecklist.map((check, cidx) => (
-                              <li key={cidx}>{check}</li>
-                            ))}
-                          </ul>
-                        )}
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Policy Tab */}
-        {activeTab === "policy" && (
-          <div>
-            <div
-              style={{
-                background: "#FFFFFF",
-                border: "1px solid #D9D5C7",
-                borderRadius: "6px",
-                padding: "20px",
-                marginBottom: "20px",
-              }}
-            >
-              <div style={{ marginBottom: "16px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "11.5px",
-                    fontWeight: 700,
-                    color: "#5C6B72",
-                    marginBottom: "6px",
-                  }}
-                >
-                  Institution Type
-                </label>
-                <select
-                  value={policyInst}
-                  onChange={(e) => setPolicyInst(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {INSTITUTION_TYPES.map((i) => (
-                    <option key={i.value} value={i.value}>
-                      {i.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ marginBottom: "16px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "11.5px",
-                    fontWeight: 700,
-                    color: "#5C6B72",
-                    marginBottom: "6px",
-                  }}
-                >
-                  Topic
-                </label>
-                <select
-                  value={policyTopic}
-                  onChange={(e) => {
-                    setPolicyTopic(e.target.value);
-                    setPolicyCustomTopic("");
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                    marginBottom: "8px",
-                  }}
-                >
-                  {TOPIC_PRESETS.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={policyCustomTopic}
-                  onChange={(e) => setPolicyCustomTopic(e.target.value)}
-                  placeholder="Or enter custom topic..."
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <button
-                onClick={generatePolicy}
-                disabled={policyLoading}
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  background: policyLoading ? "#8A8272" : "#2C6E6E",
-                  color: "#F7F6F2",
-                  border: "none",
-                  borderRadius: "5px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                {policyLoading ? "Generating..." : "Generate policy template"}
-              </button>
-
-              {policyError && (
-                <div
-                  style={{
-                    color: "#A8390A",
-                    fontSize: "13px",
-                    marginTop: "10px",
-                  }}
-                >
-                  {policyError}
-                </div>
-              )}
-            </div>
-
-            {policyResult && (
-              <div
-                style={{
-                  background: "#FFFFFF",
-                  border: "1px solid #D9D5C7",
-                  borderRadius: "6px",
-                  padding: "20px",
-                }}
-              >
-                <div
-                  style={{ display: "flex", gap: "8px", marginBottom: "16px" }}
-                >
-                  <button
-                    onClick={() => copyToClipboard(policyResult)}
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "12px",
-                      background: "#2C6E6E",
-                      color: "#F7F6F2",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Copy Full Text
-                  </button>
-                  <button
-                    onClick={() =>
-                      downloadAsText(policyResult, "policy-template.txt")
-                    }
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "12px",
-                      background: "#5C6B72",
-                      color: "#F7F6F2",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Download .txt
-                  </button>
-                </div>
-                <div
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    fontFamily: "monospace",
-                    fontSize: "12px",
-                    lineHeight: 1.6,
-                    color: "#2C3E50",
-                  }}
-                >
-                  {policyResult}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Tab content */}
+        {tab === "guidelines" && <GuidelinesTab institution={institution} />}
+        {tab === "policy"     && <PolicyTab     institution={institution} />}
+        {tab === "inspection" && <InspectionTab institution={institution} />}
       </div>
     </div>
   );
