@@ -1,7 +1,10 @@
 const express = require("express");
 const { randomUUID } = require("crypto");
 const app = express();
-app.use(express.json());
+// Accept both application/json AND text/plain so the browser can POST without
+// a Content-Type header, avoiding the CORS preflight that Cloudflare/Replit's
+// outer proxy can intercept before it reaches our server.
+app.use(express.json({ type: ["application/json", "text/plain"] }));
 
 // In-memory job store. Each job lives for 10 minutes then is cleaned up.
 const jobs = new Map();

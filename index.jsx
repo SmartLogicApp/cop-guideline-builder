@@ -117,9 +117,11 @@ const DEPARTMENTS_BY_INSTITUTION = {
 async function callModelForJson(systemPrompt, userContent, maxTokens) {
   // POST starts the job and returns immediately (< 100 ms).
   // No long-lived connection is held open, so proxy timeouts can't interfere.
+  // No Content-Type header: the browser defaults to text/plain for string
+  // bodies, making this a CORS "simple request" — no preflight is sent, so
+  // Cloudflare/Replit's outer proxy can't block it.
   const startRes = await fetch("/api/generate", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ systemPrompt, userContent, maxTokens }),
   });
 
@@ -164,15 +166,6 @@ export default function CoPGuidelineBuilder() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
-  const [apiDiag, setApiDiag] = useState("checking…");
-
-  useEffect(() => {
-    const url = `${window.location.origin}/api/healthz`;
-    fetch(url)
-      .then((r) => r.json())
-      .then((d) => setApiDiag(`✅ API reachable at ${url} → ${JSON.stringify(d)}`))
-      .catch((e) => setApiDiag(`❌ API unreachable at ${url} — ${e.message}`));
-  }, []);
   const [inspectionInstitution, setInspectionInstitution] =
     useState("hospital");
   const [inspectionDepartment, setInspectionDepartment] =
@@ -260,7 +253,7 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
 
       const userContent = `Institution: ${inst.label}\nDepartment: ${deptFinal}\nGoverning Bodies: ${bodies.join(", ")}`;
 
-      const survey = await callModelForJson(systemPrompt, userContent, 800);
+      const survey = await callModelForJson(systemPrompt, userContent, 1400);
 
       if (!survey.surveyItems || !Array.isArray(survey.surveyItems)) {
         throw new Error("Invalid survey structure");
@@ -312,9 +305,6 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
             content. Output is <strong>NOT legal advice</strong>. Must be
             reviewed by compliance counsel before use. User assumes all
             liability.
-          </div>
-          <div style={{ fontSize: "10px", fontFamily: "monospace", padding: "6px 8px", background: "#f0f0f0", borderRadius: "4px", marginBottom: "8px", wordBreak: "break-all" }}>
-            {apiDiag}
           </div>
 
           <h1
