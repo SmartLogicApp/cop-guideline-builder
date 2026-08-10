@@ -69,6 +69,9 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    // Allow all cross-origin requests from the dev server so browser CORS
+    // preflight (OPTIONS) for POST /api/generate succeeds.
+    cors: true,
     fs: {
       strict: true,
     },

@@ -164,6 +164,15 @@ export default function CoPGuidelineBuilder() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [apiDiag, setApiDiag] = useState("checking…");
+
+  useEffect(() => {
+    const url = `${window.location.origin}/api/healthz`;
+    fetch(url)
+      .then((r) => r.json())
+      .then((d) => setApiDiag(`✅ API reachable at ${url} → ${JSON.stringify(d)}`))
+      .catch((e) => setApiDiag(`❌ API unreachable at ${url} — ${e.message}`));
+  }, []);
   const [inspectionInstitution, setInspectionInstitution] =
     useState("hospital");
   const [inspectionDepartment, setInspectionDepartment] =
@@ -209,7 +218,7 @@ Include exactly 2 conditions with exactly 2 standards each. Be concise.`;
 
       const userContent = `Institution: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}`;
 
-      const data = await callModelForJson(systemPrompt, userContent, 2000);
+      const data = await callModelForJson(systemPrompt, userContent, 800);
       setResult(data);
     } catch (e) {
       setError(`Failed: ${e.message}`);
@@ -251,7 +260,7 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
 
       const userContent = `Institution: ${inst.label}\nDepartment: ${deptFinal}\nGoverning Bodies: ${bodies.join(", ")}`;
 
-      const survey = await callModelForJson(systemPrompt, userContent, 2000);
+      const survey = await callModelForJson(systemPrompt, userContent, 800);
 
       if (!survey.surveyItems || !Array.isArray(survey.surveyItems)) {
         throw new Error("Invalid survey structure");
@@ -303,6 +312,9 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
             content. Output is <strong>NOT legal advice</strong>. Must be
             reviewed by compliance counsel before use. User assumes all
             liability.
+          </div>
+          <div style={{ fontSize: "10px", fontFamily: "monospace", padding: "6px 8px", background: "#f0f0f0", borderRadius: "4px", marginBottom: "8px", wordBreak: "break-all" }}>
+            {apiDiag}
           </div>
 
           <h1
