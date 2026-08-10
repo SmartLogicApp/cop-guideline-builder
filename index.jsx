@@ -13,7 +13,6 @@ const INSTITUTION_TYPES = [
 
 const TOPIC_PRESETS = [
   "Infection Control & Prevention",
-  "Handwashing & Hand Hygiene",
   "Patient Safety & Fall Prevention",
   "Staff Competency & Training",
   "Medical Records & Documentation",
