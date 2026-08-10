@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: generation
+    description: AI-assisted compliance content generation
 paths:
   /healthz:
     get:
@@ -24,6 +26,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /generate:
+    post:
+      operationId: generateWithAnthropic
+      tags: [generation]
+      summary: Generate structured compliance content
+      description: Proxies a structured generation request to Anthropic without exposing credentials to the browser.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateInput"
+      responses:
+        "200":
+          description: Anthropic response content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateResponse"
+        "400":
+          description: Invalid generation request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Upstream generation service error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +66,47 @@ components:
           type: string
       required:
         - status
+    GenerateInput:
+      type: object
+      properties:
+        systemPrompt:
+          type: string
+          minLength: 1
+          maxLength: 30000
+        userContent:
+          type: string
+          minLength: 1
+          maxLength: 30000
+        maxTokens:
+          type: number
+          minimum: 1
+          maximum: 8192
+      required:
+        - systemPrompt
+        - userContent
+        - maxTokens
+    GenerateResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              text:
+                type: string
+            required:
+              - type
+              - text
+      required:
+        - content
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
 

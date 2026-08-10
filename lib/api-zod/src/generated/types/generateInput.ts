@@ -5,9 +5,6 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-export interface HealthStatus {
-  status: string;
-}
 
 export interface GenerateInput {
   /**
@@ -26,17 +23,3 @@ export interface GenerateInput {
      */
   maxTokens: number;
 }
-
-export type GenerateResponseContentItem = {
-  type: string;
-  text: string;
-};
-
-export interface GenerateResponse {
-  content: GenerateResponseContentItem[];
-}
-
-export interface ErrorResponse {
-  error: string;
-}
-
