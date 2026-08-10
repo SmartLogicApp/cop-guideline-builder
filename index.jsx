@@ -211,7 +211,7 @@ Include exactly 2 conditions with exactly 2 standards each. Be concise.`;
 
       const userContent = `Institution: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}`;
 
-      const data = await callModelForJson(systemPrompt, userContent, 800);
+      const data = await callModelForJson(systemPrompt, userContent, 1200);
       setResult(data);
     } catch (e) {
       setError(`Failed: ${e.message}`);
