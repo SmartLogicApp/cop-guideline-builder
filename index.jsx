@@ -12,13 +12,13 @@ const INSTITUTION_TYPES = [
 ];
 
 const TOPIC_PRESETS = [
+  "Infection Control & Prevention",
   "Handwashing & Hand Hygiene",
   "Patient Safety & Fall Prevention",
-  "Infection Control",
   "Staff Competency & Training",
   "Medical Records & Documentation",
   "Medication Management",
-  "Quality Assurance",
+  "Quality Assurance & Performance Improvement",
   "Governing Body Oversight",
 ];
 
