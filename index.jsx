@@ -359,6 +359,42 @@ function gapToText(result, inst, topic) {
   return lines.join("\n");
 }
 
+// ─── Action Plan helpers ──────────────────────────────────────────────────────
+
+function actionPlanToText(actions, inst, topic) {
+  const lines = [
+    `REMEDIATION ACTION PLAN`,
+    `Institution: ${inst.label} (${inst.cfr})`,
+    `Topic: ${topic || "General Policy"}`,
+    `Generated: ${new Date().toLocaleDateString()}`,
+    "",
+    `${"Priority".padEnd(8)}  ${"Requirement".padEnd(32)}  ${"Responsible Role".padEnd(28)}  ${"Deadline".padEnd(12)}  Action Steps`,
+    "─".repeat(120),
+  ];
+  ["High", "Medium", "Low"].forEach((p) => {
+    actions.filter((a) => a.priority === p).forEach((a) => {
+      lines.push(`${p.padEnd(8)}  ${`[${a.code}] ${a.requirement}`.slice(0, 32).padEnd(32)}  ${(a.responsibleRole || "").slice(0, 28).padEnd(28)}  ${(a.suggestedDeadline || "").slice(0, 12).padEnd(12)}  ${a.actionSteps || ""}`);
+    });
+  });
+  return lines.join("\n");
+}
+
+function exportActionPlanXlsx(actions, inst, topic) {
+  const rows = actions.map((a) => ({
+    "Priority": a.priority || "",
+    "Regulatory Body": a.body || "",
+    "Code / Reference": a.code || "",
+    "Requirement": a.requirement || "",
+    "Responsible Role": a.responsibleRole || "",
+    "Suggested Deadline": a.suggestedDeadline || "",
+    "Action Steps": a.actionSteps || "",
+  }));
+  downloadXlsx(
+    [{ name: "Action Plan", rows }],
+    `${inst.label.replace(/\s+/g, "_")}_${(topic || "Policy").replace(/\s+/g, "_")}_ActionPlan.xlsx`,
+  );
+}
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const S = {
@@ -950,6 +986,9 @@ function GapScannerTab({ institution }) {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [resultMeta, setResultMeta] = useState(null); // { institution, topic, timestamp }
+  const [actionPlan, setActionPlan] = useState(null);
+  const [actionPlanLoading, setActionPlanLoading] = useState(false);
+  const [actionPlanError, setActionPlanError] = useState(null);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [loadedEntryId, setLoadedEntryId] = useState(null); // which history entry is currently shown
@@ -981,12 +1020,73 @@ function GapScannerTab({ institution }) {
     e.target.value = "";
   }
 
+  async function generateActionPlan() {
+    if (!result) return;
+    setActionPlanLoading(true); setActionPlanError(null); setActionPlan(null);
+
+    const gaps = [
+      ...(result.weak    || []).map((i) => ({ ...i, status: "Weak/Partial" })),
+      ...(result.missing || []).map((i) => ({ ...i, status: "Missing" })),
+    ];
+
+    if (gaps.length === 0) {
+      setActionPlanError("No weak or missing requirements found — nothing to remediate.");
+      setActionPlanLoading(false);
+      return;
+    }
+
+    const systemPrompt = `You are a healthcare compliance remediation expert. Given a list of regulatory gaps, produce a concise, prioritized one-page remediation action plan that a compliance team can execute immediately.
+
+Output ONLY valid JSON with this exact structure:
+{
+  "actions": [
+    {
+      "priority": "High",
+      "body": "CMS",
+      "code": "§482.42(b)",
+      "requirement": "Short requirement title (≤8 words)",
+      "responsibleRole": "Infection Preventionist / CMO",
+      "suggestedDeadline": "30 days",
+      "actionSteps": "1. Convene ASP committee. 2. Draft stewardship policy. 3. Implement prescribing audit."
+    }
+  ]
+}
+
+Rules:
+- "priority" must be exactly "High", "Medium", or "Low".
+  • High  = Missing requirement OR weak item with direct patient-safety / CMS enforcement risk
+  • Medium = Weak partial coverage needing moderate rework
+  • Low   = Minor documentation or process gaps
+- "responsibleRole" should be a realistic job title or committee, not a department.
+- "suggestedDeadline" should be a realistic timeframe: "7 days", "30 days", "60 days", or "90 days".
+- "actionSteps" must be numbered, concrete steps (2-4 steps). Be specific — cite policy sections to add, forms to create, trainings to schedule.
+- Sort actions: High first, then Medium, then Low.
+- Include one action per gap. Do not merge multiple gaps into one action.
+- Do NOT fabricate new gaps. Only address the gaps listed.`;
+
+    const gapLines = gaps.map((g, i) =>
+      `${i + 1}. [${g.status}] [${g.body}] ${g.code} — ${g.title}\n   Finding: ${g.finding}\n   Recommendation: ${g.recommendation || "Not specified"}`
+    ).join("\n\n");
+
+    const userContent = `Institution: ${effectiveInst.label} (${effectiveInst.cfr})\nTopic: ${effectiveTopic}\n\nGAPS TO REMEDIATE:\n${gapLines}`;
+
+    try {
+      const raw = await callApi(systemPrompt, userContent, 3000);
+      const parsed = repairJson(raw);
+      setActionPlan(parsed.actions || parsed);
+    } catch (e) {
+      setActionPlanError(e.message);
+    } finally {
+      setActionPlanLoading(false);
+    }
+  }
+
   async function analyze() {
     if (!policyText.trim()) {
       setError("Please paste policy text or upload a document before analyzing.");
       return;
     }
-    setLoading(true); setError(null); setResult(null);
+    setLoading(true); setError(null); setResult(null); setActionPlan(null); setActionPlanError(null);
 
     const systemPrompt = `You are a senior healthcare regulatory compliance auditor with expert knowledge of CMS Conditions of Participation, Joint Commission, DNV NIAHO, and ISO 9001:2015.
 
@@ -1074,6 +1174,8 @@ ${truncated}`;
     setResultMeta({ institution: entry.institution, topic: entry.topic });
     setLoadedEntryId(entry.id);
     setShowHistory(false);
+    setActionPlan(null);
+    setActionPlanError(null);
     // Sync selectors to match the loaded entry
     const matchedTopic = TOPICS.includes(entry.topic) ? entry.topic : TOPICS[0];
     setTopic(matchedTopic);
@@ -1345,6 +1447,91 @@ ${truncated}`;
                 <h3 style={{ ...S.sectionTitle("#991B1B"), fontSize: "13px" }}>❌ Missing Requirements ({missingCount})</h3>
               </div>
               {result.missing.map((item, idx) => <GapItem key={idx} item={item} status="missing" />)}
+            </div>
+          )}
+
+          {/* Action Plan section */}
+          {(weakCount + missingCount) > 0 && !actionPlan && !actionPlanLoading && (
+            <div style={{ textAlign: "center", padding: "8px 0 4px" }}>
+              <button
+                style={{ padding: "12px 28px", fontSize: "14px", fontWeight: 700, border: "none", borderRadius: "8px", background: "#7C3AED", color: "#fff", cursor: "pointer", boxShadow: "0 2px 8px rgba(124,58,237,0.25)" }}
+                onClick={generateActionPlan}
+              >
+                📋 Generate Remediation Action Plan
+              </button>
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "6px" }}>
+                Produces a prioritized to-do table with owners, deadlines, and action steps
+              </div>
+            </div>
+          )}
+
+          {actionPlanLoading && (
+            <div style={S.card}><LoadingSpinner message="Building your prioritized remediation action plan…" /></div>
+          )}
+
+          {actionPlanError && !actionPlanLoading && (
+            <div style={S.error}>⚠️ {actionPlanError}</div>
+          )}
+
+          {actionPlan && !actionPlanLoading && (
+            <div style={{ ...S.card, borderLeft: "4px solid #7C3AED" }}>
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
+                <div>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#7C3AED" }}>📋 Remediation Action Plan</div>
+                  <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
+                    {effectiveInst.label} · {effectiveTopic} · {actionPlan.length} action{actionPlan.length !== 1 ? "s" : ""}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <CopyButton text={actionPlanToText(actionPlan, effectiveInst, effectiveTopic)} label="Copy Plan" />
+                  <ExcelButton onClick={() => exportActionPlanXlsx(actionPlan, effectiveInst, effectiveTopic)} label="↓ Excel" />
+                  <button
+                    style={{ ...S.btnSm }}
+                    onClick={() => { setActionPlan(null); setActionPlanError(null); }}
+                    title="Dismiss action plan"
+                  >✕ Dismiss</button>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
+                  <thead>
+                    <tr style={{ background: "#F8F4FF" }}>
+                      {["Priority", "Requirement", "Responsible Role", "Deadline", "Action Steps"].map((h) => (
+                        <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", fontWeight: 700, color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.4px", borderBottom: "2px solid #DDD6FE", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {actionPlan.map((action, idx) => {
+                      const priColor = action.priority === "High" ? { color: "#991B1B", bg: "#FEE2E2" } : action.priority === "Medium" ? { color: "#92400E", bg: "#FEF3C7" } : { color: "#065F46", bg: "#D1FAE5" };
+                      return (
+                        <tr key={idx} style={{ borderBottom: "1px solid #EDE9FE", background: idx % 2 === 0 ? "#FAFAFA" : "#fff" }}>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top" }}>
+                            <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: "10px", fontWeight: 700, fontSize: "11.5px", background: priColor.bg, color: priColor.color, whiteSpace: "nowrap" }}>
+                              {action.priority}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", minWidth: "180px" }}>
+                            <div style={{ fontWeight: 600, color: "#1A2332", lineHeight: 1.45 }}>{action.requirement}</div>
+                            {action.code && (
+                              <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#64748B", marginTop: "2px" }}>
+                                {action.body && <span style={{ marginRight: "4px", fontFamily: "system-ui" }}>{action.body}</span>}
+                                {action.code}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", minWidth: "160px", color: "#334155", lineHeight: 1.45 }}>{action.responsibleRole}</td>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", whiteSpace: "nowrap", color: "#334155" }}>{action.suggestedDeadline}</td>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", minWidth: "220px", color: "#334155", lineHeight: 1.55 }}>{action.actionSteps}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
