@@ -83,6 +83,38 @@ function extractSectionsFromXml(xml: string, charLimit = MAX_ECFR_CHARS): string
     .slice(0, charLimit);
 }
 
+// ─── eCFR response cache ─────────────────────────────────────────────────────
+
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+interface CacheEntry {
+  result: EcfrResult;
+  expiresAt: number;
+}
+
+const ecfrCache = new Map<string, CacheEntry>();
+
+/** Return a cached eCFR result if one exists and is still fresh; otherwise undefined. */
+function getCachedEcfr(institutionValue: string): EcfrResult | undefined {
+  const entry = ecfrCache.get(institutionValue);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    ecfrCache.delete(institutionValue);
+    return undefined;
+  }
+  return entry.result;
+}
+
+/** Store an eCFR result in the cache with a 24-hour TTL and evict expired entries. */
+function setCachedEcfr(institutionValue: string, result: EcfrResult): void {
+  ecfrCache.set(institutionValue, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+
+  // Evict all expired entries to prevent unbounded growth
+  for (const [k, entry] of ecfrCache) {
+    if (Date.now() > entry.expiresAt) ecfrCache.delete(k);
+  }
+}
+
 // ─── Live eCFR fetch ─────────────────────────────────────────────────────────
 
 interface EcfrResult {
@@ -98,6 +130,15 @@ async function fetchEcfrText(institutionValue: string): Promise<EcfrResult> {
   // eCFR only publishes on amendment dates, so try recent dates going back
   // up to a year in coarse steps to find the latest published version.
   const today = new Date();
+
+  // ── Cache lookup: keyed by institution only; TTL is the sole freshness guard ─
+  const cached = getCachedEcfr(institutionValue);
+  if (cached) {
+    console.info(`[eCFR cache] HIT  institution=${institutionValue} fetchDate=${cached.fetchDate}`);
+    return cached;
+  }
+  console.info(`[eCFR cache] MISS institution=${institutionValue} — fetching live`);
+
   const datesToTry: string[] = [];
   for (let d = 0; d <= 365; d += (d < 30 ? 1 : 30)) {
     const dt = new Date(today);
@@ -148,7 +189,11 @@ async function fetchEcfrText(institutionValue: string): Promise<EcfrResult> {
       const text = extractSectionsFromXml(raw, MAX_ECFR_CHARS);
       if (!text) continue;
 
-      return { text, fetchDate: dateStr, source: "ecfr" };
+      const result: EcfrResult = { text, fetchDate: dateStr, source: "ecfr" };
+      // Cache keyed by institution; TTL controls freshness across day boundaries
+      setCachedEcfr(institutionValue, result);
+      console.info(`[eCFR cache] STORED institution=${institutionValue} fetchDate=${dateStr} ttl=24h`);
+      return result;
     } catch {
       break; // network / timeout — give up
     }
