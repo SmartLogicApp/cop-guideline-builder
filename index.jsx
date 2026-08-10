@@ -119,26 +119,52 @@ async function callModelForJson(systemPrompt, userContent, maxTokens) {
     const response = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemPrompt,
-        userContent,
-        maxTokens,
-      }),
+      body: JSON.stringify({ systemPrompt, userContent, maxTokens }),
     });
 
-    const data = await response.json();
+    // Non-streaming error (e.g. 400 validation, 500 config, 502 upstream)
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error?.message || `HTTP ${response.status}`);
+    }
 
-    if (data.error) throw new Error(data.error.message);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    if (!data.content) throw new Error("No content in response");
+    // Read Anthropic's SSE stream and accumulate text_delta chunks.
+    // Data flows continuously so no proxy timeout occurs.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
 
-    const textBlock = data.content.find((c) => c.type === "text");
-    if (!textBlock) throw new Error("No text in response");
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
 
-    const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        try {
+          const event = JSON.parse(payload);
+          if (
+            event.type === "content_block_delta" &&
+            event.delta?.type === "text_delta"
+          ) {
+            fullText += event.delta.text;
+          }
+        } catch {
+          // ignore malformed SSE lines
+        }
+      }
+    }
+
+    if (!fullText) throw new Error("No content in response");
+
+    const cleaned = fullText.replace(/```json|```/g, "").trim();
     try {
       return JSON.parse(cleaned);
-    } catch (e) {
+    } catch {
       throw new Error("Generated text wasn't valid JSON");
     }
   } catch (e) {
@@ -199,7 +225,7 @@ Include exactly 2 conditions with exactly 2 standards each. Be concise.`;
 
       const userContent = `Institution: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}`;
 
-      const data = await callModelForJson(systemPrompt, userContent, 700);
+      const data = await callModelForJson(systemPrompt, userContent, 2000);
       setResult(data);
     } catch (e) {
       setError(`Failed: ${e.message}`);
@@ -241,7 +267,7 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
 
       const userContent = `Institution: ${inst.label}\nDepartment: ${deptFinal}\nGoverning Bodies: ${bodies.join(", ")}`;
 
-      const survey = await callModelForJson(systemPrompt, userContent, 700);
+      const survey = await callModelForJson(systemPrompt, userContent, 2000);
 
       if (!survey.surveyItems || !Array.isArray(survey.surveyItems)) {
         throw new Error("Invalid survey structure");

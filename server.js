@@ -1,10 +1,10 @@
 const express = require("express");
+const { Readable } = require("stream");
 const app = express();
 app.use(express.json());
 
 app.post("/api/generate", async (req, res) => {
-  // Read the key on every request so a rotation takes effect without restart.
-  // The key is ONLY used server-side and is never returned to the browser.
+  // Secret is read server-side only and never returned to the browser.
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     res.status(500).json({ error: { message: "AI generation is not configured" } });
@@ -13,7 +13,6 @@ app.post("/api/generate", async (req, res) => {
 
   const { systemPrompt, userContent, maxTokens } = req.body ?? {};
 
-  // Validate inputs before forwarding to Anthropic.
   if (
     typeof systemPrompt !== "string" || systemPrompt.length < 1 || systemPrompt.length > 30000 ||
     typeof userContent  !== "string" || userContent.length  < 1 || userContent.length  > 30000 ||
@@ -28,30 +27,38 @@ app.post("/api/generate", async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": apiKey,                  // secret stays on the server
+        "x-api-key": apiKey,            // stays on the server, never sent to browser
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: maxTokens,
+        stream: true,                    // stream so the connection stays alive
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
       }),
     });
 
-    const data = await upstream.json();
-
     if (!upstream.ok) {
-      // Forward Anthropic's error message but nothing else (no key, no headers).
+      const data = await upstream.json();
       const message = data?.error?.message || "The AI service rejected the request";
       res.status(502).json({ error: { message } });
       return;
     }
 
-    // Return only the content array — the API key is never included.
-    res.json({ content: data.content });
+    // Pipe Anthropic's SSE stream straight to the browser.
+    // The API key is in the request headers only — it never appears in the body.
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    const nodeStream = Readable.fromWeb(upstream.body);
+    nodeStream.pipe(res);
   } catch (err) {
-    res.status(502).json({ error: { message: "Unable to reach the AI service" } });
+    if (!res.headersSent) {
+      res.status(502).json({ error: { message: "Unable to reach the AI service" } });
+    }
   }
 });
 

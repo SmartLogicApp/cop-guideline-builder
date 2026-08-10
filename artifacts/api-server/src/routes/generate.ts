@@ -1,8 +1,6 @@
+import { Readable } from "stream";
 import { Router, type IRouter } from "express";
-import {
-  GenerateWithAnthropicBody,
-  GenerateWithAnthropicResponse,
-} from "@workspace/api-zod";
+import { GenerateWithAnthropicBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -26,48 +24,41 @@ router.post("/generate", async (req, res): Promise<void> => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": apiKey,
+        "x-api-key": apiKey,            // secret stays server-side only
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: parsed.data.maxTokens,
+        stream: true,                    // stream to avoid proxy timeout
         system: parsed.data.systemPrompt,
         messages: [{ role: "user", content: parsed.data.userContent }],
       }),
     });
 
-    const upstreamData: unknown = await upstreamResponse.json();
     if (!upstreamResponse.ok) {
-      const message =
-        typeof upstreamData === "object" &&
-        upstreamData !== null &&
-        "error" in upstreamData &&
-        typeof upstreamData.error === "object" &&
-        upstreamData.error !== null &&
-        "message" in upstreamData.error &&
-        typeof upstreamData.error.message === "string"
-          ? upstreamData.error.message
-          : "The AI service rejected the request";
-      req.log.error(
-        { status: upstreamResponse.status, message },
-        "AI generation upstream request failed",
-      );
+      const upstreamData = await upstreamResponse.json() as { error?: { message?: string } };
+      const message = upstreamData?.error?.message ?? "The AI service rejected the request";
+      req.log.error({ status: upstreamResponse.status, message }, "AI generation upstream error");
       res.status(502).json({ error: message });
       return;
     }
 
-    const responseData = GenerateWithAnthropicResponse.safeParse(upstreamData);
-    if (!responseData.success) {
-      req.log.error("AI service returned an unexpected response");
-      res.status(502).json({ error: "The AI service returned an unexpected response" });
-      return;
-    }
+    // Pipe Anthropic's SSE stream straight to the browser.
+    // The API key is only in the outbound request headers — never in the response body.
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
 
-    res.json(responseData.data);
+    const nodeStream = Readable.fromWeb(
+      upstreamResponse.body as import("stream/web").ReadableStream<Uint8Array>,
+    );
+    nodeStream.pipe(res);
   } catch (error) {
     req.log.error({ err: error }, "AI generation request failed");
-    res.status(502).json({ error: "Unable to reach the AI service" });
+    if (!res.headersSent) {
+      res.status(502).json({ error: "Unable to reach the AI service" });
+    }
   }
 });
 
