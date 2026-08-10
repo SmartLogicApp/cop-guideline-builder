@@ -200,6 +200,99 @@ function inspectionToText(items, responses, inst, dept) {
   return lines.join("\n");
 }
 
+// ─── PDF.js loader (CDN, no extra package needed) ────────────────────────────
+
+async function extractTextFromPdf(file) {
+  const pdfjsLib = await new Promise((resolve, reject) => {
+    if (window.pdfjsLib) { resolve(window.pdfjsLib); return; }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      resolve(window.pdfjsLib);
+    };
+    script.onerror = () => reject(new Error("Failed to load PDF.js"));
+    document.head.appendChild(script);
+  });
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pages = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    pages.push(content.items.map((i) => i.str).join(" "));
+  }
+  return pages.join("\n");
+}
+
+async function extractTextFromFile(file) {
+  if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+    return extractTextFromPdf(file);
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsText(file);
+  });
+}
+
+// ─── Gap Scanner helpers ──────────────────────────────────────────────────────
+
+function exportGapXlsx(result, inst, topic) {
+  const rows = [];
+  const statusMap = { met: "✅ Met", weak: "⚠️ Weak/Partial", missing: "❌ Missing" };
+  ["met", "weak", "missing"].forEach((status) => {
+    (result[status] || []).forEach((item) => {
+      rows.push({
+        "Status": statusMap[status],
+        "Regulatory Body": item.body || "",
+        "Code / Reference": item.code || "",
+        "Requirement Title": item.title || "",
+        "Finding": item.finding || "",
+        "Recommended Fix": item.recommendation || "",
+      });
+    });
+  });
+  downloadXlsx(
+    [{ name: "Gap Analysis", rows }],
+    `${inst.label.replace(/\s+/g, "_")}_${(topic || "Policy").replace(/\s+/g, "_")}_GapAnalysis.xlsx`,
+  );
+}
+
+function gapToText(result, inst, topic) {
+  const lines = [
+    `POLICY COMPLIANCE GAP ANALYSIS`,
+    `Institution: ${inst.label} (${inst.cfr})`,
+    `Topic: ${topic || "General Policy"}`,
+    `Generated: ${new Date().toLocaleDateString()}`,
+    "",
+    result.summary || "",
+    "",
+    "── ✅ MET REQUIREMENTS ──",
+  ];
+  (result.met || []).forEach((item) => {
+    lines.push(`  [${item.code}] ${item.title} — ${item.finding}`);
+  });
+  lines.push("", "── ⚠️ WEAK / PARTIAL COVERAGE ──");
+  (result.weak || []).forEach((item) => {
+    lines.push(`  [${item.code}] ${item.title}`);
+    lines.push(`  Finding: ${item.finding}`);
+    lines.push(`  Fix: ${item.recommendation}`);
+    lines.push("");
+  });
+  lines.push("── ❌ MISSING REQUIREMENTS ──");
+  (result.missing || []).forEach((item) => {
+    lines.push(`  [${item.code}] ${item.title}`);
+    lines.push(`  Gap: ${item.finding}`);
+    lines.push(`  Fix: ${item.recommendation}`);
+    lines.push("");
+  });
+  return lines.join("\n");
+}
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const S = {
@@ -755,6 +848,285 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
   );
 }
 
+// ─── Gap Scanner Tab ─────────────────────────────────────────────────────────
+
+function GapScannerTab({ institution }) {
+  const [topic, setTopic] = useState(TOPICS[0]);
+  const [customTopic, setCustomTopic] = useState("");
+  const [policyText, setPolicyText] = useState("");
+  const [fileName, setFileName] = useState(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileError, setFileError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+
+  const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
+  const topicFinal = customTopic.trim() || topic;
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileError(null);
+    setFileLoading(true);
+    setFileName(file.name);
+    try {
+      const text = await extractTextFromFile(file);
+      setPolicyText(text);
+    } catch (err) {
+      setFileError(err.message);
+      setFileName(null);
+    } finally {
+      setFileLoading(false);
+    }
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  }
+
+  async function analyze() {
+    if (!policyText.trim()) {
+      setError("Please paste policy text or upload a document before analyzing.");
+      return;
+    }
+    setLoading(true); setError(null); setResult(null);
+
+    const systemPrompt = `You are a senior healthcare regulatory compliance auditor with expert knowledge of CMS Conditions of Participation, Joint Commission, DNV NIAHO, and ISO 9001:2015.
+
+A user will provide an existing policy document. Your job is to identify compliance gaps against the regulatory standards that apply to the given institution type and policy topic.
+
+Output ONLY valid JSON with this exact structure:
+{
+  "summary": "2-3 sentence executive summary of overall compliance posture",
+  "score": 72,
+  "met": [
+    {
+      "body": "CMS",
+      "code": "§482.42(a)(1)",
+      "title": "Requirement title",
+      "finding": "Brief note on how the policy meets this requirement"
+    }
+  ],
+  "weak": [
+    {
+      "body": "Joint Commission",
+      "code": "IC.02.02.01",
+      "title": "Requirement title",
+      "finding": "Specific weakness or gap in the existing text",
+      "recommendation": "Concrete action to strengthen coverage"
+    }
+  ],
+  "missing": [
+    {
+      "body": "CMS",
+      "code": "§482.42(b)",
+      "title": "Requirement title",
+      "finding": "Why this requirement is absent or completely unaddressed",
+      "recommendation": "Specific language or section to add"
+    }
+  ]
+}
+
+Rules:
+- "score" is an integer 0-100 representing overall compliance (0=nothing met, 100=fully compliant).
+- Include 2-5 items per category (met/weak/missing), covering multiple regulatory bodies.
+- Use real, accurate regulatory codes — CMS CFR section numbers, Joint Commission standard codes (e.g. IC.01.01.01), DNV NIAHO codes, ISO 9001:2015 clause numbers.
+- "finding" should cite specific phrases or the absence of content from the uploaded policy.
+- "recommendation" should be actionable — what exact language or element is needed.
+- Do NOT fabricate citations. If a standard clearly does not apply, omit it.`;
+
+    const charLimit = 12000;
+    const truncated = policyText.length > charLimit
+      ? policyText.slice(0, charLimit) + "\n[... document truncated for analysis ...]"
+      : policyText;
+
+    const userContent = `Institution Type: ${inst.label} (${inst.cfr})
+Policy Topic: ${topicFinal}
+
+POLICY TEXT TO ANALYZE:
+${truncated}`;
+
+    try {
+      const raw = await callApi(systemPrompt, userContent, 4000);
+      setResult(repairJson(raw));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const metCount    = result?.met?.length     || 0;
+  const weakCount   = result?.weak?.length    || 0;
+  const missingCount = result?.missing?.length || 0;
+  const score       = result?.score           ?? null;
+
+  const scoreColor = score === null ? "#64748B" : score >= 75 ? "#065F46" : score >= 50 ? "#92400E" : "#991B1B";
+  const scoreBg    = score === null ? "#F1F5F9"  : score >= 75 ? "#D1FAE5"  : score >= 50 ? "#FEF3C7"  : "#FEE2E2";
+
+  const GapItem = ({ item, status }) => {
+    const colors = {
+      met:     { icon: "✅", color: "#065F46", bg: "#D1FAE5", border: "#6EE7B7" },
+      weak:    { icon: "⚠️", color: "#92400E", bg: "#FEF3C7", border: "#FCD34D" },
+      missing: { icon: "❌", color: "#991B1B", bg: "#FEE2E2", border: "#FCA5A5" },
+    }[status];
+
+    return (
+      <div style={{ border: `1px solid ${colors.border}`, borderLeft: `4px solid ${colors.color === "#065F46" ? "#10B981" : colors.color === "#92400E" ? "#F59E0B" : "#EF4444"}`, borderRadius: "7px", padding: "12px 14px", marginBottom: "8px", background: "#FAFAFA" }}>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginBottom: "6px" }}>
+          <span style={{ fontSize: "14px" }}>{colors.icon}</span>
+          <span style={{ fontFamily: "monospace", fontSize: "11.5px", fontWeight: 700, color: "#475569", background: "#F1F5F9", padding: "1px 6px", borderRadius: "3px" }}>{item.code}</span>
+          <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", background: "#F1F5F9", padding: "1px 8px", borderRadius: "10px" }}>{item.body}</span>
+          <span style={{ fontSize: "13px", fontWeight: 600, color: "#1A2332" }}>{item.title}</span>
+        </div>
+        <div style={{ marginBottom: status === "met" ? 0 : "6px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px" }}>Finding: </span>
+          <span style={{ fontSize: "12.5px", color: "#334155" }}>{item.finding}</span>
+        </div>
+        {item.recommendation && (
+          <div style={{ marginTop: "6px", padding: "7px 10px", background: "#F0FDF4", borderRadius: "5px", borderLeft: "3px solid #10B981" }}>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#065F46" }}>RECOMMENDED FIX: </span>
+            <span style={{ fontSize: "12.5px", color: "#1A2332" }}>{item.recommendation}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      {/* Input form */}
+      <div style={S.card}>
+        <div style={S.row}>
+          <div>
+            <label style={S.label}>Policy Topic</label>
+            <select style={S.select} value={topic} onChange={(e) => { setTopic(e.target.value); setCustomTopic(""); }}>
+              {TOPICS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Custom Topic (overrides preset)</label>
+            <input style={S.input} type="text" value={customTopic} onChange={(e) => setCustomTopic(e.target.value)} placeholder="e.g. Hand Hygiene Compliance" />
+          </div>
+        </div>
+
+        {/* Upload area */}
+        <div style={{ marginBottom: "12px" }}>
+          <label style={S.label}>Upload Policy Document (PDF or .txt)</label>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <label style={{ ...S.btnSm, display: "inline-block", cursor: "pointer", padding: "8px 14px", background: "#F8FAFC", borderStyle: "dashed" }}>
+              {fileLoading ? "Reading…" : "📎 Choose File"}
+              <input type="file" accept=".pdf,.txt,.doc,.docx,text/plain,application/pdf" style={{ display: "none" }} onChange={handleFile} disabled={fileLoading} />
+            </label>
+            {fileName && !fileLoading && (
+              <span style={{ fontSize: "12px", color: "#065F46", fontWeight: 600 }}>✓ {fileName}</span>
+            )}
+            {fileLoading && <span style={{ fontSize: "12px", color: "#64748B" }}>Extracting text…</span>}
+            {fileError && <span style={{ fontSize: "12px", color: "#DC2626" }}>⚠ {fileError}</span>}
+          </div>
+        </div>
+
+        {/* Text area */}
+        <div style={{ marginBottom: "14px" }}>
+          <label style={S.label}>Or Paste Policy Text Directly</label>
+          <textarea
+            style={{ ...S.input, minHeight: "160px", resize: "vertical", lineHeight: 1.55, fontFamily: "system-ui, -apple-system, sans-serif" }}
+            value={policyText}
+            onChange={(e) => { setPolicyText(e.target.value); if (e.target.value !== policyText) setFileName(null); }}
+            placeholder="Paste your existing policy document here…"
+          />
+          {policyText.length > 0 && (
+            <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "4px", textAlign: "right" }}>
+              {policyText.length.toLocaleString()} characters{policyText.length > 12000 ? " (will be truncated to ~12,000 for analysis)" : ""}
+            </div>
+          )}
+        </div>
+
+        <button style={S.btnPrimary(loading || fileLoading)} onClick={analyze} disabled={loading || fileLoading}>
+          {loading ? "Analyzing…" : "🔍 Scan for Compliance Gaps"}
+        </button>
+        {error && <div style={S.error}>⚠️ {error}</div>}
+      </div>
+
+      {loading && <div style={S.card}><LoadingSpinner message="Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…" /></div>}
+
+      {result && !loading && (
+        <div>
+          {/* Score summary */}
+          <div style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Gap Analysis — {inst.label} · {topicFinal}
+                </div>
+                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{inst.cfr}</div>
+              </div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <CopyButton text={gapToText(result, inst, topicFinal)} />
+                <ExcelButton onClick={() => exportGapXlsx(result, inst, topicFinal)} />
+              </div>
+            </div>
+
+            {/* Scorecard row */}
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "12px" }}>
+              {score !== null && (
+                <div style={{ padding: "8px 16px", borderRadius: "8px", background: scoreBg, color: scoreColor, fontWeight: 700, fontSize: "22px", minWidth: "80px", textAlign: "center" }}>
+                  {score}%
+                  <div style={{ fontSize: "10px", fontWeight: 600, opacity: 0.8, marginTop: "2px" }}>Compliance Score</div>
+                </div>
+              )}
+              {[["✅", metCount, "Met", "#D1FAE5", "#065F46"], ["⚠️", weakCount, "Weak", "#FEF3C7", "#92400E"], ["❌", missingCount, "Missing", "#FEE2E2", "#991B1B"]].map(([icon, count, label, bg, color]) => (
+                <div key={label} style={{ padding: "8px 16px", borderRadius: "8px", background: bg, color, fontWeight: 700, fontSize: "18px", minWidth: "70px", textAlign: "center" }}>
+                  {icon} {count}
+                  <div style={{ fontSize: "10px", fontWeight: 600, opacity: 0.8, marginTop: "2px" }}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Progress bar */}
+            {score !== null && (
+              <div style={{ background: "#E2E8F0", borderRadius: "4px", height: "8px", marginBottom: "10px" }}>
+                <div style={{ background: score >= 75 ? "#10B981" : score >= 50 ? "#F59E0B" : "#EF4444", borderRadius: "4px", height: "8px", width: `${score}%`, transition: "width 0.5s" }} />
+              </div>
+            )}
+
+            <p style={{ margin: 0, fontSize: "13.5px", color: "#334155", lineHeight: 1.6 }}>{result.summary}</p>
+          </div>
+
+          {/* Met requirements */}
+          {result.met?.length > 0 && (
+            <div style={S.card}>
+              <div style={{ ...S.sectionHead("#065F46", "#D1FAE5"), marginBottom: "12px" }}>
+                <h3 style={{ ...S.sectionTitle("#065F46"), fontSize: "13px" }}>✅ Requirements Met ({metCount})</h3>
+              </div>
+              {result.met.map((item, idx) => <GapItem key={idx} item={item} status="met" />)}
+            </div>
+          )}
+
+          {/* Weak coverage */}
+          {result.weak?.length > 0 && (
+            <div style={S.card}>
+              <div style={{ ...S.sectionHead("#92400E", "#FEF3C7"), marginBottom: "12px" }}>
+                <h3 style={{ ...S.sectionTitle("#92400E"), fontSize: "13px" }}>⚠️ Weak / Partial Coverage ({weakCount})</h3>
+              </div>
+              {result.weak.map((item, idx) => <GapItem key={idx} item={item} status="weak" />)}
+            </div>
+          )}
+
+          {/* Missing requirements */}
+          {result.missing?.length > 0 && (
+            <div style={S.card}>
+              <div style={{ ...S.sectionHead("#991B1B", "#FEE2E2"), marginBottom: "12px" }}>
+                <h3 style={{ ...S.sectionTitle("#991B1B"), fontSize: "13px" }}>❌ Missing Requirements ({missingCount})</h3>
+              </div>
+              {result.missing.map((item, idx) => <GapItem key={idx} item={item} status="missing" />)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function CoPGuidelineBuilder() {
@@ -801,12 +1173,14 @@ export default function CoPGuidelineBuilder() {
           <Tab label="📋 Compliance Guidelines" active={tab === "guidelines"} onClick={() => setTab("guidelines")} />
           <Tab label="📄 Policy Templates" active={tab === "policy"} onClick={() => setTab("policy")} />
           <Tab label="🔍 Inspection Readiness" active={tab === "inspection"} onClick={() => setTab("inspection")} />
+          <Tab label="🩺 Policy Gap Scanner" active={tab === "gap"} onClick={() => setTab("gap")} />
         </div>
 
         {/* Tab content */}
         {tab === "guidelines" && <GuidelinesTab institution={institution} />}
         {tab === "policy"     && <PolicyTab     institution={institution} />}
         {tab === "inspection" && <InspectionTab institution={institution} />}
+        {tab === "gap"        && <GapScannerTab institution={institution} />}
       </div>
     </div>
   );
