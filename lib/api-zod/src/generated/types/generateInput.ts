@@ -22,4 +22,11 @@ export interface GenerateInput {
      * @maximum 8192
      */
   maxTokens: number;
+  /**
+   * Optional institution key (e.g. "hospital"). When provided the server
+   * pre-fetches the live eCFR regulatory text and injects it into the
+   * system prompt.
+   * @maxLength 50
+   */
+  institutionValue?: string;
 }

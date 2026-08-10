@@ -32,7 +32,9 @@ export const generateWithAnthropicBodyMaxTokensMax = 8192;
 export const GenerateWithAnthropicBody = zod.object({
   "systemPrompt": zod.string().min(1).max(generateWithAnthropicBodySystemPromptMax),
   "userContent": zod.string().min(1).max(generateWithAnthropicBodyUserContentMax),
-  "maxTokens": zod.number().min(1).max(generateWithAnthropicBodyMaxTokensMax)
+  "maxTokens": zod.number().min(1).max(generateWithAnthropicBodyMaxTokensMax),
+  /** Optional: institution key (e.g. "hospital") triggers live eCFR data fetch */
+  "institutionValue": zod.string().optional(),
 })
 
 export const GenerateWithAnthropicResponse = zod.object({

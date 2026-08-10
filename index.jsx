@@ -113,6 +113,36 @@ async function callApi(systemPrompt, userContent, maxTokens) {
   throw new Error("Request timed out — please try again");
 }
 
+/** Like callApi but passes institutionValue so the server can pre-fetch live eCFR text.
+ *  Returns { text, dataSource } where dataSource is { kind: "ecfr", fetchDate } or { kind: "ai" }. */
+async function callApiWithSource(systemPrompt, userContent, maxTokens, institutionValue) {
+  const startRes = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ systemPrompt, userContent, maxTokens, institutionValue }),
+  });
+  if (!startRes.ok) {
+    const err = await startRes.json().catch(() => ({}));
+    throw new Error(err.error || `Server error (${startRes.status})`);
+  }
+  const { jobId } = await startRes.json();
+  if (!jobId) throw new Error("Server did not return a job ID");
+
+  for (let i = 0; i < 90; i++) {
+    await sleep(2000);
+    const poll = await fetch(`/api/generate/result?jobId=${jobId}`);
+    const job = await poll.json();
+    if (job.status === "error") throw new Error(job.error);
+    if (job.status === "done") {
+      return {
+        text: job.content?.[0]?.text ?? "",
+        dataSource: job.dataSource ?? { kind: "ai" },
+      };
+    }
+  }
+  throw new Error("Request timed out — please try again");
+}
+
 // ─── Excel helpers ────────────────────────────────────────────────────────────
 
 function downloadXlsx(sheets, filename) {
@@ -378,12 +408,13 @@ function GuidelinesTab({ institution }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
 
   async function generate() {
     const topicFinal = customTopic.trim() || topic;
-    setLoading(true); setError(null); setResult(null);
+    setLoading(true); setError(null); setResult(null); setDataSource(null);
 
     const systemPrompt = `You are a healthcare regulatory compliance expert with deep knowledge of CMS Conditions of Participation, Joint Commission, DNV NIAHO, and ISO 9001:2015.
 
@@ -449,8 +480,9 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
     const userContent = `Institution: ${inst.label} (${inst.cfr})\nCompliance Topic: ${topicFinal}`;
 
     try {
-      const raw = await callApi(systemPrompt, userContent, 3000);
-      setResult(repairJson(raw));
+      const { text, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 3000, institution);
+      setResult(repairJson(text));
+      setDataSource(ds);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -504,7 +536,7 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
       </div>
 
       {/* Loading */}
-      {loading && <div style={S.card}><LoadingSpinner message="Compiling standards from CMS, Joint Commission, DNV, and ISO 9001…" /></div>}
+      {loading && <div style={S.card}><LoadingSpinner message="Fetching live regulatory data and compiling standards…" /></div>}
 
       {/* Results */}
       {result && !loading && (
@@ -517,6 +549,18 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
                   {inst.label} · {topicFinal}
                 </div>
                 <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{inst.cfr}</div>
+                {/* Data source badge */}
+                <div style={{ marginTop: "6px" }}>
+                  {dataSource?.kind === "ecfr" ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#ECFDF5", color: "#065F46", border: "1px solid #6EE7B7" }}>
+                      📡 Live eCFR · {dataSource.fetchDate}
+                    </span>
+                  ) : (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#F1F5F9", color: "#475569", border: "1px solid #CBD5E1" }}>
+                      🤖 AI Knowledge
+                    </span>
+                  )}
+                </div>
               </div>
               <div style={{ display: "flex", gap: "8px" }}>
                 <CopyButton text={buildCopyText()} />
@@ -529,15 +573,24 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
           {/* Standards by body */}
           {result.sources?.map((src) => {
             const bodyConfig = BODIES.find((b) => b.key === src.key) || BODIES[0];
+            // CMS uses live eCFR when available; JC/DNV/ISO always use AI knowledge (copyrighted)
+            const srcBadge = (src.key === "cms" && dataSource?.kind === "ecfr")
+              ? { label: `📡 Live eCFR · ${dataSource.fetchDate}`, bg: "#ECFDF5", color: "#065F46", border: "#6EE7B7" }
+              : { label: "🤖 AI Knowledge", bg: "#F1F5F9", color: "#475569", border: "#CBD5E1" };
             return (
               <div key={src.key} style={S.card}>
                 <div style={S.sectionHead(bodyConfig.color, bodyConfig.bg)}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
                     <div>
                       <h3 style={{ ...S.sectionTitle(bodyConfig.color), fontSize: "14px" }}>{src.body}</h3>
                       {src.cfr && <div style={{ fontSize: "11px", color: bodyConfig.color, opacity: 0.75, marginTop: "2px" }}>{src.cfr}</div>}
                     </div>
-                    <span style={S.tag(bodyConfig.color, bodyConfig.bg)}>{src.standards?.length || 0} standards</span>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <span style={{ padding: "2px 7px", borderRadius: "4px", fontSize: "10.5px", fontWeight: 700, background: srcBadge.bg, color: srcBadge.color, border: `1px solid ${srcBadge.border}` }}>
+                        {srcBadge.label}
+                      </span>
+                      <span style={S.tag(bodyConfig.color, bodyConfig.bg)}>{src.standards?.length || 0} standards</span>
+                    </div>
                   </div>
                 </div>
 
