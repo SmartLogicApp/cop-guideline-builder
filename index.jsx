@@ -1,4 +1,5 @@
 import { useState } from "react";
+import * as XLSX from "xlsx";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -112,6 +113,93 @@ async function callApi(systemPrompt, userContent, maxTokens) {
   throw new Error("Request timed out — please try again");
 }
 
+// ─── Excel helpers ────────────────────────────────────────────────────────────
+
+function downloadXlsx(sheets, filename) {
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(({ name, rows }) => {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // Auto-width columns
+    const colWidths = Object.keys(rows[0] || {}).map((key) => ({
+      wch: Math.max(key.length, ...rows.map((r) => String(r[key] ?? "").length)) + 2,
+    }));
+    ws["!cols"] = colWidths;
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  });
+  XLSX.writeFile(wb, filename);
+}
+
+function exportGuidelinesXlsx(result, inst, topic) {
+  const rows = [];
+  result.sources?.forEach((src) => {
+    src.standards?.forEach((std) => {
+      rows.push({
+        "Regulatory Body": src.body,
+        "CFR / Reference": src.cfr || "",
+        "Standard Code": std.code || "",
+        "Tag": std.tag || "",
+        "Title": std.title || "",
+        "Requirement": std.requirement || "",
+        "Surveyor Focus": std.surveyorFocus || "",
+      });
+    });
+  });
+  const overview = [{ "Overview": result.overview || "" }];
+  downloadXlsx(
+    [{ name: "Standards", rows }, { name: "Overview", rows: overview }],
+    `${inst.label.replace(/\s+/g, "_")}_${topic.replace(/\s+/g, "_")}_Guidelines.xlsx`,
+  );
+}
+
+function exportPolicyXlsx(text, inst, topic) {
+  // Split the policy text into sections by all-caps headings
+  const lines = text.split("\n");
+  const rows = lines.map((line) => ({ "Policy Content": line }));
+  downloadXlsx(
+    [{ name: "Policy Template", rows }],
+    `${inst.label.replace(/\s+/g, "_")}_${topic.replace(/\s+/g, "_")}_Policy.xlsx`,
+  );
+}
+
+function exportInspectionXlsx(items, responses, inst, dept) {
+  const rows = items.map((item) => ({
+    "#": item.id,
+    "Risk Level": item.riskLevel || "",
+    "Area": item.area || "",
+    "Surveyor Question": item.question || "",
+    "Regulatory Basis": item.regulatoryBasis || "",
+    "Common Deficiency": item.commonDeficiency || "",
+    "Recommendation": item.recommendation || "",
+    "Self-Assessment": responses[item.id] === "yes" ? "Ready" : responses[item.id] === "no" ? "Gap" : responses[item.id] === "na" ? "N/A" : "Not Assessed",
+  }));
+  downloadXlsx(
+    [{ name: "Checklist", rows }],
+    `${inst.label.replace(/\s+/g, "_")}_${dept.replace(/\s+/g, "_")}_Inspection.xlsx`,
+  );
+}
+
+// Plain-text summary of inspection checklist for clipboard
+function inspectionToText(items, responses, inst, dept) {
+  const lines = [
+    `INSPECTION READINESS CHECKLIST`,
+    `Institution: ${inst.label} (${inst.cfr})`,
+    `Department: ${dept}`,
+    `Generated: ${new Date().toLocaleDateString()}`,
+    "",
+  ];
+  items.forEach((item, i) => {
+    lines.push(`${i + 1}. [${item.riskLevel} Risk] ${item.area}`);
+    lines.push(`   Q: ${item.question}`);
+    lines.push(`   Regulatory Basis: ${item.regulatoryBasis || "—"}`);
+    lines.push(`   Common Deficiency: ${item.commonDeficiency || "—"}`);
+    lines.push(`   Recommendation: ${item.recommendation || "—"}`);
+    const resp = responses[item.id];
+    if (resp) lines.push(`   Self-Assessment: ${resp === "yes" ? "Ready" : resp === "no" ? "Gap" : "N/A"}`);
+    lines.push("");
+  });
+  return lines.join("\n");
+}
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const S = {
@@ -129,6 +217,7 @@ const S = {
   row3: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" },
   btnPrimary: (loading) => ({ width: "100%", padding: "12px", background: loading ? "#64748B" : "#0D5C6B", color: "#fff", border: "none", borderRadius: "7px", fontSize: "14px", fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", marginTop: "4px" }),
   btnSm: { padding: "6px 12px", fontSize: "12px", fontWeight: 600, border: "1px solid #CBD5E1", borderRadius: "5px", background: "#fff", cursor: "pointer", color: "#475569" },
+  btnSmGreen: { padding: "6px 12px", fontSize: "12px", fontWeight: 600, border: "1px solid #A7F3D0", borderRadius: "5px", background: "#ECFDF5", cursor: "pointer", color: "#065F46" },
   error: { color: "#DC2626", fontSize: "13px", marginTop: "10px", padding: "10px 12px", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "6px" },
   tabs: { display: "flex", gap: "4px", marginBottom: "20px" },
   tag: (color, bg) => ({ display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, color, background: bg }),
@@ -168,14 +257,23 @@ function LoadingSpinner({ message }) {
   );
 }
 
-function CopyButton({ text }) {
+function CopyButton({ text, label = "Copy" }) {
   const [copied, setCopied] = useState(false);
   return (
-    <button style={{ ...S.btnSm, color: copied ? "#065F46" : "#475569" }} onClick={() => {
-      navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }}>{copied ? "✓ Copied" : "Copy"}</button>
+    <button style={{ ...S.btnSm, color: copied ? "#065F46" : "#475569", borderColor: copied ? "#A7F3D0" : "#CBD5E1", background: copied ? "#ECFDF5" : "#fff" }}
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}>
+      {copied ? "✓ Copied" : label}
+    </button>
+  );
+}
+
+function ExcelButton({ onClick, label = "↓ Excel" }) {
+  return (
+    <button style={S.btnSmGreen} onClick={onClick}>{label}</button>
   );
 }
 
@@ -267,6 +365,29 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
     }
   }
 
+  const topicFinal = customTopic.trim() || topic;
+
+  // Build plain-text copy string
+  function buildCopyText() {
+    const lines = [
+      `COMPLIANCE GUIDELINES — ${inst.label} (${inst.cfr})`,
+      `Topic: ${topicFinal}`,
+      "",
+      result.overview,
+      "",
+    ];
+    result.sources?.forEach((src) => {
+      lines.push(`── ${src.body} ${src.cfr ? `(${src.cfr})` : ""} ──`);
+      src.standards?.forEach((std) => {
+        lines.push(`  ${std.code}${std.tag ? ` [${std.tag}]` : ""} — ${std.title}`);
+        lines.push(`  Requirement: ${std.requirement}`);
+        if (std.surveyorFocus) lines.push(`  Surveyor Focus: ${std.surveyorFocus}`);
+        lines.push("");
+      });
+    });
+    return lines.join("\n");
+  }
+
   return (
     <div>
       {/* Form */}
@@ -295,16 +416,19 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
       {/* Results */}
       {result && !loading && (
         <div>
-          {/* Overview */}
+          {/* Overview + action buttons */}
           <div style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
               <div>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  {inst.label} · {customTopic.trim() || topic}
+                  {inst.label} · {topicFinal}
                 </div>
                 <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{inst.cfr}</div>
               </div>
-              <CopyButton text={JSON.stringify(result, null, 2)} />
+              <div style={{ display: "flex", gap: "8px" }}>
+                <CopyButton text={buildCopyText()} />
+                <ExcelButton onClick={() => exportGuidelinesXlsx(result, inst, topicFinal)} />
+              </div>
             </div>
             <p style={{ margin: 0, fontSize: "14px", color: "#334155", lineHeight: 1.6 }}>{result.overview}</p>
           </div>
@@ -416,8 +540,9 @@ Output as plain text only (no JSON, no markdown headers with #).`;
     }
   }
 
-  function download() {
-    const topicFinal = customTopic.trim() || topic;
+  const topicFinal = customTopic.trim() || topic;
+
+  function downloadTxt() {
     const blob = new Blob([result], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -455,11 +580,12 @@ Output as plain text only (no JSON, no markdown headers with #).`;
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
             <div>
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#0D5C6B" }}>Policy Template</div>
-              <div style={{ fontSize: "11px", color: "#64748B" }}>{inst.label} · {customTopic.trim() || topic}</div>
+              <div style={{ fontSize: "11px", color: "#64748B" }}>{inst.label} · {topicFinal}</div>
             </div>
             <div style={{ display: "flex", gap: "8px" }}>
               <CopyButton text={result} />
-              <button style={S.btnSm} onClick={download}>↓ Download</button>
+              <button style={S.btnSm} onClick={downloadTxt}>↓ .txt</button>
+              <ExcelButton onClick={() => exportPolicyXlsx(result, inst, topicFinal)} />
             </div>
           </div>
           <hr style={S.divider} />
@@ -559,20 +685,31 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
       {sorted.length > 0 && !loading && (
         <div>
           {/* Score bar */}
-          {Object.keys(responses).length > 0 && (
-            <div style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>Readiness Score</span>
-                <span style={{ fontSize: "20px", fontWeight: 700, color: score >= 80 ? "#065F46" : score >= 60 ? "#92400E" : "#991B1B" }}>{score}%</span>
+          <div style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: Object.keys(responses).length > 0 ? "8px" : 0 }}>
+              <div>
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>Inspection Readiness Checklist</span>
+                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{inst.label} · {dept}</div>
               </div>
-              <div style={{ background: "#E2E8F0", borderRadius: "4px", height: "8px" }}>
-                <div style={{ background: score >= 80 ? "#10B981" : score >= 60 ? "#F59E0B" : "#EF4444", borderRadius: "4px", height: "8px", width: `${score}%`, transition: "width 0.4s" }} />
-              </div>
-              <div style={{ fontSize: "11px", color: "#64748B", marginTop: "6px" }}>
-                {Object.values(responses).filter((v) => v === "yes").length} of {sorted.length} items ready
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                {Object.keys(responses).length > 0 && (
+                  <span style={{ fontSize: "20px", fontWeight: 700, color: score >= 80 ? "#065F46" : score >= 60 ? "#92400E" : "#991B1B" }}>{score}%</span>
+                )}
+                <CopyButton text={inspectionToText(sorted, responses, inst, dept)} label="Copy" />
+                <ExcelButton onClick={() => exportInspectionXlsx(sorted, responses, inst, dept)} />
               </div>
             </div>
-          )}
+            {Object.keys(responses).length > 0 && (
+              <>
+                <div style={{ background: "#E2E8F0", borderRadius: "4px", height: "8px" }}>
+                  <div style={{ background: score >= 80 ? "#10B981" : score >= 60 ? "#F59E0B" : "#EF4444", borderRadius: "4px", height: "8px", width: `${score}%`, transition: "width 0.4s" }} />
+                </div>
+                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "6px" }}>
+                  {Object.values(responses).filter((v) => v === "yes").length} of {sorted.length} items ready
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Checklist items */}
           {sorted.map((item) => (
