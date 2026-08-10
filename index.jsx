@@ -702,12 +702,13 @@ function PolicyTab({ institution }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
 
   async function generate() {
     const topicFinal = customTopic.trim() || topic;
-    setLoading(true); setError(null); setResult(null);
+    setLoading(true); setError(null); setResult(null); setDataSource(null);
 
     const systemPrompt = `You are a healthcare compliance policy expert. Generate a complete, professional policy template that a ${inst.label} can immediately adopt and customize.
 
@@ -749,8 +750,9 @@ Output as plain text only (no JSON, no markdown headers with #).`;
     const userContent = `Institution: ${inst.label} (${inst.cfr})\nPolicy Topic: ${topicFinal}`;
 
     try {
-      const text = await callApi(systemPrompt, userContent, 4000);
+      const { text, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 4000, institution);
       setResult(text.replace(/```[\w]*\n?|```/g, "").trim());
+      setDataSource(ds);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -795,10 +797,22 @@ Output as plain text only (no JSON, no markdown headers with #).`;
 
       {result && !loading && (
         <div style={S.card}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
             <div>
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#0D5C6B" }}>Policy Template</div>
               <div style={{ fontSize: "11px", color: "#64748B" }}>{inst.label} · {topicFinal}</div>
+              {/* Data source badge */}
+              <div style={{ marginTop: "6px" }}>
+                {dataSource?.kind === "ecfr" ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#ECFDF5", color: "#065F46", border: "1px solid #6EE7B7" }}>
+                    📡 Live eCFR · {dataSource.fetchDate}
+                  </span>
+                ) : (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#F1F5F9", color: "#475569", border: "1px solid #CBD5E1" }}>
+                    🤖 AI Knowledge
+                  </span>
+                )}
+              </div>
             </div>
             <div style={{ display: "flex", gap: "8px" }}>
               <CopyButton text={result} />
@@ -823,12 +837,13 @@ function InspectionTab({ institution }) {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [responses, setResponses] = useState({});
+  const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
   const selectedBodies = Object.entries(govBodies).filter(([, v]) => v).map(([k]) => k.toUpperCase());
 
   async function generate() {
-    setLoading(true); setError(null); setResult(null); setResponses({});
+    setLoading(true); setError(null); setResult(null); setResponses({}); setDataSource(null);
 
     const systemPrompt = `You are a healthcare inspection readiness expert. Generate a practical inspection readiness checklist.
 
@@ -853,9 +868,12 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
     const userContent = `Institution: ${inst.label} (${inst.cfr})\nDepartment: ${dept}\nGoverning Bodies: ${bodies}`;
 
     try {
-      const raw = await callApi(systemPrompt, userContent, 3000);
+      // Pass institutionValue only when CMS is selected so the server injects live eCFR text
+      const instValue = govBodies.cms ? institution : undefined;
+      const { text: raw, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 3000, instValue);
       const data = repairJson(raw);
       setResult(data.items || data);
+      setDataSource(ds);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -908,6 +926,18 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
               <div>
                 <span style={{ fontSize: "13px", fontWeight: 600 }}>Inspection Readiness Checklist</span>
                 <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{inst.label} · {dept}</div>
+                {/* Data source badge */}
+                <div style={{ marginTop: "6px" }}>
+                  {dataSource?.kind === "ecfr" ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#ECFDF5", color: "#065F46", border: "1px solid #6EE7B7" }}>
+                      📡 Live eCFR · {dataSource.fetchDate}
+                    </span>
+                  ) : (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#F1F5F9", color: "#475569", border: "1px solid #CBD5E1" }}>
+                      🤖 AI Knowledge
+                    </span>
+                  )}
+                </div>
               </div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 {Object.keys(responses).length > 0 && (
