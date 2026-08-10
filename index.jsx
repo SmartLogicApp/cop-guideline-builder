@@ -1,275 +1,325 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 
 const INSTITUTION_TYPES = [
   { value: "hospital", label: "Hospital", cfr: "42 CFR 482" },
-  {
-    value: "cah",
-    label: "Critical Access Hospital",
-    cfr: "42 CFR 485 Subpart F",
-  },
-  {
-    value: "snf",
-    label: "Skilled Nursing Facility",
-    cfr: "42 CFR 483 Subpart B",
-  },
-  { value: "hha", label: "Home Health Agency", cfr: "42 CFR 484" },
+  { value: "cah", label: "Critical Access Hospital", cfr: "42 CFR 485" },
+  { value: "snf", label: "Skilled Nursing Facility", cfr: "42 CFR 483" },
+  { value: "hh", label: "Home Health Agency", cfr: "42 CFR 484" },
   { value: "hospice", label: "Hospice", cfr: "42 CFR 418" },
-  { value: "asc", label: "Ambulatory Surgical Center", cfr: "42 CFR 416" },
+  { value: "asc", label: "Ambulatory Surgery Center", cfr: "42 CFR 416" },
   { value: "esrd", label: "ESRD Facility", cfr: "42 CFR 494" },
-  { value: "opt", label: "Rural Health Clinic", cfr: "42 CFR 491" },
+  { value: "rhc", label: "Rural Health Clinic/FQHC", cfr: "42 CFR 491" },
 ];
 
 const TOPIC_PRESETS = [
-  "Infection Control & Prevention",
-  "Quality Assessment & Performance Improvement",
-  "Nursing Services",
-  "Patient Rights",
-  "Medical Records",
-  "Emergency Preparedness",
+  "Handwashing & Hand Hygiene",
+  "Patient Safety & Fall Prevention",
+  "Infection Control",
+  "Staff Competency & Training",
+  "Medical Records & Documentation",
   "Medication Management",
-  "Discharge Planning",
+  "Quality Assurance",
+  "Governing Body Oversight",
 ];
 
-const DEPARTMENTS_BY_INSTITUTION = {
-  hospital: [
-    "Nursing Services",
-    "Emergency Department",
-    "Intensive Care Unit (ICU)",
-    "Psychiatric/Behavioral Health",
-    "Surgery / Operating Room",
-    "Medical Records / HIM",
-    "Quality & Performance Improvement",
-    "Infection Prevention & Control",
-    "Laboratory",
-    "Imaging / Radiology",
-    "Interventional Radiology (IVR)",
-    "Oncology",
-    "Pharmacy",
-    "Medical Staff Office",
-    "Respiratory / Pulmonary",
-    "Rehabilitation Services",
-    "Nutrition / Dietary",
-    "Administration & Governance",
-  ],
-  cah: [
-    "Nursing Services",
-    "Emergency Department",
-    "Medical Records / HIM",
-    "Quality & Performance Improvement",
-    "Infection Prevention & Control",
-    "Laboratory",
-    "Imaging",
-    "Medical Staff Office",
-    "Administration & Governance",
-  ],
-  snf: [
-    "Nursing Services",
-    "Medical Records / HIM",
-    "Quality & Performance Improvement",
-    "Infection Prevention & Control",
-    "Dietary Services",
-    "Rehabilitation Services",
-    "Medical Staff Office",
-    "Administration & Governance",
-  ],
-  hha: [
-    "Nursing Services",
-    "Therapy Services",
-    "Medical Records / HIM",
-    "Infection Prevention & Control",
-    "Quality & Performance Improvement",
-    "Administration & Governance",
-  ],
-  hospice: [
-    "Nursing Services",
-    "Medical Records / HIM",
-    "Social Services",
-    "Spiritual Care",
-    "Quality & Performance Improvement",
-    "Administration & Governance",
-  ],
-  asc: [
-    "Nursing Services",
-    "Surgical Services / OR",
-    "Medical Records / HIM",
-    "Anesthesia",
-    "Quality & Performance Improvement",
-    "Infection Prevention & Control",
-    "Administration & Governance",
-  ],
-  esrd: [
-    "Nursing Services",
-    "Dialysis Operations",
-    "Vascular Access Management",
-    "Medical Records / HIM",
-    "Quality & Performance Improvement",
-    "Infection Prevention & Control",
-    "Administration & Governance",
-  ],
-  opt: [
-    "Clinical Services",
-    "Medical Records / HIM",
-    "Quality & Performance Improvement",
-    "Administration & Governance",
-  ],
-};
-
-async function callModelForJson(systemPrompt, userContent, maxTokens) {
-  // POST starts the job and returns immediately (< 100 ms).
-  // No long-lived connection is held open, so proxy timeouts can't interfere.
-  // No Content-Type header: the browser defaults to text/plain for string
-  // bodies, making this a CORS "simple request" — no preflight is sent, so
-  // Cloudflare/Replit's outer proxy can't block it.
-  const startRes = await fetch("/api/generate", {
-    method: "POST",
-    body: JSON.stringify({ systemPrompt, userContent, maxTokens }),
-  });
-
-  if (!startRes.ok) {
-    const data = await startRes.json();
-    throw new Error(data.error?.message || `HTTP ${startRes.status}`);
-  }
-
-  const { jobId } = await startRes.json();
-  if (!jobId) throw new Error("Server did not return a job ID");
-
-  // Poll every 2 seconds until done (max 2 minutes).
-  for (let i = 0; i < 60; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-
-    const pollRes = await fetch(`/api/generate/result?jobId=${jobId}`);
-    if (!pollRes.ok) throw new Error("Polling failed");
-
-    const job = await pollRes.json();
-    if (job.status === "error") throw new Error(job.error);
-    if (job.status === "done") {
-      const textBlock = job.content?.find((c) => c.type === "text");
-      if (!textBlock) throw new Error("No text in response");
-      const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
-      try {
-        return JSON.parse(cleaned);
-      } catch {
-        throw new Error("Generated text wasn't valid JSON");
-      }
-    }
-    // status === "pending" → keep polling
-  }
-
-  throw new Error("Generation timed out after 2 minutes");
-}
+const DEPARTMENTS = [
+  "Nursing Services",
+  "Quality & Compliance",
+  "Infection Prevention",
+  "Medical Records",
+  "Pharmacy",
+  "Laboratory",
+  "Radiology",
+  "Surgery",
+  "Emergency Department",
+  "ICU",
+  "Maternal/Child Health",
+  "Rehabilitation Services",
+  "Food & Nutrition",
+  "Environmental Services",
+  "Maintenance",
+  "Administration",
+  "Human Resources",
+  "Finance",
+];
 
 export default function CoPGuidelineBuilder() {
   const [activeTab, setActiveTab] = useState("guidelines");
-  const [institutionType, setInstitutionType] = useState("hospital");
-  const [topic, setTopic] = useState(TOPIC_PRESETS[0]);
-  const [customTopic, setCustomTopic] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [result, setResult] = useState(null);
-  const [inspectionInstitution, setInspectionInstitution] =
-    useState("hospital");
-  const [inspectionDepartment, setInspectionDepartment] =
-    useState("Nursing Services");
-  const [inspectionCustomDepartment, setInspectionCustomDepartment] =
-    useState("");
-  const [inspectionAdditionalBody, setInspectionAdditionalBody] =
-    useState("none");
+
+  // Guidelines state
+  const [guidelineInst, setGuidelineInst] = useState("hospital");
+  const [guidelineTopic, setGuidelineTopic] = useState(TOPIC_PRESETS[0]);
+  const [guidelineCustomTopic, setGuidelineCustomTopic] = useState("");
+  const [guidelineLoading, setGuidelineLoading] = useState(false);
+  const [guidelineError, setGuidelineError] = useState(null);
+  const [guidelineResult, setGuidelineResult] = useState(null);
+  const [guidelineJobId, setGuidelineJobId] = useState(null);
+
+  // Inspection state
+  const [inspectionInst, setInspectionInst] = useState("hospital");
+  const [inspectionDept, setInspectionDept] = useState(DEPARTMENTS[0]);
+  const [inspectionGovBodies, setInspectionGovBodies] = useState(["cms"]);
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [inspectionError, setInspectionError] = useState(null);
-  const [inspectionSurvey, setInspectionSurvey] = useState(null);
-  const [surveyResponses, setSurveyResponses] = useState({});
+  const [inspectionResult, setInspectionResult] = useState(null);
+  const [inspectionJobId, setInspectionJobId] = useState(null);
+
+  // Policy state
+  const [policyInst, setPolicyInst] = useState("hospital");
+  const [policyTopic, setPolicyTopic] = useState(TOPIC_PRESETS[0]);
+  const [policyCustomTopic, setPolicyCustomTopic] = useState("");
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [policyError, setPolicyError] = useState(null);
+  const [policyResult, setPolicyResult] = useState(null);
+  const [policyJobId, setPolicyJobId] = useState(null);
+
+  // Poll for job results
+  useEffect(() => {
+    if (!guidelineJobId) return;
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/generate/result?jobId=${guidelineJobId}`);
+        const job = await res.json();
+        if (job.status === "done") {
+          const text = job.content[0].text;
+          const cleaned = text.replace(/```json|```/g, "").trim();
+          setGuidelineResult(JSON.parse(cleaned));
+          setGuidelineLoading(false);
+          setGuidelineJobId(null);
+          clearInterval(poll);
+        } else if (job.status === "error") {
+          setGuidelineError(job.error);
+          setGuidelineLoading(false);
+          setGuidelineJobId(null);
+          clearInterval(poll);
+        }
+      } catch (e) {
+        setGuidelineError(e.message);
+        setGuidelineLoading(false);
+        setGuidelineJobId(null);
+        clearInterval(poll);
+      }
+    }, 1000);
+    return () => clearInterval(poll);
+  }, [guidelineJobId]);
+
+  useEffect(() => {
+    if (!inspectionJobId) return;
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/generate/result?jobId=${inspectionJobId}`,
+        );
+        const job = await res.json();
+        if (job.status === "done") {
+          const text = job.content[0].text;
+          const cleaned = text.replace(/```json|```/g, "").trim();
+          setInspectionResult(JSON.parse(cleaned));
+          setInspectionLoading(false);
+          setInspectionJobId(null);
+          clearInterval(poll);
+        } else if (job.status === "error") {
+          setInspectionError(job.error);
+          setInspectionLoading(false);
+          setInspectionJobId(null);
+          clearInterval(poll);
+        }
+      } catch (e) {
+        setInspectionError(e.message);
+        setInspectionLoading(false);
+        setInspectionJobId(null);
+        clearInterval(poll);
+      }
+    }, 1000);
+    return () => clearInterval(poll);
+  }, [inspectionJobId]);
+
+  useEffect(() => {
+    if (!policyJobId) return;
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/generate/result?jobId=${policyJobId}`);
+        const job = await res.json();
+        if (job.status === "done") {
+          const text = job.content[0].text;
+          setPolicyResult(text);
+          setPolicyLoading(false);
+          setPolicyJobId(null);
+          clearInterval(poll);
+        } else if (job.status === "error") {
+          setPolicyError(job.error);
+          setPolicyLoading(false);
+          setPolicyJobId(null);
+          clearInterval(poll);
+        }
+      } catch (e) {
+        setPolicyError(e.message);
+        setPolicyLoading(false);
+        setPolicyJobId(null);
+        clearInterval(poll);
+      }
+    }, 1000);
+    return () => clearInterval(poll);
+  }, [policyJobId]);
 
   async function generateGuideline() {
-    const inst = INSTITUTION_TYPES.find((i) => i.value === institutionType);
-    const topicFinal = customTopic.trim() || topic;
-    setLoading(true);
-    setError(null);
-    setResult(null);
+    const inst = INSTITUTION_TYPES.find((i) => i.value === guidelineInst);
+    const topicFinal = guidelineCustomTopic.trim() || guidelineTopic;
+    setGuidelineLoading(true);
+    setGuidelineError(null);
+    setGuidelineResult(null);
 
-    try {
-      const systemPrompt = `You are a CMS compliance expert. Generate a structured CoP guideline breakdown.
+    const systemPrompt = `You are a healthcare compliance expert specializing in CMS Conditions of Participation, Joint Commission standards, DNV NIAHO, and ISO 9001:2015.
 
-Output ONLY valid JSON, no preamble. Schema:
-{
-  "citationBase": "42 CFR 482",
-  "topicSummary": "1-2 sentences",
-  "conditions": [{
-    "code": "§482.23",
-    "title": "string",
-    "summary": "1-2 sentences",
-    "standards": [{
-      "code": "§482.23(b)",
-      "title": "string",
-      "requirement": "1 sentence",
-      "guideline": "1-2 sentences"
-    }]
-  }],
-  "verificationNote": "brief note"
-}
-
-Include exactly 2 conditions with exactly 2 standards each. Be concise.`;
-
-      const userContent = `Institution: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}`;
-
-      const data = await callModelForJson(systemPrompt, userContent, 1200);
-      setResult(data);
-    } catch (e) {
-      setError(`Failed: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function generateInspectionSurvey() {
-    const inst = INSTITUTION_TYPES.find(
-      (i) => i.value === inspectionInstitution,
-    );
-    const deptFinal = inspectionCustomDepartment.trim() || inspectionDepartment;
-    setInspectionLoading(true);
-    setInspectionError(null);
-    setSurveyResponses({});
-
-    try {
-      const bodies = ["CMS"];
-      if (inspectionAdditionalBody !== "none") {
-        bodies.push(inspectionAdditionalBody === "tjc" ? "TJC" : "DNV NIAHO");
-      }
-
-      const systemPrompt = `Generate an inspection readiness survey for a healthcare facility.
+Generate a comprehensive guideline covering the topic with:
+1. 15-20+ standards from multiple sources
+2. Each standard must cite: CMS CFR section, Joint Commission standard code, DNV NIAHO standard, and ISO 9001 clause
+3. For each standard: requirement and practical implementation guideline
+4. Include surveyor expectations and deficiency risks
+5. Reference exact regulatory text and current industry best practices
 
 Output ONLY valid JSON:
 {
-  "surveyItems": [{
-    "id": "item-1",
-    "copCode": "§482.23",
-    "question": "specific question",
-    "riskLevel": "High|Medium|Low",
-    "commonDeficiencies": ["issue1"],
-    "recommendedActions": ["action1"]
-  }]
+  "standards": [
+    {
+      "number": "482.42(a)",
+      "title": "Standard Title",
+      "sources": ["CMS §482.42(a)", "JC IC.01.01.01", "DNV NIAHO 4.1.2", "ISO 9001:2015 8.5"],
+      "requirement": "...",
+      "practicalGuideline": "...",
+      "surveyorExpectations": "...",
+      "commonDeficiencies": ["..."]
+    }
+  ]
+}`;
+
+    const userContent = `Institution: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}\n\nGenerate comprehensive, detailed guidelines covering all applicable CMS, Joint Commission, DNV, and ISO standards for this topic.`;
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemPrompt,
+          userContent,
+          maxTokens: 7000,
+        }),
+      });
+      const { jobId } = await res.json();
+      setGuidelineJobId(jobId);
+    } catch (e) {
+      setGuidelineError(`Failed: ${e.message}`);
+      setGuidelineLoading(false);
+    }
+  }
+
+  async function generateInspection() {
+    const inst = INSTITUTION_TYPES.find((i) => i.value === inspectionInst);
+    const deptFinal = inspectionDept;
+    const bodies = inspectionGovBodies.map((b) => {
+      if (b === "cms") return "CMS";
+      if (b === "tjc") return "Joint Commission";
+      if (b === "dnv") return "DNV NIAHO";
+      return b;
+    });
+
+    setInspectionLoading(true);
+    setInspectionError(null);
+    setInspectionResult(null);
+
+    const systemPrompt = `You are a healthcare inspection compliance expert. Generate an inspection readiness survey.
+
+Output ONLY valid JSON:
+{
+  "surveyItems": [
+    {
+      "id": "item-1",
+      "question": "specific question",
+      "riskLevel": "High|Medium|Low",
+      "governingBody": "CMS|JC|DNV",
+      "standard": "exact standard reference",
+      "commonDeficiencies": ["issue1"],
+      "readinessChecklist": ["check1"]
+    }
+  ]
 }
 
-Generate exactly 8 items. Keep each field to one short phrase or sentence. Be concise.`;
+Generate 15-20 items distributed across ALL selected governing bodies.`;
 
-      const userContent = `Institution: ${inst.label}\nDepartment: ${deptFinal}\nGoverning Bodies: ${bodies.join(", ")}`;
+    const userContent = `Institution: ${inst.label}\nDepartment: ${deptFinal}\nGoverning Bodies: ${bodies.join(", ")}\n\nGenerate inspection readiness items covering EACH governing body with clear attribution.`;
 
-      const survey = await callModelForJson(systemPrompt, userContent, 1400);
-
-      if (!survey.surveyItems || !Array.isArray(survey.surveyItems)) {
-        throw new Error("Invalid survey structure");
-      }
-
-      setInspectionSurvey({
-        institution: inst.label,
-        department: deptFinal,
-        governingBodies: bodies,
-        items: survey.surveyItems,
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemPrompt,
+          userContent,
+          maxTokens: 5000,
+        }),
       });
+      const { jobId } = await res.json();
+      setInspectionJobId(jobId);
     } catch (e) {
       setInspectionError(`Failed: ${e.message}`);
-    } finally {
       setInspectionLoading(false);
     }
+  }
+
+  async function generatePolicy() {
+    const inst = INSTITUTION_TYPES.find((i) => i.value === policyInst);
+    const topicFinal = policyCustomTopic.trim() || policyTopic;
+    setPolicyLoading(true);
+    setPolicyError(null);
+    setPolicyResult(null);
+
+    const systemPrompt = `You are a healthcare compliance policy expert. Generate a professional, comprehensive policy template that institutions can immediately adopt and customize.
+
+The policy must include:
+1. Header with [INSTITUTION NAME] and [DATE] placeholders
+2. Purpose section citing CMS §482, Joint Commission, DNV NIAHO, ISO 9001:2015
+3. Scope with [SPECIFY DEPARTMENTS/ROLES] placeholders
+4. Detailed policy requirements with [INSTITUTION-SPECIFIC] sections for customization
+5. Compliance monitoring and audit procedures
+6. Reference to exact regulatory standards with CFR citations
+7. Roles and responsibilities with [TITLE] placeholders
+8. Documentation and record-keeping requirements
+
+Format as a professional, ready-to-use policy document. Use [BRACKETED PLACEHOLDERS IN CAPS] where the institution must enter their own information.`;
+
+    const userContent = `Institution Type: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}\n\nGenerate a complete, professional policy template that this institution can adopt, customize, and implement immediately.`;
+
+    try {
+      const res = await fetch("/api/generate-policy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemPrompt,
+          userContent,
+          maxTokens: 6000,
+        }),
+      });
+      const { jobId } = await res.json();
+      setPolicyJobId(jobId);
+    } catch (e) {
+      setPolicyError(`Failed: ${e.message}`);
+      setPolicyLoading(false);
+    }
+  }
+
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text);
+    alert("Copied to clipboard!");
+  }
+
+  function downloadAsText(text, filename) {
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -277,76 +327,101 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
       style={{
         minHeight: "100vh",
         background: "#F7F6F2",
-        color: "#1C2B33",
-        fontFamily: "-apple-system, sans-serif",
+        padding: "20px",
+        fontFamily: "system-ui, -apple-system, sans-serif",
       }}
     >
-      <header
+      {/* Disclaimer Banner */}
+      <div
         style={{
-          borderBottom: "1px solid #D9D5C7",
-          padding: "28px 32px",
-          background: "#F7F6F2",
+          background: "#FDB913",
+          border: "1px solid #F59E0B",
+          borderRadius: "6px",
+          padding: "12px 16px",
+          marginBottom: "20px",
+          color: "#78350F",
+          fontSize: "12px",
+          lineHeight: 1.5,
         }}
       >
-        <div style={{ maxWidth: "1180px", margin: "0 auto" }}>
-          <div
+        ⚠️ <strong>AI-Generated Content Disclaimer:</strong> This tool generates
+        compliance guidance based on AI analysis. It is NOT legal advice. All
+        output must be reviewed and approved by qualified healthcare compliance
+        counsel and legal advisors before implementation.
+      </div>
+
+      <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
+        <h1 style={{ fontSize: "24px", fontWeight: 700, marginBottom: "8px" }}>
+          CMS CoP Guideline Builder & Inspection Readiness
+        </h1>
+        <p style={{ fontSize: "14px", color: "#5C6B72", marginBottom: "20px" }}>
+          Generate compliance guidelines, inspection checklists, and policy
+          templates
+        </p>
+
+        {/* Tabs */}
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            marginBottom: "20px",
+            borderBottom: "2px solid #D9D5C7",
+          }}
+        >
+          <button
+            onClick={() => setActiveTab("guidelines")}
             style={{
-              background: "#FBE9E7",
-              border: "1px solid #D7CCC8",
-              borderRadius: "6px",
               padding: "12px 16px",
-              marginBottom: "16px",
-              fontSize: "11px",
-              lineHeight: 1.6,
-              color: "#3E2C2C",
+              fontSize: "13px",
+              fontWeight: 600,
+              background:
+                activeTab === "guidelines" ? "#2C6E6E" : "transparent",
+              color: activeTab === "guidelines" ? "#F7F6F2" : "#5C6B72",
+              border: "none",
+              borderBottom:
+                activeTab === "guidelines" ? "2px solid #2C6E6E" : "none",
+              cursor: "pointer",
             }}
           >
-            <strong>⚠️ IMPORTANT DISCLAIMER:</strong> This tool generates AI
-            content. Output is <strong>NOT legal advice</strong>. Must be
-            reviewed by compliance counsel before use. User assumes all
-            liability.
-          </div>
-
-          <h1
+            Generate Guidelines
+          </button>
+          <button
+            onClick={() => setActiveTab("inspection")}
             style={{
-              fontFamily: "Georgia, serif",
-              fontSize: "28px",
-              fontWeight: 700,
-              margin: "0 0 16px",
+              padding: "12px 16px",
+              fontSize: "13px",
+              fontWeight: 600,
+              background:
+                activeTab === "inspection" ? "#2C6E6E" : "transparent",
+              color: activeTab === "inspection" ? "#F7F6F2" : "#5C6B72",
+              border: "none",
+              borderBottom:
+                activeTab === "inspection" ? "2px solid #2C6E6E" : "none",
+              cursor: "pointer",
             }}
           >
-            CMS CoP Guideline Builder & Inspection Readiness
-          </h1>
-
-          <div style={{ display: "flex", gap: "2px", marginBottom: "16px" }}>
-            {["guidelines", "inspection"].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  background: activeTab === tab ? "#2C6E6E" : "#EDEAE0",
-                  color: activeTab === tab ? "#F7F6F2" : "#1C2B33",
-                  border: "none",
-                  borderRadius: "5px 5px 0 0",
-                  padding: "10px 16px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                {tab === "guidelines"
-                  ? "Generate Guidelines"
-                  : "Inspection Readiness"}
-              </button>
-            ))}
-          </div>
+            Inspection Readiness
+          </button>
+          <button
+            onClick={() => setActiveTab("policy")}
+            style={{
+              padding: "12px 16px",
+              fontSize: "13px",
+              fontWeight: 600,
+              background: activeTab === "policy" ? "#2C6E6E" : "transparent",
+              color: activeTab === "policy" ? "#F7F6F2" : "#5C6B72",
+              border: "none",
+              borderBottom:
+                activeTab === "policy" ? "2px solid #2C6E6E" : "none",
+              cursor: "pointer",
+            }}
+          >
+            Generate Policy
+          </button>
         </div>
-      </header>
 
-      <div
-        style={{ maxWidth: "1000px", margin: "0 auto", padding: "28px 32px" }}
-      >
-        {activeTab === "guidelines" ? (
+        {/* Guidelines Tab */}
+        {activeTab === "guidelines" && (
           <div>
             <div
               style={{
@@ -367,11 +442,11 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                     marginBottom: "6px",
                   }}
                 >
-                  Institution
+                  Institution Type
                 </label>
                 <select
-                  value={institutionType}
-                  onChange={(e) => setInstitutionType(e.target.value)}
+                  value={guidelineInst}
+                  onChange={(e) => setGuidelineInst(e.target.value)}
                   style={{
                     width: "100%",
                     padding: "9px 10px",
@@ -402,10 +477,10 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                   Topic
                 </label>
                 <select
-                  value={topic}
+                  value={guidelineTopic}
                   onChange={(e) => {
-                    setTopic(e.target.value);
-                    setCustomTopic("");
+                    setGuidelineTopic(e.target.value);
+                    setGuidelineCustomTopic("");
                   }}
                   style={{
                     width: "100%",
@@ -425,8 +500,8 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                 </select>
                 <input
                   type="text"
-                  value={customTopic}
-                  onChange={(e) => setCustomTopic(e.target.value)}
+                  value={guidelineCustomTopic}
+                  onChange={(e) => setGuidelineCustomTopic(e.target.value)}
                   placeholder="Or enter custom topic..."
                   style={{
                     width: "100%",
@@ -435,18 +510,17 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                     border: "1px solid #D9D5C7",
                     borderRadius: "4px",
                     boxSizing: "border-box",
-                    marginBottom: "16px",
                   }}
                 />
               </div>
 
               <button
                 onClick={generateGuideline}
-                disabled={loading}
+                disabled={guidelineLoading}
                 style={{
                   width: "100%",
                   padding: "12px",
-                  background: loading ? "#8A8272" : "#2C6E6E",
+                  background: guidelineLoading ? "#8A8272" : "#2C6E6E",
                   color: "#F7F6F2",
                   border: "none",
                   borderRadius: "5px",
@@ -454,10 +528,10 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                   cursor: "pointer",
                 }}
               >
-                {loading ? "Generating..." : "Generate guideline"}
+                {guidelineLoading ? "Generating..." : "Generate guideline"}
               </button>
 
-              {error && (
+              {guidelineError && (
                 <div
                   style={{
                     color: "#A8390A",
@@ -465,12 +539,12 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                     marginTop: "10px",
                   }}
                 >
-                  {error}
+                  {guidelineError}
                 </div>
               )}
             </div>
 
-            {result && (
+            {guidelineResult && (
               <div
                 style={{
                   background: "#FFFFFF",
@@ -479,132 +553,125 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                   padding: "20px",
                 }}
               >
-                <h2 style={{ margin: "0 0 12px 0", fontSize: "18px" }}>
-                  {result.citationBase}
-                </h2>
-                <p
-                  style={{
-                    margin: "0 0 16px 0",
-                    fontSize: "13px",
-                    color: "#5C6B72",
-                    lineHeight: 1.6,
-                  }}
+                <div
+                  style={{ display: "flex", gap: "8px", marginBottom: "16px" }}
                 >
-                  {result.topicSummary}
-                </p>
+                  <button
+                    onClick={() =>
+                      copyToClipboard(JSON.stringify(guidelineResult, null, 2))
+                    }
+                    style={{
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      background: "#2C6E6E",
+                      color: "#F7F6F2",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Copy Full Text
+                  </button>
+                  <button
+                    onClick={() =>
+                      downloadAsText(
+                        JSON.stringify(guidelineResult, null, 2),
+                        "guidelines.txt",
+                      )
+                    }
+                    style={{
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      background: "#5C6B72",
+                      color: "#F7F6F2",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Download .txt
+                  </button>
+                </div>
 
-                {result.conditions &&
-                  result.conditions.map((cond, cIdx) => (
+                {guidelineResult.standards &&
+                  guidelineResult.standards.map((std, idx) => (
                     <div
-                      key={cIdx}
+                      key={idx}
                       style={{
-                        marginBottom: "18px",
-                        paddingBottom: "18px",
-                        borderBottom: "1px solid #EDEAE0",
+                        marginBottom: "24px",
+                        borderBottom: "1px solid #D9D5C7",
+                        paddingBottom: "16px",
                       }}
                     >
-                      <div
+                      <h3
                         style={{
-                          background: "#DDE7E6",
-                          display: "inline-block",
-                          padding: "4px 8px",
-                          borderRadius: "3px",
-                          fontSize: "10px",
+                          fontSize: "14px",
                           fontWeight: 700,
                           marginBottom: "6px",
                         }}
                       >
-                        {cond.code}
-                      </div>
-                      <h3 style={{ margin: "6px 0", fontSize: "15px" }}>
-                        {cond.title}
+                        {std.number} — {std.title}
                       </h3>
                       <p
                         style={{
-                          margin: "8px 0",
-                          fontSize: "13px",
+                          fontSize: "12px",
                           color: "#5C6B72",
-                          lineHeight: 1.6,
+                          marginBottom: "8px",
                         }}
                       >
-                        {cond.summary}
+                        <strong>Sources:</strong> {std.sources.join(" • ")}
                       </p>
-
-                      {cond.standards &&
-                        cond.standards.map((std, sIdx) => (
-                          <div
-                            key={sIdx}
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          lineHeight: 1.6,
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <strong>Requirement:</strong> {std.requirement}
+                      </p>
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          lineHeight: 1.6,
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <strong>Practical Guideline:</strong>{" "}
+                        {std.practicalGuideline}
+                      </p>
+                      <p
+                        style={{
+                          fontSize: "12px",
+                          lineHeight: 1.6,
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <strong>Surveyor Expectations:</strong>{" "}
+                        {std.surveyorExpectations}
+                      </p>
+                      {std.commonDeficiencies &&
+                        std.commonDeficiencies.length > 0 && (
+                          <p
                             style={{
-                              marginLeft: "16px",
-                              marginBottom: "12px",
-                              padding: "10px",
-                              background: "#FBFAF7",
-                              borderRadius: "4px",
-                              borderLeft: "3px solid #2C6E6E",
+                              fontSize: "12px",
+                              lineHeight: 1.6,
+                              color: "#A8390A",
                             }}
                           >
-                            <div
-                              style={{
-                                fontSize: "11px",
-                                fontFamily: "monospace",
-                                color: "#5C6B72",
-                                fontWeight: 600,
-                                marginBottom: "4px",
-                              }}
-                            >
-                              {std.code}
-                            </div>
-                            <div
-                              style={{
-                                fontWeight: 600,
-                                fontSize: "12px",
-                                marginBottom: "6px",
-                              }}
-                            >
-                              {std.title}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "#333",
-                                lineHeight: 1.5,
-                                marginBottom: "4px",
-                              }}
-                            >
-                              <strong>Requirement:</strong> {std.requirement}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "#333",
-                                lineHeight: 1.5,
-                              }}
-                            >
-                              <strong>Guideline:</strong> {std.guideline}
-                            </div>
-                          </div>
-                        ))}
+                            <strong>Common Deficiencies:</strong>{" "}
+                            {std.commonDeficiencies.join(", ")}
+                          </p>
+                        )}
                     </div>
                   ))}
-
-                {result.verificationNote && (
-                  <div
-                    style={{
-                      padding: "12px",
-                      background: "#FBF3E4",
-                      border: "1px solid #E8D9B5",
-                      borderRadius: "5px",
-                      fontSize: "12px",
-                      color: "#6B4E1E",
-                    }}
-                  >
-                    <strong>⚠️ Verify:</strong> {result.verificationNote}
-                  </div>
-                )}
               </div>
             )}
           </div>
-        ) : (
+        )}
+
+        {/* Inspection Tab */}
+        {activeTab === "inspection" && (
           <div>
             <div
               style={{
@@ -625,16 +692,11 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                     marginBottom: "6px",
                   }}
                 >
-                  Institution
+                  Institution Type
                 </label>
                 <select
-                  value={inspectionInstitution}
-                  onChange={(e) => {
-                    setInspectionInstitution(e.target.value);
-                    setInspectionDepartment(
-                      DEPARTMENTS_BY_INSTITUTION[e.target.value][0],
-                    );
-                  }}
+                  value={inspectionInst}
+                  onChange={(e) => setInspectionInst(e.target.value)}
                   style={{
                     width: "100%",
                     padding: "9px 10px",
@@ -665,11 +727,8 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                   Department
                 </label>
                 <select
-                  value={inspectionDepartment}
-                  onChange={(e) => {
-                    setInspectionDepartment(e.target.value);
-                    setInspectionCustomDepartment("");
-                  }}
+                  value={inspectionDept}
+                  onChange={(e) => setInspectionDept(e.target.value)}
                   style={{
                     width: "100%",
                     padding: "9px 10px",
@@ -677,34 +736,14 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                     border: "1px solid #D9D5C7",
                     borderRadius: "4px",
                     boxSizing: "border-box",
-                    marginBottom: "8px",
                   }}
                 >
-                  {(
-                    DEPARTMENTS_BY_INSTITUTION[inspectionInstitution] || []
-                  ).map((d) => (
+                  {DEPARTMENTS.map((d) => (
                     <option key={d} value={d}>
                       {d}
                     </option>
                   ))}
                 </select>
-                <input
-                  type="text"
-                  value={inspectionCustomDepartment}
-                  onChange={(e) =>
-                    setInspectionCustomDepartment(e.target.value)
-                  }
-                  placeholder="Or enter custom department..."
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                    marginBottom: "16px",
-                  }}
-                />
               </div>
 
               <div style={{ marginBottom: "16px" }}>
@@ -717,28 +756,46 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                     marginBottom: "6px",
                   }}
                 >
-                  Additional Governing Body
+                  Governing Bodies
                 </label>
-                <select
-                  value={inspectionAdditionalBody}
-                  onChange={(e) => setInspectionAdditionalBody(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "9px 10px",
-                    fontSize: "13px",
-                    border: "1px solid #D9D5C7",
-                    borderRadius: "4px",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <option value="none">None (CMS only)</option>
-                  <option value="tjc">The Joint Commission (TJC)</option>
-                  <option value="dnv">DNV NIAHO</option>
-                </select>
+                <div>
+                  {["cms", "tjc", "dnv"].map((body) => (
+                    <label
+                      key={body}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        marginBottom: "8px",
+                        fontSize: "12px",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={inspectionGovBodies.includes(body)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setInspectionGovBodies([
+                              ...inspectionGovBodies,
+                              body,
+                            ]);
+                          } else {
+                            setInspectionGovBodies(
+                              inspectionGovBodies.filter((b) => b !== body),
+                            );
+                          }
+                        }}
+                        style={{ marginRight: "8px" }}
+                      />
+                      {body === "cms" && "CMS"}
+                      {body === "tjc" && "Joint Commission"}
+                      {body === "dnv" && "DNV NIAHO"}
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <button
-                onClick={generateInspectionSurvey}
+                onClick={generateInspection}
                 disabled={inspectionLoading}
                 style={{
                   width: "100%",
@@ -751,9 +808,7 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                   cursor: "pointer",
                 }}
               >
-                {inspectionLoading
-                  ? "Generating survey..."
-                  : "Generate inspection readiness survey"}
+                {inspectionLoading ? "Generating..." : "Generate survey"}
               </button>
 
               {inspectionError && (
@@ -769,7 +824,7 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
               )}
             </div>
 
-            {inspectionSurvey && (
+            {inspectionResult && (
               <div
                 style={{
                   background: "#FFFFFF",
@@ -778,139 +833,289 @@ Generate exactly 8 items. Keep each field to one short phrase or sentence. Be co
                   padding: "20px",
                 }}
               >
-                <h2 style={{ margin: "0 0 6px 0", fontSize: "18px" }}>
-                  {inspectionSurvey.institution}
-                </h2>
-                <p
-                  style={{
-                    margin: "0 0 16px 0",
-                    fontSize: "12px",
-                    color: "#5C6B72",
-                  }}
-                >
-                  <strong>Department:</strong> {inspectionSurvey.department} |{" "}
-                  <strong>Bodies:</strong>{" "}
-                  {inspectionSurvey.governingBodies.join(", ")}
-                </p>
-
                 <div
-                  style={{
-                    padding: "12px",
-                    background: "#F0F7F6",
-                    border: "1px solid #B8DCC8",
-                    borderRadius: "5px",
-                    fontSize: "12px",
-                    marginBottom: "16px",
-                  }}
+                  style={{ display: "flex", gap: "8px", marginBottom: "16px" }}
                 >
-                  📋 <strong>Instructions:</strong> Rate each item. Red flags
-                  show common deficiency areas.
+                  <button
+                    onClick={() =>
+                      copyToClipboard(JSON.stringify(inspectionResult, null, 2))
+                    }
+                    style={{
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      background: "#2C6E6E",
+                      color: "#F7F6F2",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Copy Full Text
+                  </button>
+                  <button
+                    onClick={() =>
+                      downloadAsText(
+                        JSON.stringify(inspectionResult, null, 2),
+                        "inspection-survey.txt",
+                      )
+                    }
+                    style={{
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      background: "#5C6B72",
+                      color: "#F7F6F2",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Download .txt
+                  </button>
                 </div>
 
-                <div
-                  style={{
-                    maxHeight: "600px",
-                    overflowY: "auto",
-                    marginBottom: "16px",
-                  }}
-                >
-                  {inspectionSurvey.items.map((item) => (
+                {inspectionResult.surveyItems &&
+                  inspectionResult.surveyItems.map((item, idx) => (
                     <div
-                      key={item.id}
+                      key={idx}
                       style={{
-                        marginBottom: "12px",
-                        padding: "12px",
-                        border: "1px solid #D9D5C7",
-                        borderLeft: `4px solid ${item.riskLevel === "High" ? "#A8390A" : item.riskLevel === "Medium" ? "#C85A00" : "#2C6E6E"}`,
-                        borderRadius: "4px",
-                        background: "#FBFAF7",
+                        marginBottom: "16px",
+                        borderBottom: "1px solid #D9D5C7",
+                        paddingBottom: "12px",
                       }}
                     >
-                      <div
+                      <h4
                         style={{
-                          fontWeight: 600,
-                          fontSize: "12px",
-                          marginBottom: "6px",
+                          fontSize: "13px",
+                          fontWeight: 700,
+                          marginBottom: "4px",
                         }}
                       >
-                        {item.copCode}: {item.question}
-                      </div>
-                      <div
+                        {item.question}
+                      </h4>
+                      <p
                         style={{
                           fontSize: "11px",
                           color: "#5C6B72",
-                          marginBottom: "8px",
+                          marginBottom: "4px",
                         }}
                       >
-                        Risk: <strong>{item.riskLevel}</strong>
-                      </div>
-                      {item.commonDeficiencies &&
-                        item.commonDeficiencies.length > 0 && (
-                          <div
+                        <strong>Risk:</strong>{" "}
+                        <span
+                          style={{
+                            color:
+                              item.riskLevel === "High"
+                                ? "#A8390A"
+                                : item.riskLevel === "Medium"
+                                  ? "#F59E0B"
+                                  : "#059669",
+                          }}
+                        >
+                          {item.riskLevel}
+                        </span>
+                        {" | "}
+                        <strong>Body:</strong> {item.governingBody}
+                        {" | "}
+                        <strong>Standard:</strong> {item.standard}
+                      </p>
+                      {item.readinessChecklist &&
+                        item.readinessChecklist.length > 0 && (
+                          <ul
                             style={{
                               fontSize: "11px",
-                              color: "#A8390A",
-                              marginBottom: "8px",
+                              marginTop: "6px",
+                              paddingLeft: "16px",
                             }}
                           >
-                            🚩 {item.commonDeficiencies.join(", ")}
-                          </div>
+                            {item.readinessChecklist.map((check, cidx) => (
+                              <li key={cidx}>{check}</li>
+                            ))}
+                          </ul>
                         )}
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        {["notReady", "partiallyReady", "ready"].map(
-                          (level) => (
-                            <button
-                              key={level}
-                              onClick={() =>
-                                setSurveyResponses({
-                                  ...surveyResponses,
-                                  [item.id]: level,
-                                })
-                              }
-                              style={{
-                                padding: "4px 8px",
-                                fontSize: "10px",
-                                fontWeight: 600,
-                                background:
-                                  surveyResponses[item.id] === level
-                                    ? "#2C6E6E"
-                                    : "#F7F6F2",
-                                color:
-                                  surveyResponses[item.id] === level
-                                    ? "#F7F6F2"
-                                    : "#2C6E6E",
-                                border: "1px solid #2C6E6E",
-                                borderRadius: "3px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              {level === "notReady"
-                                ? "Not Ready"
-                                : level === "partiallyReady"
-                                  ? "Partially Ready"
-                                  : "Ready"}
-                            </button>
-                          ),
-                        )}
-                      </div>
                     </div>
                   ))}
-                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-                <button
+        {/* Policy Tab */}
+        {activeTab === "policy" && (
+          <div>
+            <div
+              style={{
+                background: "#FFFFFF",
+                border: "1px solid #D9D5C7",
+                borderRadius: "6px",
+                padding: "20px",
+                marginBottom: "20px",
+              }}
+            >
+              <div style={{ marginBottom: "16px" }}>
+                <label
                   style={{
-                    width: "100%",
-                    padding: "12px",
-                    background: "#2C6E6E",
-                    color: "#F7F6F2",
-                    border: "none",
-                    borderRadius: "5px",
-                    fontWeight: 600,
-                    cursor: "pointer",
+                    display: "block",
+                    fontSize: "11.5px",
+                    fontWeight: 700,
+                    color: "#5C6B72",
+                    marginBottom: "6px",
                   }}
                 >
-                  📊 Export as PDF / Excel (coming soon)
-                </button>
+                  Institution Type
+                </label>
+                <select
+                  value={policyInst}
+                  onChange={(e) => setPolicyInst(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 10px",
+                    fontSize: "13px",
+                    border: "1px solid #D9D5C7",
+                    borderRadius: "4px",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  {INSTITUTION_TYPES.map((i) => (
+                    <option key={i.value} value={i.value}>
+                      {i.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "11.5px",
+                    fontWeight: 700,
+                    color: "#5C6B72",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Topic
+                </label>
+                <select
+                  value={policyTopic}
+                  onChange={(e) => {
+                    setPolicyTopic(e.target.value);
+                    setPolicyCustomTopic("");
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "9px 10px",
+                    fontSize: "13px",
+                    border: "1px solid #D9D5C7",
+                    borderRadius: "4px",
+                    boxSizing: "border-box",
+                    marginBottom: "8px",
+                  }}
+                >
+                  {TOPIC_PRESETS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={policyCustomTopic}
+                  onChange={(e) => setPolicyCustomTopic(e.target.value)}
+                  placeholder="Or enter custom topic..."
+                  style={{
+                    width: "100%",
+                    padding: "9px 10px",
+                    fontSize: "13px",
+                    border: "1px solid #D9D5C7",
+                    borderRadius: "4px",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <button
+                onClick={generatePolicy}
+                disabled={policyLoading}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  background: policyLoading ? "#8A8272" : "#2C6E6E",
+                  color: "#F7F6F2",
+                  border: "none",
+                  borderRadius: "5px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                {policyLoading ? "Generating..." : "Generate policy template"}
+              </button>
+
+              {policyError && (
+                <div
+                  style={{
+                    color: "#A8390A",
+                    fontSize: "13px",
+                    marginTop: "10px",
+                  }}
+                >
+                  {policyError}
+                </div>
+              )}
+            </div>
+
+            {policyResult && (
+              <div
+                style={{
+                  background: "#FFFFFF",
+                  border: "1px solid #D9D5C7",
+                  borderRadius: "6px",
+                  padding: "20px",
+                }}
+              >
+                <div
+                  style={{ display: "flex", gap: "8px", marginBottom: "16px" }}
+                >
+                  <button
+                    onClick={() => copyToClipboard(policyResult)}
+                    style={{
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      background: "#2C6E6E",
+                      color: "#F7F6F2",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Copy Full Text
+                  </button>
+                  <button
+                    onClick={() =>
+                      downloadAsText(policyResult, "policy-template.txt")
+                    }
+                    style={{
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      background: "#5C6B72",
+                      color: "#F7F6F2",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Download .txt
+                  </button>
+                </div>
+                <div
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    fontFamily: "monospace",
+                    fontSize: "12px",
+                    lineHeight: 1.6,
+                    color: "#2C3E50",
+                  }}
+                >
+                  {policyResult}
+                </div>
               </div>
             )}
           </div>
