@@ -312,7 +312,7 @@ const S = {
   btnSm: { padding: "6px 12px", fontSize: "12px", fontWeight: 600, border: "1px solid #CBD5E1", borderRadius: "5px", background: "#fff", cursor: "pointer", color: "#475569" },
   btnSmGreen: { padding: "6px 12px", fontSize: "12px", fontWeight: 600, border: "1px solid #A7F3D0", borderRadius: "5px", background: "#ECFDF5", cursor: "pointer", color: "#065F46" },
   error: { color: "#DC2626", fontSize: "13px", marginTop: "10px", padding: "10px 12px", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "6px" },
-  tabs: { display: "flex", gap: "4px", marginBottom: "20px" },
+  tabs: { display: "flex", gap: "4px", marginBottom: "20px", overflowX: "auto", paddingBottom: "4px" },
   tag: (color, bg) => ({ display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, color, background: bg }),
   riskBadge: (level) => ({
     display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700,
@@ -1138,12 +1138,21 @@ export default function CoPGuidelineBuilder() {
       {/* Header */}
       <div style={S.header}>
         <div style={{ maxWidth: "960px", margin: "0 auto" }}>
-          <h1 style={S.headerTitle}>CMS CoP Compliance Suite</h1>
-          <p style={S.headerSub}>Guidelines · Policy Templates · Inspection Readiness — CMS, Joint Commission, DNV NIAHO, ISO 9001:2015</p>
-          <div style={S.disclaimer}>
-            <strong>⚠ Important Disclaimer:</strong> This tool generates AI-assisted content for educational and preparation purposes only.
-            Output is <strong>not legal advice</strong> and must be reviewed by qualified compliance counsel before implementation.
-            Regulatory citations should be verified against current official sources. User assumes all liability.
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <h1 style={S.headerTitle}>CMS CoP Compliance Suite</h1>
+            <span style={{ fontSize: "11px", fontWeight: 700, background: "#F59E0B", color: "#78350F", padding: "2px 8px", borderRadius: "10px", letterSpacing: "0.5px" }}>BETA</span>
+          </div>
+          <p style={S.headerSub}>Guidelines · Policy Templates · Inspection Readiness · Policy Gap Scanner — CMS, Joint Commission, DNV NIAHO, ISO 9001:2015</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap" }}>
+            <div style={{ ...S.disclaimer, flex: 1, marginTop: "14px" }}>
+              <strong>⚠ Important Disclaimer:</strong> This tool generates AI-assisted content for educational and preparation purposes only.
+              Output is <strong>not legal advice</strong> and must be reviewed by qualified compliance counsel before implementation.
+              Regulatory citations should be verified against current official sources. User assumes all liability.
+            </div>
+            <a href="mailto:?subject=CMS CoP Compliance Suite Feedback&body=Institution type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
+              style={{ display: "inline-block", marginTop: "14px", padding: "8px 14px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
+              ✉ Share Feedback
+            </a>
           </div>
         </div>
       </div>
