@@ -180,26 +180,26 @@ export default function CoPGuidelineBuilder() {
 Output ONLY valid JSON, no preamble. Schema:
 {
   "citationBase": "42 CFR 482",
-  "topicSummary": "2-3 sentences",
+  "topicSummary": "1-2 sentences",
   "conditions": [{
     "code": "§482.23",
     "title": "string",
-    "summary": "2-4 sentences",
+    "summary": "1-2 sentences",
     "standards": [{
       "code": "§482.23(b)",
       "title": "string",
-      "requirement": "2-3 sentences",
-      "guideline": "2-4 sentences"
+      "requirement": "1 sentence",
+      "guideline": "1-2 sentences"
     }]
   }],
   "verificationNote": "brief note"
 }
 
-Include 2-4 conditions with 2-4 standards each.`;
+Include exactly 2 conditions with exactly 2 standards each. Be concise.`;
 
       const userContent = `Institution: ${inst.label} (${inst.cfr})\nTopic: ${topicFinal}`;
 
-      const data = await callModelForJson(systemPrompt, userContent, 3500);
+      const data = await callModelForJson(systemPrompt, userContent, 700);
       setResult(data);
     } catch (e) {
       setError(`Failed: ${e.message}`);
@@ -237,11 +237,11 @@ Output ONLY valid JSON:
   }]
 }
 
-Generate 15-20 items focused on this specific department.`;
+Generate exactly 8 items. Keep each field to one short phrase or sentence. Be concise.`;
 
       const userContent = `Institution: ${inst.label}\nDepartment: ${deptFinal}\nGoverning Bodies: ${bodies.join(", ")}`;
 
-      const survey = await callModelForJson(systemPrompt, userContent, 4000);
+      const survey = await callModelForJson(systemPrompt, userContent, 700);
 
       if (!survey.surveyItems || !Array.isArray(survey.surveyItems)) {
         throw new Error("Invalid survey structure");
