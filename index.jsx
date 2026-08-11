@@ -53,6 +53,37 @@ const DEPARTMENTS = [
   "Human Resources",
 ];
 
+// Hospital-specific clinical units — used when institution === "hospital"
+const HOSPITAL_UNITS = [
+  "Medical / Med-Surg",
+  "Emergency Department (ED)",
+  "Intensive Care Unit (ICU)",
+  "Surgery / Operating Room",
+  "Labor & Delivery / OB",
+  "Pediatrics",
+  "Neonatal ICU (NICU)",
+  "Psychiatric / Behavioral Health",
+  "Oncology",
+  "Cardiac / Telemetry",
+  "Orthopedics",
+  "Neurology / Stroke",
+  "Laboratory (Clinical Lab)",
+  "Radiology / Imaging",
+  "Pharmacy",
+  "Rehabilitation / Physical Therapy",
+  "Endoscopy / GI Lab",
+  "Cardiac Cath Lab",
+  "Dialysis / Nephrology",
+  "Wound Care / Infusion",
+  "Central Sterile Processing (SPD)",
+  "Environmental Services (EVS)",
+  "Food & Nutrition Services",
+  "Case Management / Social Work",
+  "Medical Records / HIM",
+  "Quality & Compliance",
+  "Administration",
+];
+
 // Regulatory body display config
 const BODIES = [
   { key: "cms",  label: "CMS Conditions of Participation", color: "#1E40AF", bg: "#EFF6FF" },
@@ -831,13 +862,25 @@ Output as plain text only (no JSON, no markdown headers with #).`;
 // ─── Inspection Tab ──────────────────────────────────────────────────────────
 
 function InspectionTab({ institution }) {
-  const [dept, setDept] = useState(DEPARTMENTS[0]);
+  const isHospital = institution === "hospital";
+  const deptOptions = isHospital ? HOSPITAL_UNITS : DEPARTMENTS;
+
+  const [dept, setDept] = useState(deptOptions[0]);
   const [govBodies, setGovBodies] = useState({ cms: true, tjc: false, dnv: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [responses, setResponses] = useState({});
   const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
+
+  // Reset unit/dept selection whenever institution type changes
+  useEffect(() => {
+    const opts = institution === "hospital" ? HOSPITAL_UNITS : DEPARTMENTS;
+    setDept(opts[0]);
+    setResult(null);
+    setResponses({});
+    setDataSource(null);
+  }, [institution]);
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
   const selectedBodies = Object.entries(govBodies).filter(([, v]) => v).map(([k]) => k.toUpperCase());
@@ -865,7 +908,8 @@ Output ONLY valid JSON:
 Generate exactly 12 items. Cover these areas proportionally: Documentation, Policies & Procedures, Staff Training & Competency, Physical Environment, Patient Safety, and Ongoing Monitoring. Include a mix of High (4), Medium (5), and Low (3) risk items. Use real regulatory codes from the selected governing bodies.`;
 
     const bodies = selectedBodies.length ? selectedBodies.join(", ") : "CMS";
-    const userContent = `Institution: ${inst.label} (${inst.cfr})\nDepartment: ${dept}\nGoverning Bodies: ${bodies}`;
+    const unitLabel = isHospital ? `Hospital Unit: ${dept}` : `Department: ${dept}`;
+    const userContent = `Institution: ${inst.label} (${inst.cfr})\n${unitLabel}\nGoverning Bodies: ${bodies}\n${isHospital ? `Focus the checklist specifically on the ${dept} unit — include unit-specific surveyor questions, common deficiencies found in that unit, and the regulatory standards most applicable to it.` : ""}`;
 
     try {
       // Pass institutionValue only when CMS is selected so the server injects live eCFR text
@@ -893,9 +937,9 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
       <div style={S.card}>
         <div style={S.row}>
           <div>
-            <label style={S.label}>Department / Service Area</label>
+            <label style={S.label}>{isHospital ? "Hospital Unit / Department" : "Department / Service Area"}</label>
             <select style={S.select} value={dept} onChange={(e) => setDept(e.target.value)}>
-              {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+              {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
           <div>
