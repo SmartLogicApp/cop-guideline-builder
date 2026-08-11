@@ -1,5 +1,12 @@
 import { createRoot } from 'react-dom/client';
 
+// Register service worker for PWA offline support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {/* non-critical */});
+  });
+}
+
 import App from './App';
 import { ErrorBoundary } from '@/components/error-boundary';
 
