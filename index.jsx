@@ -321,6 +321,135 @@ const INSTITUTION_UNITS = {
   },
 };
 
+// Key regulatory citations per unit/service — shown instantly when a unit is selected in Inspection tab
+const UNIT_CITATIONS = {
+  // Hospital clinical units
+  "Medical / Med-Surg":            ["§482.23 – Nursing Services","§482.13 – Patient Rights","§482.25 – Pharmaceutical Services","§482.41 – Physical Environment"],
+  "Emergency Department (ED)":     ["§482.55 – Emergency Services","§482.13 – Patient Rights","§482.42 – Infection Control","§482.41 – Physical Environment"],
+  "Intensive Care Unit (ICU)":     ["§482.23 – Nursing Services","§482.13(e) – Restraint & Seclusion","§482.25 – Pharmaceutical Services","§482.41 – Physical Environment"],
+  "Surgery / Operating Room":      ["§482.51 – Surgical Services","§482.52 – Anesthesia Services","§482.42 – Infection Control","§482.41 – Physical Environment"],
+  "Labor & Delivery / OB":         ["§482.57 – Obstetric Services","§482.23 – Nursing Services","§482.13 – Patient Rights","§482.42 – Infection Control"],
+  "Pediatrics":                    ["§482.23 – Nursing Services","§482.13 – Patient Rights","§482.25 – Pharmaceutical Services","§482.42 – Infection Control"],
+  "Neonatal ICU (NICU)":           ["§482.23 – Nursing Services","§482.13 – Patient Rights","§482.42 – Infection Control","§482.41 – Physical Environment"],
+  "Psychiatric / Behavioral Health":["§482.13(e) – Restraint & Seclusion","§482.13 – Patient Rights","§482.62 – Psychiatric Distinct Part","§482.23 – Nursing Services"],
+  "Oncology":                      ["§482.23 – Nursing Services","§482.25 – Pharmaceutical Services","§482.42 – Infection Control","§482.43 – Discharge Planning"],
+  "Cardiac / Telemetry":           ["§482.23 – Nursing Services","§482.41 – Physical Environment","§482.25 – Pharmaceutical Services","§482.21 – QAPI"],
+  "Orthopedics":                   ["§482.23 – Nursing Services","§482.51 – Surgical Services","§482.25 – Pharmaceutical Services","§482.42 – Infection Control"],
+  "Neurology / Stroke":            ["§482.23 – Nursing Services","§482.13 – Patient Rights","§482.43 – Discharge Planning","§482.25 – Pharmaceutical Services"],
+  "Laboratory (Clinical Lab)":     ["§482.27 – Laboratory Services","42 CFR 493 – CLIA","§482.42 – Infection Control","§482.21 – QAPI"],
+  "Radiology / Imaging":           ["§482.26 – Radiologic Services","§482.42 – Infection Control","§482.41 – Physical Environment","§482.21 – QAPI"],
+  "Pharmacy":                      ["§482.25 – Pharmaceutical Services","§482.42 – Infection Control","§482.21 – QAPI","§482.12 – Governing Body Oversight"],
+  "Rehabilitation / Physical Therapy":["§482.56 – Rehabilitation Services","§482.23 – Nursing Services","§482.43 – Discharge Planning","§482.21 – QAPI"],
+  "Endoscopy / GI Lab":            ["§482.42 – Infection Control","§482.51 – Surgical Services","§482.41 – Physical Environment","§482.21 – QAPI"],
+  "Cardiac Cath Lab":              ["§482.51 – Surgical Services","§482.52 – Anesthesia Services","§482.41 – Physical Environment","§482.42 – Infection Control"],
+  "Dialysis / Nephrology":         ["42 CFR 494 – ESRD Conditions","§482.41 – Physical Environment","§482.25 – Pharmaceutical Services","§482.42 – Infection Control"],
+  "Wound Care / Infusion":         ["§482.23 – Nursing Services","§482.42 – Infection Control","§482.25 – Pharmaceutical Services","§482.21 – QAPI"],
+  "Central Sterile Processing (SPD)":["§482.42 – Infection Control","§482.51 – Surgical Services","§482.41 – Physical Environment","§482.21 – QAPI"],
+  "Environmental Services (EVS)":  ["§482.42 – Infection Control","§482.41 – Physical Environment","§482.11 – Federal, State & Local Laws"],
+  "Food & Nutrition Services":     ["§482.28 – Food and Dietetic Services","§482.42 – Infection Control","§482.41 – Physical Environment"],
+  "Case Management / Social Work": ["§482.43 – Discharge Planning","§482.13 – Patient Rights","§482.21 – QAPI"],
+  "Medical Records / HIM":         ["§482.24 – Medical Record Services","§482.13 – Patient Rights","§482.21 – QAPI"],
+  "Quality & Compliance":          ["§482.21 – QAPI","§482.13 – Patient Rights","§482.12 – Governing Body","§482.11 – Compliance"],
+  "Administration":                ["§482.12 – Governing Body","§482.21 – QAPI","§482.11 – Compliance","§482.13 – Patient Rights"],
+  // Hospital contracted services
+  "Dietary / Food Services (Contracted)":           ["§482.12(e) – Contracted Services Oversight","§482.28 – Food and Dietetic Services","§482.42 – Infection Control"],
+  "Environmental / Housekeeping (Contracted)":      ["§482.12(e) – Contracted Services Oversight","§482.42 – Infection Control","§482.41 – Physical Environment"],
+  "Security Services (Contracted)":                 ["§482.12(e) – Contracted Services Oversight","§482.13 – Patient Rights","§482.41 – Physical Environment"],
+  "Laboratory Services (Contracted)":               ["§482.12(e) – Contracted Services Oversight","§482.27 – Laboratory Services","42 CFR 493 – CLIA"],
+  "Radiology / Imaging (Contracted)":               ["§482.12(e) – Contracted Services Oversight","§482.26 – Radiologic Services"],
+  "Biomedical / Clinical Engineering (Contracted)": ["§482.12(e) – Contracted Services Oversight","§482.41 – Physical Environment"],
+  "Pharmacy Services (Contracted)":                 ["§482.12(e) – Contracted Services Oversight","§482.25 – Pharmaceutical Services"],
+  "Laundry Services (Contracted)":                  ["§482.12(e) – Contracted Services Oversight","§482.42 – Infection Control"],
+  "Staffing / Agency Nursing (Contracted)":         ["§482.12(e) – Contracted Services Oversight","§482.23 – Nursing Services","§482.13 – Patient Rights"],
+  "Rehabilitation / Therapy Services (Contracted)": ["§482.12(e) – Contracted Services Oversight","§482.56 – Rehabilitation Services"],
+  "Telemedicine / Telehealth Services (Contracted)":["§482.12(e) – Contracted Services Oversight","§482.13 – Patient Rights"],
+  "Anesthesia Services (Contracted)":               ["§482.12(e) – Contracted Services Oversight","§482.52 – Anesthesia Services"],
+  "Wound Care Services (Contracted)":               ["§482.12(e) – Contracted Services Oversight","§482.23 – Nursing","§482.42 – Infection Control"],
+  "Dialysis Services (Contracted)":                 ["§482.12(e) – Contracted Services Oversight","42 CFR 494 – ESRD"],
+  "Waste Management (Contracted)":                  ["§482.12(e) – Contracted Services Oversight","§482.41 – Physical Environment"],
+  // CAH contracted
+  "Specialty Physician Services (Contracted)":      ["§485.635(c) – Contracted Services","§485.641 – Medical Staff"],
+  "Rehabilitation / Therapy – PT/OT/SLP (Contracted)":["§485.635(c) – Contracted Services","§485.638 – Clinical Records"],
+  "Biomedical Engineering (Contracted)":            ["§485.635(c) – Contracted Services","§485.623 – Physical Environment"],
+  // SNF units
+  "Short-Term Rehabilitation":     ["§483.25 – Quality of Care","§483.30 – Nursing Services","§483.45 – Pharmacy Services","§483.35 – Dietary Services"],
+  "Long-Term Care":                ["§483.25 – Quality of Care","§483.10 – Resident Rights","§483.21 – Comprehensive Care Plans","§483.30 – Nursing Services"],
+  "Memory Care / Dementia Unit":   ["§483.25(b) – Pain Management","§483.12 – Freedom from Abuse","§483.21 – Care Plans","§483.10 – Resident Rights"],
+  "Ventilator / Trach Unit":       ["§483.25 – Quality of Care","§483.30 – Nursing Services","§483.45 – Pharmacy","§483.80 – Infection Control"],
+  "Wound Care":                    ["§483.25(b) – Pressure Ulcer Prevention","§483.30 – Nursing Services","§483.80 – Infection Control"],
+  "Sub-Acute / Step-Down":         ["§483.25 – Quality of Care","§483.30 – Nursing Services","§483.45 – Pharmacy"],
+  "Therapy – PT / OT / SLP":       ["§483.25 – Quality of Care","§483.21 – Comprehensive Care Plans","§483.30 – Nursing Services"],
+  "Social Services":               ["§483.40 – Behavioral Health","§483.10 – Resident Rights","§483.21 – Care Planning"],
+  "Dietary / Food Services":       ["§483.35 – Food and Nutrition Services","§483.80 – Infection Control","§483.25 – Quality of Care"],
+  "Activities / Recreational Therapy":["§483.24 – Quality of Life","§483.10 – Resident Rights"],
+  "MDS / Clinical Reimbursement":  ["§483.20 – Resident Assessment","§483.21 – Comprehensive Care Plans"],
+  // SNF contracted (Pharmacy Services key omitted here — see INST_UNIT_CITATIONS override)
+  "Hospice Services (Contracted)": ["§483.12(e) – Contracted Services","42 CFR 418 – Hospice CoP"],
+  "Dental Services (Contracted)":  ["§483.12(e) – Contracted Services","§483.55 – Dental Services"],
+  "Podiatry Services (Contracted)":["§483.12(e) – Contracted Services","§483.25 – Quality of Care"],
+  "Therapy – PT/OT/SLP (Contracted)":["§483.12(e) – Contracted Services","§483.25 – Quality of Care"],
+  // HHA units
+  "Skilled Nursing":               ["§484.75 – Skilled Nursing","§484.60 – Care Planning","§484.70 – Coordination of Care","§484.105 – Emergency Preparedness"],
+  "Physical Therapy":              ["§484.75 – Skilled Services","§484.60 – Care Planning"],
+  "Occupational Therapy":          ["§484.75 – Skilled Services","§484.60 – Care Planning"],
+  "Speech Therapy":                ["§484.75 – Skilled Services","§484.60 – Care Planning"],
+  "Medical Social Services":       ["§484.75 – Skilled Services","§484.60 – Care Planning","§484.80 – Home Health Aide"],
+  "Home Health Aide Services":     ["§484.80 – Home Health Aide Services","§484.60 – Care Planning","§484.36 – Condition of Participation"],
+  "Telehealth / Remote Monitoring":["§484.75 – Skilled Services","§484.60 – Care Planning"],
+  // HHA contracted
+  "Therapy Services – PT/OT/SLP (Contracted)":["§484.105 – Emergency Preparedness","§484.75 – Skilled Services"],
+  "Home Health Aide Services (Contracted)":   ["§484.80 – Home Health Aide","§484.60 – Care Planning"],
+  "Infusion Therapy (Contracted)":            ["§484.75 – Skilled Services","§484.60 – Care Planning"],
+  // Hospice units
+  "Medical Director / Physician Services":["§418.62 – Medical Director","§418.56 – IDG Care Planning","§418.52 – Patient Rights"],
+  "Home Hospice Care":             ["§418.64 – Core Services","§418.52 – Patient Rights","§418.56 – IDG Care Planning"],
+  "Inpatient Hospice Unit (GIP)":  ["§418.108 – Inpatient Care","§418.64 – Core Services","§418.56 – IDG Care Planning"],
+  "Continuous Home Care":          ["§418.64 – Core Services","§418.56 – IDG","§418.52 – Patient Rights"],
+  "Respite Care":                  ["§418.108 – Inpatient Respite","§418.52 – Patient Rights"],
+  "Chaplaincy / Spiritual Care":   ["§418.64(d) – Spiritual Care","§418.52 – Patient Rights"],
+  "Volunteer Services":            ["§418.64(g) – Volunteer Services","§418.56 – IDG"],
+  "Bereavement Services":          ["§418.64(b) – Bereavement Counseling","§418.56 – IDG Care Planning"],
+  // ASC units (use "Endoscopy / GI Lab – ASC" key to avoid duplicate with hospital key)
+  "Pre-Operative / Holding Area":  ["§416.42 – Anesthesia Services","§416.52 – Patient Rights","§416.44 – Environment"],
+  "Operating Room":                ["§416.42 – Surgical Services","§416.44 – Environment","§416.45 – Medical Staff"],
+  "Post-Anesthesia Care Unit (PACU)":["§416.42 – Anesthesia","§416.44 – Environment","§416.52 – Patient Rights"],
+  "Endoscopy / GI Lab – ASC":      ["§416.44 – Environment / Infection Control","§416.42 – Surgical Services"],
+  // ESRD units
+  "In-Center Hemodialysis":        ["§494.30 – Patient Rights","§494.80 – Patient Assessment","§494.90 – Care Planning","§494.100 – QAPI"],
+  "Peritoneal Dialysis Training":  ["§494.80 – Patient Assessment","§494.90 – Care Planning","§494.30 – Patient Rights"],
+  "Home Hemodialysis Training":    ["§494.80 – Assessment","§494.90 – Care Planning","§494.60 – Physical Environment"],
+  "Water Treatment / RO System":   ["§494.40 – Water Treatment","§494.60 – Physical Environment"],
+  "Vascular Access Clinic":        ["§494.80 – Patient Assessment","§494.90 – Care Planning"],
+  // RHC units
+  "Primary Care / Family Medicine":["§491.9 – Clinical Records","§491.10 – Patient Rights","§491.11 – Infection Control","§491.7 – Staffing"],
+  "Women's Health / OB-GYN":       ["§491.9 – Clinical Records","§491.10 – Patient Rights","§491.11 – Infection Control"],
+  "Behavioral Health":             ["§491.9 – Clinical Records","§491.10 – Patient Rights"],
+  "Chronic Disease Management":    ["§491.9 – Clinical Records","§491.10 – Patient Rights","§491.7 – Staffing"],
+  "Care Coordination / Case Management":["§491.9 – Clinical Records","§491.10 – Patient Rights"],
+};
+
+// Institution-specific citation overrides (used when the same unit name maps to different CFR sections)
+const INST_UNIT_CITATIONS = {
+  snf: {
+    "Pharmacy Services (Contracted)": ["§483.12(e) – Contracted Services","§483.45 – Pharmacy Services"],
+    "Wound Care": ["§483.25(b) – Pressure Ulcer Prevention","§483.30 – Nursing Services","§483.80 – Infection Control"],
+    "Dietary / Food Services": ["§483.35 – Food and Nutrition Services","§483.80 – Infection Control","§483.25 – Quality of Care"],
+  },
+  asc: {
+    "Endoscopy / GI Lab": ["§416.44 – Environment / Infection Control","§416.42 – Surgical Services"],
+    "Central Sterile Processing (SPD)": ["§416.44 – Environment (Infection Control)","§416.42 – Surgical Services"],
+    "Pharmacy": ["§416.42 – Drug Handling","§416.44 – Environment"],
+  },
+  cah: {
+    "Pharmacy": ["§485.635(c)(3) – Drugs & Biologicals","§485.623 – Physical Environment"],
+    "Laboratory (Clinical Lab)": ["§485.635(b) – Laboratory","42 CFR 493 – CLIA"],
+  },
+};
+
+function getUnitCitations(institution, unit) {
+  return INST_UNIT_CITATIONS[institution]?.[unit] || UNIT_CITATIONS[unit] || [];
+}
+
 // Regulatory body display config
 const BODIES = [
   { key: "cms",  label: "CMS Conditions of Participation", color: "#1E40AF", bg: "#EFF6FF" },
@@ -459,9 +588,10 @@ function exportPolicyXlsx(text, inst, topic) {
   );
 }
 
-function exportInspectionXlsx(items, responses, inst, dept) {
+function exportInspectionXlsx(items, responses, inst, dept, notes = {}, flags = {}) {
   const rows = items.map((item) => ({
     "#": item.id,
+    "Flagged": flags[item.id] ? "🚩 Yes" : "",
     "Risk Level": item.riskLevel || "",
     "Area": item.area || "",
     "Surveyor Question": item.question || "",
@@ -469,6 +599,7 @@ function exportInspectionXlsx(items, responses, inst, dept) {
     "Common Deficiency": item.commonDeficiency || "",
     "Recommendation": item.recommendation || "",
     "Self-Assessment": responses[item.id] === "yes" ? "Ready" : responses[item.id] === "no" ? "Gap" : responses[item.id] === "na" ? "N/A" : "Not Assessed",
+    "Notes": notes[item.id] || "",
   }));
   downloadXlsx(
     [{ name: "Checklist", rows }],
@@ -477,7 +608,7 @@ function exportInspectionXlsx(items, responses, inst, dept) {
 }
 
 // Plain-text summary of inspection checklist for clipboard
-function inspectionToText(items, responses, inst, dept) {
+function inspectionToText(items, responses, inst, dept, notes = {}, flags = {}) {
   const lines = [
     `INSPECTION READINESS CHECKLIST`,
     `Institution: ${inst.label} (${inst.cfr})`,
@@ -486,13 +617,15 @@ function inspectionToText(items, responses, inst, dept) {
     "",
   ];
   items.forEach((item, i) => {
-    lines.push(`${i + 1}. [${item.riskLevel} Risk] ${item.area}`);
+    const flagged = flags[item.id] ? " 🚩 FLAGGED FOR FOLLOW-UP" : "";
+    lines.push(`${i + 1}. [${item.riskLevel} Risk] ${item.area}${flagged}`);
     lines.push(`   Q: ${item.question}`);
     lines.push(`   Regulatory Basis: ${item.regulatoryBasis || "—"}`);
     lines.push(`   Common Deficiency: ${item.commonDeficiency || "—"}`);
     lines.push(`   Recommendation: ${item.recommendation || "—"}`);
     const resp = responses[item.id];
     if (resp) lines.push(`   Self-Assessment: ${resp === "yes" ? "Ready" : resp === "no" ? "Gap" : "N/A"}`);
+    if (notes[item.id]) lines.push(`   Notes: ${notes[item.id]}`);
     lines.push("");
   });
   return lines.join("\n");
@@ -965,6 +1098,8 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
 // ─── Policy Tab ──────────────────────────────────────────────────────────────
 
 function PolicyTab({ institution }) {
+  const instUnits = INSTITUTION_UNITS[institution] || null;
+  const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
   const [topic, setTopic] = useState(TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
   const [loading, setLoading] = useState(false);
@@ -972,7 +1107,15 @@ function PolicyTab({ institution }) {
   const [result, setResult] = useState(null);
   const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
 
+  useEffect(() => {
+    const iu = INSTITUTION_UNITS[institution] || null;
+    setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
+    setResult(null);
+    setDataSource(null);
+  }, [institution]);
+
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
+  const isContractedUnit = unit.endsWith("(Contracted)");
 
   async function generate() {
     const topicFinal = customTopic.trim() || topic;
@@ -1015,7 +1158,11 @@ Version table.
 
 Output as plain text only (no JSON, no markdown headers with #).`;
 
-    const userContent = `Institution: ${inst.label} (${inst.cfr})\nPolicy Topic: ${topicFinal}`;
+    const unitLine = instUnits ? `${instUnits.label}: ${unit}` : `Department: ${unit}`;
+    const contractedNote = isContractedUnit
+      ? `\nThis policy must address the facility's OVERSIGHT of this contracted service per §482.12(e) (or equivalent CoP section for this institution type): contract requirements, vendor credentialing, performance monitoring, and the service-specific regulatory standards.`
+      : "";
+    const userContent = `Institution: ${inst.label} (${inst.cfr})\n${unitLine}\nPolicy Topic: ${topicFinal}${contractedNote}`;
 
     try {
       const { text, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 4000, institution);
@@ -1044,6 +1191,19 @@ Output as plain text only (no JSON, no markdown headers with #).`;
     <div>
       <div style={S.card}>
         <div style={S.row}>
+          {instUnits && (
+            <div>
+              <label style={S.label}>{instUnits.label}</label>
+              <select style={S.select} value={unit} onChange={(e) => { setUnit(e.target.value); setResult(null); }}>
+                <optgroup label="Units / Departments">
+                  {instUnits.units.map((d) => <option key={d} value={d}>{d}</option>)}
+                </optgroup>
+                <optgroup label="Contracted Services">
+                  {instUnits.contracted.map((d) => <option key={d} value={d}>{d}</option>)}
+                </optgroup>
+              </select>
+            </div>
+          )}
           <div>
             <label style={S.label}>Topic Preset</label>
             <select style={S.select} value={topic} onChange={(e) => { setTopic(e.target.value); setCustomTopic(""); }}>
@@ -1108,6 +1268,9 @@ function InspectionTab({ institution }) {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [responses, setResponses] = useState({});
+  const [notes, setNotes] = useState({});       // itemId → string
+  const [flags, setFlags] = useState({});       // itemId → bool
+  const [openNote, setOpenNote] = useState(null); // itemId whose note box is expanded
   const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
 
   // Reset selection whenever institution type changes
@@ -1116,6 +1279,9 @@ function InspectionTab({ institution }) {
     setDept(iu ? iu.units[0] : DEPARTMENTS[0]);
     setResult(null);
     setResponses({});
+    setNotes({});
+    setFlags({});
+    setOpenNote(null);
     setDataSource(null);
   }, [institution]);
 
@@ -1166,19 +1332,25 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
   }
 
   const riskOrder = { High: 0, Medium: 1, Low: 2 };
-  const sorted = result ? [...result].sort((a, b) => (riskOrder[a.riskLevel] ?? 3) - (riskOrder[b.riskLevel] ?? 3)) : [];
+  const sorted = result ? [...result].sort((a, b) => {
+    const fa = flags[a.id] ? 0 : 1, fb = flags[b.id] ? 0 : 1;
+    if (fa !== fb) return fa - fb;
+    return (riskOrder[a.riskLevel] ?? 3) - (riskOrder[b.riskLevel] ?? 3);
+  }) : [];
 
   const score = sorted.length
     ? Math.round((Object.values(responses).filter((v) => v === "yes").length / sorted.length) * 100)
     : null;
 
+  const unitCitations = getUnitCitations(institution, dept);
+
   return (
     <div>
       <div style={S.card}>
         <div style={S.row}>
-          <div>
+          <div style={{ flex: 1 }}>
             <label style={S.label}>{instUnits ? instUnits.label : "Department / Service Area"}</label>
-            <select style={S.select} value={dept} onChange={(e) => setDept(e.target.value)}>
+            <select style={S.select} value={dept} onChange={(e) => { setDept(e.target.value); setResult(null); setResponses({}); setNotes({}); setFlags({}); setOpenNote(null); }}>
               {instUnits ? (
                 <>
                   <optgroup label="Units / Departments">
@@ -1192,6 +1364,17 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
                 DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)
               )}
             </select>
+            {/* Key Standards — instant, no generation needed */}
+            {unitCitations.length > 0 && (
+              <div style={{ marginTop: "8px", padding: "8px 10px", background: "#EFF6FF", borderRadius: "6px", border: "1px solid #BFDBFE" }}>
+                <div style={{ fontSize: "10px", fontWeight: 700, color: "#1E40AF", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "5px" }}>Key Standards for this Area</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                  {unitCitations.map((c) => (
+                    <span key={c} style={{ fontSize: "10.5px", fontFamily: "monospace", background: "#DBEAFE", color: "#1E40AF", padding: "2px 7px", borderRadius: "4px", border: "1px solid #BFDBFE" }}>{c}</span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <label style={S.label}>Governing Bodies</label>
@@ -1238,8 +1421,8 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
                 {Object.keys(responses).length > 0 && (
                   <span style={{ fontSize: "20px", fontWeight: 700, color: score >= 80 ? "#065F46" : score >= 60 ? "#92400E" : "#991B1B" }}>{score}%</span>
                 )}
-                <CopyButton text={inspectionToText(sorted, responses, inst, dept)} label="Copy" />
-                <ExcelButton onClick={() => exportInspectionXlsx(sorted, responses, inst, dept)} />
+                <CopyButton text={inspectionToText(sorted, responses, inst, dept, notes, flags)} label="Copy" />
+                <ExcelButton onClick={() => exportInspectionXlsx(sorted, responses, inst, dept, notes, flags)} />
               </div>
             </div>
             {Object.keys(responses).length > 0 && (
@@ -1255,43 +1438,69 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
           </div>
 
           {/* Checklist items */}
-          {sorted.map((item) => (
-            <div key={item.id} style={{ ...S.card, borderLeft: `4px solid ${item.riskLevel === "High" ? "#DC2626" : item.riskLevel === "Medium" ? "#F59E0B" : "#10B981"}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginBottom: "6px" }}>
-                    <span style={S.riskBadge(item.riskLevel)}>{item.riskLevel} Risk</span>
-                    <span style={{ fontSize: "11px", fontWeight: 600, color: "#64748B" }}>{item.area}</span>
-                    {item.regulatoryBasis && <span style={{ fontSize: "11px", color: "#94A3B8", fontFamily: "monospace" }}>{item.regulatoryBasis}</span>}
-                  </div>
-                  <div style={{ fontSize: "14px", fontWeight: 600, color: "#1A2332", marginBottom: "10px" }}>{item.question}</div>
-
-                  {item.commonDeficiency && (
-                    <div style={{ marginBottom: "6px" }}>
-                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#DC2626" }}>⚠ Common Deficiency: </span>
-                      <span style={{ fontSize: "12px", color: "#475569" }}>{item.commonDeficiency}</span>
+          {sorted.map((item) => {
+            const isFlagged = !!flags[item.id];
+            const noteOpen = openNote === item.id;
+            return (
+              <div key={item.id} style={{ ...S.card, borderLeft: `4px solid ${isFlagged ? "#7C3AED" : item.riskLevel === "High" ? "#DC2626" : item.riskLevel === "Medium" ? "#F59E0B" : "#10B981"}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginBottom: "6px" }}>
+                      {isFlagged && <span style={{ fontSize: "11px", fontWeight: 700, color: "#7C3AED", background: "#EDE9FE", border: "1px solid #C4B5FD", borderRadius: "4px", padding: "1px 7px" }}>🚩 Follow-Up</span>}
+                      <span style={S.riskBadge(item.riskLevel)}>{item.riskLevel} Risk</span>
+                      <span style={{ fontSize: "11px", fontWeight: 600, color: "#64748B" }}>{item.area}</span>
+                      {item.regulatoryBasis && <span style={{ fontSize: "11px", color: "#94A3B8", fontFamily: "monospace" }}>{item.regulatoryBasis}</span>}
                     </div>
-                  )}
-                  {item.recommendation && (
+                    <div style={{ fontSize: "14px", fontWeight: 600, color: "#1A2332", marginBottom: "10px" }}>{item.question}</div>
+
+                    {item.commonDeficiency && (
+                      <div style={{ marginBottom: "6px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 700, color: "#DC2626" }}>⚠ Common Deficiency: </span>
+                        <span style={{ fontSize: "12px", color: "#475569" }}>{item.commonDeficiency}</span>
+                      </div>
+                    )}
+                    {item.recommendation && (
+                      <div style={{ marginBottom: "8px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 700, color: "#065F46" }}>✓ Recommendation: </span>
+                        <span style={{ fontSize: "12px", color: "#475569" }}>{item.recommendation}</span>
+                      </div>
+                    )}
+
+                    {/* Notes toggle + textarea */}
                     <div>
-                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#065F46" }}>✓ Recommendation: </span>
-                      <span style={{ fontSize: "12px", color: "#475569" }}>{item.recommendation}</span>
+                      <button onClick={() => setOpenNote(noteOpen ? null : item.id)}
+                        style={{ fontSize: "11px", color: notes[item.id] ? "#7C3AED" : "#64748B", background: "none", border: "none", cursor: "pointer", padding: 0, fontWeight: notes[item.id] ? 700 : 400 }}>
+                        {noteOpen ? "▾ Notes" : "▸ Notes"}{notes[item.id] ? " ✎" : ""}
+                      </button>
+                      {noteOpen && (
+                        <textarea
+                          value={notes[item.id] || ""}
+                          onChange={(e) => setNotes({ ...notes, [item.id]: e.target.value })}
+                          placeholder="Add internal notes, owner, deadline…"
+                          style={{ display: "block", width: "100%", marginTop: "6px", padding: "7px 9px", fontSize: "12px", borderRadius: "5px", border: "1px solid #CBD5E1", resize: "vertical", minHeight: "60px", fontFamily: "inherit", color: "#1A2332", background: "#FAFAFA" }}
+                        />
+                      )}
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                {/* Response buttons */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0 }}>
-                  {[["yes", "✓ Ready", "#065F46", "#D1FAE5"], ["no", "✗ Gap", "#991B1B", "#FEE2E2"], ["na", "N/A", "#475569", "#F1F5F9"]].map(([val, lbl, color, bg]) => (
-                    <button key={val} onClick={() => setResponses({ ...responses, [item.id]: val })}
-                      style={{ padding: "5px 10px", fontSize: "11px", fontWeight: 700, border: `1px solid ${responses[item.id] === val ? color : "#CBD5E1"}`, borderRadius: "5px", cursor: "pointer", background: responses[item.id] === val ? bg : "#fff", color: responses[item.id] === val ? color : "#475569", minWidth: "70px" }}>
-                      {lbl}
+                  {/* Response buttons + flag */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0, alignItems: "flex-end" }}>
+                    {[["yes", "✓ Ready", "#065F46", "#D1FAE5"], ["no", "✗ Gap", "#991B1B", "#FEE2E2"], ["na", "N/A", "#475569", "#F1F5F9"]].map(([val, lbl, color, bg]) => (
+                      <button key={val} onClick={() => setResponses({ ...responses, [item.id]: val })}
+                        style={{ padding: "5px 10px", fontSize: "11px", fontWeight: 700, border: `1px solid ${responses[item.id] === val ? color : "#CBD5E1"}`, borderRadius: "5px", cursor: "pointer", background: responses[item.id] === val ? bg : "#fff", color: responses[item.id] === val ? color : "#475569", minWidth: "70px" }}>
+                        {lbl}
+                      </button>
+                    ))}
+                    <button onClick={() => setFlags({ ...flags, [item.id]: !isFlagged })}
+                      title={isFlagged ? "Remove flag" : "Flag for follow-up"}
+                      style={{ padding: "5px 10px", fontSize: "11px", fontWeight: 700, border: `1px solid ${isFlagged ? "#7C3AED" : "#CBD5E1"}`, borderRadius: "5px", cursor: "pointer", background: isFlagged ? "#EDE9FE" : "#fff", color: isFlagged ? "#7C3AED" : "#94A3B8", minWidth: "70px" }}>
+                      🚩 Flag
                     </button>
-                  ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -1301,6 +1510,8 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
 // ─── Gap Scanner Tab ─────────────────────────────────────────────────────────
 
 function GapScannerTab({ institution }) {
+  const instUnits = INSTITUTION_UNITS[institution] || null;
+  const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
   const [topic, setTopic] = useState(TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
   const [policyText, setPolicyText] = useState("");
@@ -1323,8 +1534,16 @@ function GapScannerTab({ institution }) {
     setHistory(loadGapHistory());
   }, []);
 
+  // Reset unit when institution changes
+  useEffect(() => {
+    const iu = INSTITUTION_UNITS[institution] || null;
+    setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
+    setResult(null); setResultMeta(null); setActionPlan(null); setLoadedEntryId(null);
+  }, [institution]);
+
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
   const topicFinal = customTopic.trim() || topic;
+  const isContractedUnit = unit.endsWith("(Contracted)");
 
   async function handleFile(e) {
     const file = e.target.files?.[0];
@@ -1462,8 +1681,13 @@ Rules:
       ? policyText.slice(0, charLimit) + "\n[... document truncated for analysis ...]"
       : policyText;
 
+    const unitLine = instUnits ? `${instUnits.label}: ${unit}` : `Department: ${unit}`;
+    const contractedNote = isContractedUnit
+      ? `\nThis is a CONTRACTED service. Evaluate the policy specifically for compliance with contracted-service oversight requirements (e.g. §482.12(e) for hospitals, or the equivalent section for this institution type): contract documentation, vendor credentialing, performance monitoring, and service-specific regulatory standards.`
+      : "";
     const userContent = `Institution Type: ${inst.label} (${inst.cfr})
-Policy Topic: ${topicFinal}
+${unitLine}
+Policy Topic: ${topicFinal}${contractedNote}
 
 POLICY TEXT TO ANALYZE:
 ${truncated}`;
@@ -1568,6 +1792,19 @@ ${truncated}`;
       {/* Input form */}
       <div style={S.card}>
         <div style={S.row}>
+          {instUnits && (
+            <div>
+              <label style={S.label}>{instUnits.label}</label>
+              <select style={S.select} value={unit} onChange={(e) => { setUnit(e.target.value); setResult(null); setResultMeta(null); setActionPlan(null); }}>
+                <optgroup label="Units / Departments">
+                  {instUnits.units.map((d) => <option key={d} value={d}>{d}</option>)}
+                </optgroup>
+                <optgroup label="Contracted Services">
+                  {instUnits.contracted.map((d) => <option key={d} value={d}>{d}</option>)}
+                </optgroup>
+              </select>
+            </div>
+          )}
           <div>
             <label style={S.label}>Policy Topic</label>
             <select style={S.select} value={topic} onChange={(e) => { setTopic(e.target.value); setCustomTopic(""); }}>
