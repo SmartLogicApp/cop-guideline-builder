@@ -34,6 +34,7 @@ const TOPICS = [
   "Laboratory Services",
 ];
 
+// Generic fallback departments (used only if an institution type is not in INSTITUTION_UNITS)
 const DEPARTMENTS = [
   "Nursing / Patient Care",
   "Infection Prevention & Control",
@@ -53,36 +54,272 @@ const DEPARTMENTS = [
   "Human Resources",
 ];
 
-// Hospital-specific clinical units — used when institution === "hospital"
-const HOSPITAL_UNITS = [
-  "Medical / Med-Surg",
-  "Emergency Department (ED)",
-  "Intensive Care Unit (ICU)",
-  "Surgery / Operating Room",
-  "Labor & Delivery / OB",
-  "Pediatrics",
-  "Neonatal ICU (NICU)",
-  "Psychiatric / Behavioral Health",
-  "Oncology",
-  "Cardiac / Telemetry",
-  "Orthopedics",
-  "Neurology / Stroke",
-  "Laboratory (Clinical Lab)",
-  "Radiology / Imaging",
-  "Pharmacy",
-  "Rehabilitation / Physical Therapy",
-  "Endoscopy / GI Lab",
-  "Cardiac Cath Lab",
-  "Dialysis / Nephrology",
-  "Wound Care / Infusion",
-  "Central Sterile Processing (SPD)",
-  "Environmental Services (EVS)",
-  "Food & Nutrition Services",
-  "Case Management / Social Work",
-  "Medical Records / HIM",
-  "Quality & Compliance",
-  "Administration",
-];
+// Per-institution unit/department + contracted-service lists
+// Each entry: { label: string, units: string[], contracted: string[] }
+const INSTITUTION_UNITS = {
+  hospital: {
+    label: "Hospital Unit / Department",
+    units: [
+      "Medical / Med-Surg",
+      "Emergency Department (ED)",
+      "Intensive Care Unit (ICU)",
+      "Surgery / Operating Room",
+      "Labor & Delivery / OB",
+      "Pediatrics",
+      "Neonatal ICU (NICU)",
+      "Psychiatric / Behavioral Health",
+      "Oncology",
+      "Cardiac / Telemetry",
+      "Orthopedics",
+      "Neurology / Stroke",
+      "Laboratory (Clinical Lab)",
+      "Radiology / Imaging",
+      "Pharmacy",
+      "Rehabilitation / Physical Therapy",
+      "Endoscopy / GI Lab",
+      "Cardiac Cath Lab",
+      "Dialysis / Nephrology",
+      "Wound Care / Infusion",
+      "Central Sterile Processing (SPD)",
+      "Environmental Services (EVS)",
+      "Food & Nutrition Services",
+      "Case Management / Social Work",
+      "Medical Records / HIM",
+      "Quality & Compliance",
+      "Administration",
+    ],
+    contracted: [
+      "Dietary / Food Services (Contracted)",
+      "Environmental / Housekeeping (Contracted)",
+      "Security Services (Contracted)",
+      "Laboratory Services (Contracted)",
+      "Radiology / Imaging (Contracted)",
+      "Biomedical / Clinical Engineering (Contracted)",
+      "Pharmacy Services (Contracted)",
+      "Laundry Services (Contracted)",
+      "Staffing / Agency Nursing (Contracted)",
+      "Rehabilitation / Therapy Services (Contracted)",
+      "Telemedicine / Telehealth Services (Contracted)",
+      "Anesthesia Services (Contracted)",
+      "Wound Care Services (Contracted)",
+      "Dialysis Services (Contracted)",
+      "Waste Management (Contracted)",
+    ],
+  },
+  cah: {
+    label: "Unit / Department",
+    units: [
+      "Inpatient Nursing",
+      "Emergency Department",
+      "Surgery / Operating Room",
+      "Swing Bed / Long-Term Care",
+      "Laboratory (Clinical Lab)",
+      "Radiology / Imaging",
+      "Pharmacy",
+      "Outpatient / Clinic Services",
+      "Rehabilitation Services",
+      "Medical Records / HIM",
+      "Quality & Compliance",
+      "Administration",
+    ],
+    contracted: [
+      "Laboratory Services (Contracted)",
+      "Radiology / Imaging (Contracted)",
+      "Pharmacy Services (Contracted)",
+      "Specialty Physician Services (Contracted)",
+      "Dialysis Services (Contracted)",
+      "Rehabilitation / Therapy – PT/OT/SLP (Contracted)",
+      "Dietary / Food Services (Contracted)",
+      "Security Services (Contracted)",
+      "Environmental / Housekeeping (Contracted)",
+      "Telemedicine / Telehealth (Contracted)",
+      "Biomedical Engineering (Contracted)",
+    ],
+  },
+  snf: {
+    label: "Unit / Department",
+    units: [
+      "Short-Term Rehabilitation",
+      "Long-Term Care",
+      "Memory Care / Dementia Unit",
+      "Ventilator / Trach Unit",
+      "Wound Care",
+      "Sub-Acute / Step-Down",
+      "Nursing / Patient Care",
+      "Therapy – PT / OT / SLP",
+      "Social Services",
+      "Dietary / Food Services",
+      "Activities / Recreational Therapy",
+      "MDS / Clinical Reimbursement",
+      "Housekeeping / Laundry",
+      "Maintenance / Facilities",
+      "Medical Records / HIM",
+      "Quality & Compliance",
+      "Administration",
+    ],
+    contracted: [
+      "Pharmacy Services (Contracted)",
+      "Laboratory Services (Contracted)",
+      "Radiology / Imaging (Contracted)",
+      "Hospice Services (Contracted)",
+      "Dental Services (Contracted)",
+      "Podiatry Services (Contracted)",
+      "Optometry Services (Contracted)",
+      "Mental Health / Behavioral Health (Contracted)",
+      "Staffing Agency / Registry (Contracted)",
+      "Therapy – PT/OT/SLP (Contracted)",
+      "Wound Care Services (Contracted)",
+      "Dialysis Services (Contracted)",
+    ],
+  },
+  hha: {
+    label: "Service / Department",
+    units: [
+      "Skilled Nursing",
+      "Physical Therapy",
+      "Occupational Therapy",
+      "Speech Therapy",
+      "Medical Social Services",
+      "Home Health Aide Services",
+      "Telehealth / Remote Monitoring",
+      "Intake / Admissions",
+      "Billing / Coding",
+      "Infection Prevention & Control",
+      "Quality & Compliance",
+      "Administration",
+    ],
+    contracted: [
+      "Therapy Services – PT/OT/SLP (Contracted)",
+      "Home Health Aide Services (Contracted)",
+      "Infusion Therapy (Contracted)",
+      "Wound Care Services (Contracted)",
+      "Medical Equipment / DME (Contracted)",
+      "Pharmacy Services (Contracted)",
+      "Laboratory Services (Contracted)",
+      "Telehealth Services (Contracted)",
+      "Interpreter / Translation Services (Contracted)",
+      "Personal Care Services (Contracted)",
+    ],
+  },
+  hospice: {
+    label: "Program / Service Area",
+    units: [
+      "Skilled Nursing",
+      "Medical Social Services",
+      "Chaplaincy / Spiritual Care",
+      "Volunteer Services",
+      "Bereavement Services",
+      "Aide Services",
+      "Pharmacy",
+      "Medical Director / Physician Services",
+      "Home Hospice Care",
+      "Inpatient Hospice Unit (GIP)",
+      "Continuous Home Care",
+      "Respite Care",
+      "Quality & Compliance",
+      "Administration",
+    ],
+    contracted: [
+      "Inpatient Facility / GIP Services (Contracted)",
+      "Pharmacy Services (Contracted)",
+      "Laboratory Services (Contracted)",
+      "Medical Equipment / DME (Contracted)",
+      "Therapy Services – PT/OT/SLP (Contracted)",
+      "Interpreter / Translation Services (Contracted)",
+      "Mental Health / Counseling Services (Contracted)",
+      "Ambulance / Transport Services (Contracted)",
+      "Respite Facility Services (Contracted)",
+    ],
+  },
+  asc: {
+    label: "Area / Department",
+    units: [
+      "Pre-Operative / Holding Area",
+      "Operating Room",
+      "Post-Anesthesia Care Unit (PACU)",
+      "Endoscopy / GI Lab",
+      "Pain Management",
+      "Ophthalmology",
+      "Orthopedic / Spine",
+      "Plastic / Reconstructive Surgery",
+      "Central Sterile Processing (SPD)",
+      "Radiology / Imaging",
+      "Pharmacy",
+      "Medical Records / HIM",
+      "Quality & Compliance",
+      "Administration",
+    ],
+    contracted: [
+      "Anesthesia Services (Contracted)",
+      "Pharmacy Services (Contracted)",
+      "Laboratory Services (Contracted)",
+      "Radiology / Imaging (Contracted)",
+      "Biomedical Engineering (Contracted)",
+      "Environmental / Housekeeping (Contracted)",
+      "Laundry / Linen Services (Contracted)",
+      "Dietary / Catering (Contracted)",
+      "Staffing / Agency Staff (Contracted)",
+      "Sterilization / SPD Services (Contracted)",
+      "Medical Waste Disposal (Contracted)",
+    ],
+  },
+  esrd: {
+    label: "Area / Department",
+    units: [
+      "In-Center Hemodialysis",
+      "Peritoneal Dialysis Training",
+      "Home Hemodialysis Training",
+      "Vascular Access Clinic",
+      "Nutrition / Dietitian Services",
+      "Social Services",
+      "Water Treatment / RO System",
+      "Medical Records / HIM",
+      "Quality & Compliance",
+      "Administration",
+    ],
+    contracted: [
+      "Pharmacy / EPO & Medications (Contracted)",
+      "Laboratory Services (Contracted)",
+      "Vascular Access Surgery (Contracted)",
+      "Water Treatment Maintenance (Contracted)",
+      "Biomedical / Equipment Services (Contracted)",
+      "Dietitian Services (Contracted)",
+      "Social Work Services (Contracted)",
+      "Transportation / Logistics (Contracted)",
+      "Staffing Agency (Contracted)",
+      "Waste Disposal (Contracted)",
+    ],
+  },
+  rhc: {
+    label: "Service / Department",
+    units: [
+      "Primary Care / Family Medicine",
+      "Pediatrics",
+      "Women's Health / OB-GYN",
+      "Behavioral Health",
+      "Dental Services",
+      "Pharmacy",
+      "Laboratory / Point-of-Care Testing",
+      "Radiology / Imaging",
+      "Care Coordination / Case Management",
+      "Chronic Disease Management",
+      "Quality & Compliance",
+      "Administration",
+    ],
+    contracted: [
+      "Laboratory Services (Contracted)",
+      "Radiology / Imaging (Contracted)",
+      "Pharmacy Services (Contracted)",
+      "Behavioral Health Services (Contracted)",
+      "Dental Services (Contracted)",
+      "Physical / Occupational Therapy (Contracted)",
+      "Specialty Physician Services (Contracted)",
+      "Telemedicine / Telehealth (Contracted)",
+      "Interpreter / Translation Services (Contracted)",
+      "Transportation Services (Contracted)",
+    ],
+  },
+};
 
 // Regulatory body display config
 const BODIES = [
@@ -862,10 +1099,10 @@ Output as plain text only (no JSON, no markdown headers with #).`;
 // ─── Inspection Tab ──────────────────────────────────────────────────────────
 
 function InspectionTab({ institution }) {
-  const isHospital = institution === "hospital";
-  const deptOptions = isHospital ? HOSPITAL_UNITS : DEPARTMENTS;
+  const instUnits = INSTITUTION_UNITS[institution] || null;
+  const firstDept = instUnits ? instUnits.units[0] : DEPARTMENTS[0];
 
-  const [dept, setDept] = useState(deptOptions[0]);
+  const [dept, setDept] = useState(firstDept);
   const [govBodies, setGovBodies] = useState({ cms: true, tjc: false, dnv: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -873,10 +1110,10 @@ function InspectionTab({ institution }) {
   const [responses, setResponses] = useState({});
   const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
 
-  // Reset unit/dept selection whenever institution type changes
+  // Reset selection whenever institution type changes
   useEffect(() => {
-    const opts = institution === "hospital" ? HOSPITAL_UNITS : DEPARTMENTS;
-    setDept(opts[0]);
+    const iu = INSTITUTION_UNITS[institution] || null;
+    setDept(iu ? iu.units[0] : DEPARTMENTS[0]);
     setResult(null);
     setResponses({});
     setDataSource(null);
@@ -884,6 +1121,7 @@ function InspectionTab({ institution }) {
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
   const selectedBodies = Object.entries(govBodies).filter(([, v]) => v).map(([k]) => k.toUpperCase());
+  const isContracted = dept.endsWith("(Contracted)");
 
   async function generate() {
     setLoading(true); setError(null); setResult(null); setResponses({}); setDataSource(null);
@@ -908,11 +1146,13 @@ Output ONLY valid JSON:
 Generate exactly 12 items. Cover these areas proportionally: Documentation, Policies & Procedures, Staff Training & Competency, Physical Environment, Patient Safety, and Ongoing Monitoring. Include a mix of High (4), Medium (5), and Low (3) risk items. Use real regulatory codes from the selected governing bodies.`;
 
     const bodies = selectedBodies.length ? selectedBodies.join(", ") : "CMS";
-    const unitLabel = isHospital ? `Hospital Unit: ${dept}` : `Department: ${dept}`;
-    const userContent = `Institution: ${inst.label} (${inst.cfr})\n${unitLabel}\nGoverning Bodies: ${bodies}\n${isHospital ? `Focus the checklist specifically on the ${dept} unit — include unit-specific surveyor questions, common deficiencies found in that unit, and the regulatory standards most applicable to it.` : ""}`;
+    const deptLine = instUnits ? `${instUnits.label}: ${dept}` : `Department: ${dept}`;
+    const contractedNote = isContracted
+      ? `\nThis is a CONTRACTED service. Focus the checklist on: (1) the governing body's requirements for oversight of contracted services, (2) contract/agreement review, (3) how the facility monitors contractor performance, (4) staff competency and credentialing of contractor staff, and (5) any service-specific regulatory standards. Include questions a surveyor would ask the facility about how they manage and oversee this contracted vendor.`
+      : `\nFocus the checklist specifically on the ${dept} area — unit-specific surveyor questions, common deficiencies found there, and the most applicable regulatory standards.`;
+    const userContent = `Institution: ${inst.label} (${inst.cfr})\n${deptLine}\nGoverning Bodies: ${bodies}${contractedNote}`;
 
     try {
-      // Pass institutionValue only when CMS is selected so the server injects live eCFR text
       const instValue = govBodies.cms ? institution : undefined;
       const { text: raw, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 3000, instValue);
       const data = repairJson(raw);
@@ -937,9 +1177,20 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
       <div style={S.card}>
         <div style={S.row}>
           <div>
-            <label style={S.label}>{isHospital ? "Hospital Unit / Department" : "Department / Service Area"}</label>
+            <label style={S.label}>{instUnits ? instUnits.label : "Department / Service Area"}</label>
             <select style={S.select} value={dept} onChange={(e) => setDept(e.target.value)}>
-              {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+              {instUnits ? (
+                <>
+                  <optgroup label="Units / Departments">
+                    {instUnits.units.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </optgroup>
+                  <optgroup label="Contracted Services">
+                    {instUnits.contracted.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </optgroup>
+                </>
+              ) : (
+                DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)
+              )}
             </select>
           </div>
           <div>
