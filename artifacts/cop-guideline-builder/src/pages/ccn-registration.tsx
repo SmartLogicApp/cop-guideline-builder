@@ -190,6 +190,16 @@ export default function CcnRegistrationPage() {
             Enter your 6-character CCN above and click Verify to continue.
           </p>
         )}
+
+        <div style={{ borderTop: "1px solid #E2E8F0", marginTop: "28px", paddingTop: "20px", textAlign: "center" }}>
+          <button style={S.btnSec} onClick={() => setLocation("/")}>
+            Skip for now
+          </button>
+          <p style={{ fontSize: "11px", color: "#94A3B8", marginTop: "8px", lineHeight: 1.5 }}>
+            You can add your CCN later from the account settings.
+            Some features work without it.
+          </p>
+        </div>
       </div>
     </div>
   );

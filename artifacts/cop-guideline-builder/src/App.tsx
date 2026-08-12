@@ -127,8 +127,7 @@ function HomeRedirect() {
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!isLoaded || accountLoading) return;
-    if (isSignedIn && !accountData?.account) setLocation("/register-ccn");
+    // CCN registration is optional — no forced redirect
   }, [isSignedIn, isLoaded, accountData, accountLoading, setLocation]);
 
   if (!isLoaded || (isSignedIn && accountLoading)) {
@@ -144,7 +143,7 @@ function HomeRedirect() {
     <>
       <Show when="signed-out"><Landing /></Show>
       <Show when="signed-in">
-        {accountData?.account && <CoPGuidelineBuilder />}
+        <CoPGuidelineBuilder />
       </Show>
     </>
   );
