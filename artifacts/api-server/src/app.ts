@@ -49,7 +49,7 @@ app.post(
 
 // ── Body parsers ──────────────────────────────────────────────────────────────
 app.use(cors({ credentials: true, origin: true }));
-app.use(express.json({ type: ["application/json", "text/plain"] }));
+app.use(express.json({ type: ["application/json", "text/plain"], limit: "4mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // ── Clerk session middleware ───────────────────────────────────────────────────

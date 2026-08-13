@@ -1084,6 +1084,49 @@ async function extractTextFromFile(file) {
   });
 }
 
+// ─── Long-document chunking helpers ──────────────────────────────────────────
+
+const CHUNK_SIZE = 28000; // chars per chunk (~7k tokens); covers most single policies
+const MAX_CHUNKS = 4;     // cap at 4 chunks (~112k chars total)
+
+function chunkText(text) {
+  if (text.length <= CHUNK_SIZE) return [text];
+  const chunks = [];
+  let start = 0;
+  while (start < text.length && chunks.length < MAX_CHUNKS) {
+    let end = start + CHUNK_SIZE;
+    if (end < text.length) {
+      // Prefer splitting at a paragraph break so context isn't mid-sentence
+      const lastPara = text.lastIndexOf("\n\n", end);
+      const lastLine = text.lastIndexOf("\n", end);
+      if (lastPara > start + CHUNK_SIZE * 0.5) end = lastPara;
+      else if (lastLine > start + CHUNK_SIZE * 0.5) end = lastLine;
+    }
+    chunks.push(text.slice(start, end).trim());
+    start = end;
+  }
+  return chunks;
+}
+
+function mergeGapResults(results) {
+  const scores = results.map((r) => r.score).filter((s) => s != null);
+  const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+
+  const parts = results.map((r, i) => `Section ${i + 1}: ${r.summary}`).join(" | ");
+  const summary = results.length === 1 ? results[0].summary : parts;
+
+  function dedup(key) {
+    const seen = new Set();
+    return results.flatMap((r) => r[key] || []).filter((item) => {
+      if (seen.has(item.code)) return false;
+      seen.add(item.code);
+      return true;
+    });
+  }
+
+  return { score: avgScore, summary, met: dedup("met"), weak: dedup("weak"), missing: dedup("missing") };
+}
+
 // ─── Gap Analysis History (localStorage) ─────────────────────────────────────
 
 const GAP_HISTORY_KEY = "cop_gap_analysis_history";
@@ -1933,6 +1976,8 @@ function GapScannerTab({ institution }) {
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState("Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…");
+  const [sideBySide, setSideBySide] = useState(() => typeof window !== "undefined" && window.innerWidth >= 960);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [resultMeta, setResultMeta] = useState(null); // { institution, topic, timestamp }
@@ -2048,7 +2093,7 @@ Rules:
 
     const systemPrompt = `You are a senior healthcare regulatory compliance auditor with expert knowledge of CMS Conditions of Participation, Joint Commission, DNV NIAHO, and ISO 9001:2015.
 
-A user will provide an existing policy document. Your job is to identify compliance gaps against the regulatory standards that apply to the given institution type and policy topic.
+A user will provide an existing policy document (or a section of one). Your job is to identify compliance gaps against the regulatory standards that apply to the given institution type and policy topic.
 
 Output ONLY valid JSON with this exact structure:
 {
@@ -2090,30 +2135,34 @@ Rules:
 - "recommendation" should be actionable — what exact language or element is needed.
 - Do NOT fabricate citations. If a standard clearly does not apply, omit it.`;
 
-    const charLimit = 12000;
-    const truncated = policyText.length > charLimit
-      ? policyText.slice(0, charLimit) + "\n[... document truncated for analysis ...]"
-      : policyText;
-
     const unitLine = instUnits ? `${instUnits.label}: ${unit}` : `Department: ${unit}`;
     const contractedNote = isContractedUnit
       ? `\nThis is a CONTRACTED service. Evaluate the policy specifically for compliance with contracted-service oversight requirements (e.g. §482.12(e) for hospitals, or the equivalent section for this institution type): contract documentation, vendor credentialing, performance monitoring, and service-specific regulatory standards.`
       : "";
-    const userContent = `Institution Type: ${inst.label} (${inst.cfr})
-${unitLine}
-Policy Topic: ${topicFinal}${contractedNote}
+    const header = `Institution Type: ${inst.label} (${inst.cfr})\n${unitLine}\nPolicy Topic: ${topicFinal}${contractedNote}\n\nPOLICY TEXT TO ANALYZE:\n`;
 
-POLICY TEXT TO ANALYZE:
-${truncated}`;
+    const chunks = chunkText(policyText.trim());
 
     try {
-      const raw = await callApi(systemPrompt, userContent, 4000);
-      const parsed = repairJson(raw);
+      const chunkResults = [];
+      for (let i = 0; i < chunks.length; i++) {
+        setLoadingMsg(
+          chunks.length === 1
+            ? "Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…"
+            : `Analyzing section ${i + 1} of ${chunks.length}…`
+        );
+        const sectionNote = chunks.length > 1
+          ? `\n[This is section ${i + 1} of ${chunks.length} of the full policy document.]`
+          : "";
+        const raw = await callApi(systemPrompt, header + chunks[i] + sectionNote, 4000);
+        chunkResults.push(repairJson(raw));
+      }
+
+      const parsed = chunks.length === 1 ? chunkResults[0] : mergeGapResults(chunkResults);
       setResult(parsed);
       const meta = { institution, topic: topicFinal };
       setResultMeta(meta);
-      setLoadedEntryId(null); // fresh scan, not a loaded entry
-      // Persist to localStorage
+      setLoadedEntryId(null);
       const entry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         institution,
@@ -2129,6 +2178,7 @@ ${truncated}`;
       setError(e.message);
     } finally {
       setLoading(false);
+      setLoadingMsg("Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…");
     }
   }
 
@@ -2233,7 +2283,7 @@ ${truncated}`;
 
         {/* Upload area */}
         <div style={{ marginBottom: "12px" }}>
-          <label style={S.label}>Upload Policy Document (PDF or .txt)</label>
+          <label style={S.label}>Upload Policy Document (PDF, TXT, DOC, DOCX)</label>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             <label style={{ ...S.btnSm, display: "inline-block", cursor: "pointer", padding: "8px 14px", background: "#F8FAFC", borderStyle: "dashed" }}>
               {fileLoading ? "Reading…" : "📎 Choose File"}
@@ -2244,6 +2294,9 @@ ${truncated}`;
             )}
             {fileLoading && <span style={{ fontSize: "12px", color: "#64748B" }}>Extracting text…</span>}
             {fileError && <span style={{ fontSize: "12px", color: "#DC2626" }}>⚠ {fileError}</span>}
+          </div>
+          <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "5px" }}>
+            Upload one policy document at a time. Long documents are automatically analyzed in sections — no need to shorten them first.
           </div>
         </div>
 
@@ -2256,11 +2309,15 @@ ${truncated}`;
             onChange={(e) => { setPolicyText(e.target.value); if (e.target.value !== policyText) setFileName(null); }}
             placeholder="Paste your existing policy document here…"
           />
-          {policyText.length > 0 && (
-            <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "4px", textAlign: "right" }}>
-              {policyText.length.toLocaleString()} characters{policyText.length > 12000 ? " (will be truncated to ~12,000 for analysis)" : ""}
-            </div>
-          )}
+          {policyText.length > 0 && (() => {
+            const chunks = chunkText(policyText.trim());
+            const sectionLabel = chunks.length > 1 ? ` — will be analyzed in ${chunks.length} sections` : "";
+            return (
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "4px", textAlign: "right" }}>
+                {policyText.length.toLocaleString()} characters{sectionLabel}
+              </div>
+            );
+          })()}
         </div>
 
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
@@ -2329,10 +2386,38 @@ ${truncated}`;
         </div>
       )}
 
-      {loading && <div style={S.card}><LoadingSpinner message="Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…" /></div>}
+      {loading && <div style={S.card}><LoadingSpinner message={loadingMsg} /></div>}
 
       {result && !loading && (
         <div>
+          {/* Side-by-side toggle — only shown when there is policy text to display */}
+          {policyText.trim() && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+              <button
+                onClick={() => setSideBySide((v) => !v)}
+                style={{ padding: "6px 14px", fontSize: "12px", fontWeight: 600, border: "1px solid #CBD5E1", borderRadius: "7px", background: sideBySide ? "#0D5C6B" : "#fff", color: sideBySide ? "#fff" : "#475569", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                <span style={{ fontSize: "14px" }}>{sideBySide ? "⬛" : "⬜"}</span>
+                {sideBySide ? "Side-by-Side On" : "Side-by-Side Off"}
+              </button>
+            </div>
+          )}
+
+          <div style={{ display: sideBySide && policyText.trim() ? "grid" : "block", gridTemplateColumns: "1fr 1fr", gap: "16px", alignItems: "start" }}>
+
+          {/* Left pane — policy document (only in side-by-side mode) */}
+          {sideBySide && policyText.trim() && (
+            <div style={{ position: "sticky", top: "80px", maxHeight: "82vh", overflowY: "auto", background: "#fff", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+              <div style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>📄 Policy Document</span>
+                {fileName && <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>{fileName}</span>}
+              </div>
+              <pre style={{ fontSize: "12px", lineHeight: 1.7, color: "#334155", whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, fontFamily: "system-ui, -apple-system, sans-serif" }}>{policyText}</pre>
+            </div>
+          )}
+
+          {/* Right pane — results */}
+          <div>
           {/* History banner when viewing a loaded entry */}
           {loadedEntryId && (() => {
             const entry = history.find((e) => e.id === loadedEntryId);
@@ -2510,6 +2595,8 @@ ${truncated}`;
               </div>
             </div>
           )}
+          </div> {/* /right pane */}
+          </div> {/* /side-by-side grid */}
         </div>
       )}
     </div>
