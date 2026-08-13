@@ -1,0 +1,70 @@
+to support per-facility subscription billing 
+with anti-sharing protections. Implement the following:
+
+## 1. DATA MODEL — Facility-Scoped Accounts
+- Add a `Facility` model/table: facility_id, facility_name, address, 
+  CMS CCN (CMS Certification Number) if available, subscription_status, 
+  stripe_subscription_item_id, created_at
+- Add a `Organization` model/table (parent) that can own multiple Facilities 
+  — for hospital systems with multiple locations: organization_id, 
+  organization_name, billing_contact
+- Every User account must belong to exactly one Facility (not shared across 
+  facilities)
+- Every piece of facility-specific data (policies uploaded, guideline 
+  comparisons run, survey readiness reports, audit history) must be scoped 
+  to facility_id — never shared or visible across facilities, even within 
+  the same parent Organization, unless a user is explicitly granted 
+  multi-facility admin access (see section 3)
+- Add a `role` field to User: "facility_user" or "org_admin" 
+  (org_admin can view read-only summaries across their organization's 
+  facilities, but cannot edit another facility's data)
+
+## 2. BILLING — Per-Facility Stripe Subscription
+- Use Stripe Billing with a metered/quantity-based subscription: 
+  one subscription per Organization, quantity = number of active Facilities, 
+  unit price = $300/month per facility
+- When an admin adds a new facility to their organization, increment the 
+  subscription quantity (prorated) via Stripe's subscription item update API
+- When a facility is deactivated/removed, decrement quantity at the next 
+  billing cycle (not immediate refund)
+- Build an admin-facing "Manage Facilities" page where an org_admin can 
+  see all their facilities, add a new one (triggers Stripe quantity update 
+  + new Facility record + invite flow for that facility's login), 
+  and remove one
+- Store facility_id -> stripe_subscription_item mapping so billing stays 
+  in sync with active facility count
+
+## 3. TECHNICAL ENFORCEMENT — Prevent Login Sharing
+- On login, check for existing active sessions for that user account. 
+  If a new login occurs from a different IP address/geolocation while an 
+  existing session is still active, either:
+  (a) invalidate the older session and notify that user by email, or 
+  (b) block the new login and show "This account is already active 
+      elsewhere" with a support contact link
+  Implement option (a) by default — simplest for legitimate single users 
+  switching devices, still discourages sharing since it kicks out the 
+  other person
+- Log login events (timestamp, IP, approximate location) per user account 
+  for a rolling 90 days
+- Add a simple internal admin view (only visible to me) that flags accounts 
+  with logins from more than 2 distinct states/regions within a 30-day 
+  window, for manual review
+- Rate-limit login attempts per account per hour to prevent obvious 
+  credential-sharing abuse patterns
+
+## 4. CONTRACTUAL BACKSTOP — Terms of Service
+- Add a Terms of Service page (or update if one exists) with a clause 
+  stating: "Each subscription login is licensed to a single facility 
+  location. Sharing login credentials across multiple physical facilities 
+  or entities without a corresponding paid subscription for each facility 
+  is a violation of these Terms and grounds for account suspension without 
+  refund. [Company] reserves the right to audit account usage and 
+  facility-specific data access patterns to verify compliance."
+- Require checkbox acceptance of Terms at signup, stored with timestamp 
+  and user_id for record-keeping
+- Add this same one-line reminder near the login/signup form: 
+  "One login per facility location — see Terms of Service"
+
+Please implement this in stages, starting with the data model changes, 
+then Stripe integration, then the session/login enforcement, then the 
+Terms of Service page and signup flow update.
