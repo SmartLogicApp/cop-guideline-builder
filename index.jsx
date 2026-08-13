@@ -2606,57 +2606,98 @@ Rules:
 // ─── Legal Content ────────────────────────────────────────────────────────────
 
 const TERMS = `TERMS OF SERVICE
-Last updated: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+Last updated: August 13, 2026
 
 1. ACCEPTANCE OF TERMS
-By accessing or using the CMS CoP Compliance Suite ("the Service"), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.
+By accessing or using the CMS CoP Compliance Suite ("the Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not access or use the Service.
 
-2. ACCOUNT USE AND LOGIN RESTRICTIONS
+2. DEFINITIONS
+As used in these Terms:
 
-2.1 One Login, One Facility. Login credentials issued under a Subscription are licensed for use in connection with the single Facility to which that Subscription applies. Credentials may not be shared, distributed, or otherwise made available for use by, or on behalf of, any other Facility, location, or entity — including other Facilities within the same Organization — without a corresponding, separately paid Subscription for that Facility.
+"Facility" means a single, distinct physical location or CMS-certified site operated under one CMS Certification Number (CCN) or equivalent regulatory identifier.
 
-2.2 Authorized Users. A Facility may designate multiple individual users to access its Subscription (e.g., compliance officer, administrator, department heads), provided all such users are acting on behalf of the single licensed Facility. This section does not limit the number of individual staff members at one Facility who may use the Service; it limits use to that one Facility.
+"Organization" means a legal entity (e.g., a health system or management company) that may own or operate one or more Facilities.
 
-2.3 Monitoring for Compliance. CMS CoP Compliance Suite may monitor account usage patterns, including login timestamps, IP addresses, and approximate geographic location, for the purpose of verifying compliance with this Section 2. This monitoring is used solely to enforce these Terms and is not shared for any other purpose except as required by law.
+"Subscription" means an active, paid plan that licenses access to the Service for one Facility.
 
-2.4 Suspected Violations. If CMS CoP Compliance Suite reasonably believes that login credentials issued under a single Facility Subscription are being used by, or on behalf of, more than one Facility, CMS CoP Compliance Suite may: (a) request written confirmation from the Organization regarding account usage; (b) require the Organization to purchase additional Subscriptions to bring usage into compliance; and/or (c) suspend or terminate the Subscription without refund if the Organization fails to remedy the violation within fifteen (15) days of written notice.
+"Authorized User" means an individual employed by, or acting on behalf of, a single licensed Facility who has been granted access credentials under that Facility's Subscription.
 
-2.5 No Waiver by Inaction. CMS CoP Compliance Suite's failure to enforce this Section 2 in any instance does not waive its right to enforce it in any other instance.
+3. ACCOUNT USE AND LOGIN RESTRICTIONS
+
+3.1 One Subscription, One Facility. Login credentials issued under a Subscription are licensed for use in connection with the single Facility to which that Subscription applies. Credentials may not be shared, distributed, or otherwise made available for use by, or on behalf of, any other Facility, location, or entity — including other Facilities within the same Organization — without a corresponding, separately paid Subscription for that Facility.
+
+3.2 Authorized Users. A Facility may designate multiple individual users to access its Subscription (e.g., compliance officer, administrator, department heads), provided all such users are acting on behalf of the single licensed Facility. This section does not limit the number of individual staff members at one Facility who may use the Service; it limits use to that one Facility.
+
+3.3 Monitoring for Compliance. CMS CoP Compliance Suite may monitor account usage patterns, including login timestamps, IP addresses, and approximate geographic location, for the purpose of verifying compliance with this Section 3. This monitoring is used solely to enforce these Terms and is not shared for any other purpose except as required by law.
+
+3.4 Suspected Violations. If CMS CoP Compliance Suite reasonably believes that login credentials issued under a single Facility Subscription are being used by, or on behalf of, more than one Facility, CMS CoP Compliance Suite may: (a) request written confirmation from the Organization regarding account usage; (b) require the Organization to purchase additional Subscriptions to bring usage into compliance; and/or (c) suspend or terminate the Subscription without refund if the Organization fails to remedy the violation within fifteen (15) days of written notice.
+
+3.5 No Waiver by Inaction. CMS CoP Compliance Suite's failure to enforce this Section 3 in any instance does not waive its right to enforce it in any other instance.
 
 For multi-facility or enterprise pricing inquiries, contact: HectorSamlut@outlook.com
 
-3. DESCRIPTION OF SERVICE
+4. SUBSCRIPTION AND PAYMENT TERMS
+
+4.1 Billing. Subscriptions are billed on a monthly, per-Facility basis. Payment is due at the start of each billing period. By subscribing, you authorize CMS CoP Compliance Suite (or its payment processor) to charge the payment method on file for recurring monthly fees.
+
+4.2 No Refunds. All Subscription fees are non-refundable. Upon cancellation or termination, you retain full access to the Service through the end of the current paid billing period. No partial-month refunds or credits are issued under any circumstances, including early cancellation or termination for a Terms violation.
+
+4.3 Price Changes. CMS CoP Compliance Suite reserves the right to change Subscription pricing at any time. You will receive notice of price changes at least thirty (30) days before they take effect. Continued use of the Service after the effective date of a price change constitutes acceptance of the new pricing.
+
+4.4 Non-Payment. If payment is not received by the due date, access to the Service may be suspended until payment is made current. CMS CoP Compliance Suite is not liable for any loss, damages, or business interruption resulting from suspension due to non-payment.
+
+5. DESCRIPTION OF SERVICE
 The Service is an AI-assisted tool designed to help healthcare institutions prepare compliance guidelines, policy templates, inspection readiness checklists, and policy gap analyses based on CMS Conditions of Participation, Joint Commission standards, DNV NIAHO, and ISO 9001:2015.
 
-4. NOT LEGAL OR REGULATORY ADVICE
+6. NOT LEGAL OR REGULATORY ADVICE
 All content generated by the Service is for educational and preparation purposes only. It does not constitute legal advice, regulatory guidance, or a guarantee of survey compliance. All output must be reviewed by qualified compliance counsel and verified against current official regulatory sources before implementation. Regulatory citations should be independently confirmed. User assumes all liability for decisions made based on Service output.
 
-5. ACCURACY OF INFORMATION
+7. ACCURACY OF INFORMATION
 The Service uses AI-generated content and live data from publicly available sources (including the Electronic Code of Federal Regulations at eCFR.gov). While we strive for accuracy, we make no warranties that the content is complete, current, or free of error. Regulatory requirements change frequently; users are responsible for verifying all information against official sources.
 
-6. ACCEPTABLE USE
+8. ACCEPTABLE USE
 You agree not to:
 - Use the Service to generate content intended to deceive regulators or surveyors
 - Attempt to circumvent rate limits or access controls
 - Reverse-engineer, copy, or redistribute the Service or its underlying prompts and logic
 - Use the Service for any unlawful purpose
 
-7. RATE LIMITS
+9. RATE LIMITS
 To ensure fair access, the Service enforces request limits per IP address. Excessive automated use is prohibited.
 
-8. INTELLECTUAL PROPERTY
+10. INTELLECTUAL PROPERTY
 The Service, including its design, prompts, and logic, is proprietary. Generated output documents belong to the user. Joint Commission, DNV NIAHO, and ISO 9001:2015 standards are copyrighted by their respective organizations; the Service does not reproduce or distribute their full text.
 
-9. DISCLAIMER OF WARRANTIES
-THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT.
+11. TERMINATION
 
-10. LIMITATION OF LIABILITY
-TO THE FULLEST EXTENT PERMITTED BY LAW, THE SERVICE AND ITS OPERATORS SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING FROM USE OF THE SERVICE, INCLUDING SURVEY DEFICIENCIES, CERTIFICATION ACTIONS, OR REGULATORY PENALTIES.
+11.1 By You. You may cancel your Subscription at any time through your account settings or by contacting HectorSamlut@outlook.com. Cancellation takes effect at the end of the current billing period; no refunds are issued for any unused portion of the period.
 
-11. MODIFICATIONS
-We reserve the right to modify these Terms at any time. Continued use of the Service after changes constitutes acceptance of the new Terms.
+11.2 By Us. CMS CoP Compliance Suite may suspend or terminate your account immediately, without prior notice or refund, if you breach these Terms (including Section 3), provide false information at registration, or engage in conduct that CMS CoP Compliance Suite reasonably determines to be harmful to other users, the Service, or third parties.
 
-12. CONTACT
+11.3 Effect of Termination. Upon termination, your right to access the Service ceases immediately. Data stored in your browser's local storage (e.g., gap analysis history) remains accessible locally but cannot be recovered from our servers after account deletion.
+
+12. DISCLAIMER OF WARRANTIES
+THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. CMS COP COMPLIANCE SUITE DOES NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR SECURE.
+
+13. LIMITATION OF LIABILITY
+TO THE FULLEST EXTENT PERMITTED BY APPLICABLE LAW, CMS COP COMPLIANCE SUITE AND ITS OPERATORS SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING FROM USE OF THE SERVICE, INCLUDING SURVEY DEFICIENCIES, CERTIFICATION ACTIONS, OR REGULATORY PENALTIES. IN NO EVENT SHALL OUR TOTAL LIABILITY TO YOU FOR ANY CLAIM ARISING UNDER THESE TERMS EXCEED THE TOTAL AMOUNT YOU PAID FOR THE SERVICE IN THE THREE (3) MONTHS IMMEDIATELY PRECEDING THE CLAIM.
+
+14. INDEMNIFICATION
+You agree to indemnify, defend, and hold harmless CMS CoP Compliance Suite and its operators from and against any and all claims, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or relating to: (a) your use of the Service in violation of these Terms; (b) your violation of any applicable law or regulation; or (c) your infringement of any third-party right.
+
+15. GOVERNING LAW AND JURISDICTION
+These Terms are governed by and construed in accordance with the laws of the State of Florida, without regard to its conflict-of-law principles. Any legal action or proceeding arising under or relating to these Terms shall be brought exclusively in the state or federal courts located in the State of Florida, and you hereby irrevocably consent to the personal jurisdiction and venue of such courts.
+
+16. SEVERABILITY AND ENTIRE AGREEMENT
+If any provision of these Terms is found by a court of competent jurisdiction to be unenforceable or invalid, that provision shall be limited or eliminated to the minimum extent necessary such that the remaining Terms shall continue in full force and effect. These Terms, together with the Privacy Policy, constitute the entire agreement between you and CMS CoP Compliance Suite with respect to your use of the Service and supersede all prior or contemporaneous agreements and understandings.
+
+17. PRIVACY POLICY
+Your use of the Service is also governed by our Privacy Policy, incorporated herein by reference. By using the Service, you confirm that you have read and understood the Privacy Policy.
+
+18. MODIFICATIONS
+We reserve the right to modify these Terms at any time. We will provide notice of material changes by updating the "Last Updated" date at the top of this document. Continued use of the Service after the effective date of any change constitutes acceptance of the revised Terms.
+
+19. CONTACT
 Questions about these Terms may be directed to: HectorSamlut@outlook.com`;
 
 const PRIVACY = `PRIVACY POLICY
