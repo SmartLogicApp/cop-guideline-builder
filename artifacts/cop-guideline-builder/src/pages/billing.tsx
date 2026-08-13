@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "wouter";
 import { apiFetch } from "@/lib/apiClient";
 import { useAccount } from "@/hooks/useAccount";
+import { useUser } from "@clerk/react";
 
 interface SubscriptionData {
   subscription: {
@@ -82,6 +83,22 @@ export default function BillingPage() {
   const [, params] = useSearchParams();
   const { data: accountData } = useAccount();
   const [loading, setLoading] = useState<string | null>(null);
+  const { user } = useUser();
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  async function handleDeleteAccount() {
+    if (!deleteConfirm) { setDeleteConfirm(true); return; }
+    setDeleteLoading(true);
+    try {
+      await user?.delete();
+      window.location.href = "/";
+    } catch (e: any) {
+      alert("Could not delete account: " + e.message);
+      setDeleteLoading(false);
+      setDeleteConfirm(false);
+    }
+  }
 
   const { data: subData } = useQuery<SubscriptionData>({
     queryKey: ["subscription"],
@@ -195,12 +212,17 @@ export default function BillingPage() {
                   Contact Sales
                 </a>
               ) : plan.priceId ? (
-                <button
-                  style={{ ...S.btn(plan.highlight), opacity: loading ? 0.7 : 1 }}
-                  disabled={!!loading}
-                  onClick={() => handleCheckout(plan.priceId!, plan.id)}>
-                  {loading === plan.id ? "Redirecting…" : "Subscribe"}
-                </button>
+                <>
+                  <button
+                    style={{ ...S.btn(plan.highlight), opacity: loading ? 0.7 : 1 }}
+                    disabled={!!loading}
+                    onClick={() => handleCheckout(plan.priceId!, plan.id)}>
+                    {loading === plan.id ? "Redirecting…" : "Subscribe"}
+                  </button>
+                  <p style={{ fontSize: "11px", color: plan.highlight ? "rgba(255,255,255,0.6)" : "#94A3B8", textAlign: "center", margin: "8px 0 0", lineHeight: 1.4 }}>
+                    Non-refundable. Full access through end of billing period.
+                  </p>
+                </>
               ) : (
                 <button style={{ ...S.btn(plan.highlight), opacity: 0.55, cursor: "default" }} disabled>
                   Coming Soon
@@ -211,9 +233,43 @@ export default function BillingPage() {
         </div>
 
         <p style={{ textAlign: "center", color: "#94A3B8", fontSize: "12px", marginTop: "32px" }}>
-          All plans include a 30-day free trial. Cancel anytime.
-          Charged per CCN — each facility purchases its own subscription.
+          All plans include a 30-day free trial · Cancel anytime · <strong style={{ color: "#64748B" }}>Subscription fees are non-refundable</strong><br />
+          Upon cancellation, access continues through the end of the current billing period · One subscription per CCN
         </p>
+
+        {/* Danger Zone */}
+        <div style={{ marginTop: "48px", border: "1.5px solid #FECACA", borderRadius: "10px", padding: "24px" }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "#DC2626", marginBottom: "6px" }}>Danger Zone</div>
+          <p style={{ fontSize: "13px", color: "#64748B", margin: "0 0 16px", lineHeight: 1.6 }}>
+            Permanently delete your account and all associated data. This action cannot be undone.
+            Your subscription will be cancelled immediately with no refund for the remaining billing period.
+          </p>
+          {deleteConfirm && (
+            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "7px", padding: "12px 14px", marginBottom: "12px", fontSize: "13px", color: "#991B1B" }}>
+              ⚠ Are you sure? This will permanently delete your account and cannot be reversed. Click the button again to confirm.
+            </div>
+          )}
+          <button
+            onClick={handleDeleteAccount}
+            disabled={deleteLoading}
+            style={{
+              padding: "10px 20px", background: deleteConfirm ? "#DC2626" : "#fff",
+              color: deleteConfirm ? "#fff" : "#DC2626", border: "1.5px solid #DC2626",
+              borderRadius: "7px", fontSize: "13px", fontWeight: 700, cursor: deleteLoading ? "not-allowed" : "pointer",
+              opacity: deleteLoading ? 0.7 : 1,
+            }}
+          >
+            {deleteLoading ? "Deleting…" : deleteConfirm ? "Yes, permanently delete my account" : "Delete My Account"}
+          </button>
+          {deleteConfirm && (
+            <button
+              onClick={() => setDeleteConfirm(false)}
+              style={{ marginLeft: "10px", padding: "10px 16px", background: "none", border: "1.5px solid #CBD5E1", borderRadius: "7px", fontSize: "13px", fontWeight: 600, color: "#64748B", cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

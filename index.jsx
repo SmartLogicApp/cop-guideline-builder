@@ -1330,6 +1330,51 @@ function ExcelButton({ onClick, label = "↓ Excel" }) {
   );
 }
 
+// ─── AI Disclosure Banner ─────────────────────────────────────────────────────
+function AiDisclosureBanner() {
+  return (
+    <div style={{ marginTop: "16px", padding: "9px 13px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "6px", fontSize: "11.5px", color: "#64748B", display: "flex", alignItems: "flex-start", gap: "7px", lineHeight: 1.5 }}>
+      <span style={{ flexShrink: 0 }}>🤖</span>
+      <span><strong style={{ color: "#475569" }}>AI-generated content.</strong> Verify all regulatory citations against official sources (eCFR.gov, accreditor websites) before implementation. This output does not constitute legal or regulatory advice.</span>
+    </div>
+  );
+}
+
+// ─── Onboarding Banner ────────────────────────────────────────────────────────
+function OnboardingBanner() {
+  const [visible, setVisible] = useState(() => !localStorage.getItem("cop-suite-onboarded"));
+  if (!visible) return null;
+  const steps = [
+    { icon: "1️⃣", text: "Select your institution type from the grid at the top." },
+    { icon: "2️⃣", text: "Pick a tool tab: Guidelines, Policy Templates, Inspection, or Gap Scanner." },
+    { icon: "3️⃣", text: "Choose a department/unit and policy topic, then generate." },
+    { icon: "4️⃣", text: "Export to Excel, copy to clipboard, or use the side-by-side view (Gap Scanner)." },
+  ];
+  return (
+    <div style={{ background: "linear-gradient(135deg, #E8F4F5 0%, #F0F9FF 100%)", border: "1.5px solid #B2D8DD", borderRadius: "10px", padding: "18px 20px", marginBottom: "20px", position: "relative" }}>
+      <button
+        onClick={() => { localStorage.setItem("cop-suite-onboarded", "1"); setVisible(false); }}
+        style={{ position: "absolute", top: "12px", right: "14px", background: "none", border: "none", fontSize: "18px", cursor: "pointer", color: "#64748B", lineHeight: 1 }}
+        aria-label="Dismiss"
+      >×</button>
+      <div style={{ fontWeight: 700, fontSize: "14px", color: "#0D5C6B", marginBottom: "12px" }}>👋 Welcome to CMS CoP Compliance Suite</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" }}>
+        {steps.map((s) => (
+          <div key={s.icon} style={{ background: "#fff", borderRadius: "7px", padding: "10px 13px", fontSize: "12.5px", color: "#334155", lineHeight: 1.5, border: "1px solid #E2E8F0" }}>
+            <span style={{ fontWeight: 700 }}>{s.icon}</span> {s.text}
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => { localStorage.setItem("cop-suite-onboarded", "1"); setVisible(false); }}
+        style={{ marginTop: "14px", padding: "8px 20px", background: "#0D5C6B", color: "#fff", border: "none", borderRadius: "7px", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}
+      >
+        Got it, let's start →
+      </button>
+    </div>
+  );
+}
+
 // ─── Guidelines Tab ──────────────────────────────────────────────────────────
 
 function GuidelinesTab({ institution }) {
@@ -1546,6 +1591,7 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
               </div>
             );
           })}
+          <AiDisclosureBanner />
         </div>
       )}
     </div>
@@ -1707,6 +1753,7 @@ Output as plain text only (no JSON, no markdown headers with #).`;
           </div>
           <hr style={S.divider} />
           <pre style={S.pre}>{result}</pre>
+          <AiDisclosureBanner />
         </div>
       )}
     </div>
@@ -1892,6 +1939,7 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
                 </div>
               </>
             )}
+            <AiDisclosureBanner />
           </div>
 
           {/* Checklist items */}
@@ -2281,6 +2329,12 @@ Rules:
           </div>
         </div>
 
+        {/* PHI Warning */}
+        <div style={{ background: "#FEF3C7", border: "1px solid #F59E0B", borderRadius: "7px", padding: "10px 14px", marginBottom: "14px", fontSize: "12px", color: "#92400E", display: "flex", alignItems: "flex-start", gap: "8px", lineHeight: 1.5 }}>
+          <span style={{ flexShrink: 0, fontWeight: 700 }}>⚠</span>
+          <span><strong>Do not upload documents containing Protected Health Information (PHI).</strong> This Service is not HIPAA-compliant. Policy documents must not include patient names, medical record numbers, dates of service, or any other individually identifiable health information. Ensure all documents are de-identified before upload.</span>
+        </div>
+
         {/* Upload area */}
         <div style={{ marginBottom: "12px" }}>
           <label style={S.label}>Upload Policy Document (PDF, TXT, DOC, DOCX)</label>
@@ -2479,6 +2533,7 @@ Rules:
             )}
 
             <p style={{ margin: 0, fontSize: "13.5px", color: "#334155", lineHeight: 1.6 }}>{result.summary}</p>
+            <AiDisclosureBanner />
           </div>
 
           {/* Met requirements */}
@@ -2649,59 +2704,69 @@ For multi-facility or enterprise pricing inquiries, contact: HectorSamlut@outloo
 5. DESCRIPTION OF SERVICE
 The Service is an AI-assisted tool designed to help healthcare institutions prepare compliance guidelines, policy templates, inspection readiness checklists, and policy gap analyses based on CMS Conditions of Participation, Joint Commission standards, DNV NIAHO, and ISO 9001:2015.
 
-6. NOT LEGAL OR REGULATORY ADVICE
+6. HIPAA AND PROTECTED HEALTH INFORMATION
+
+6.1 Not a HIPAA-Covered Service. This Service is not designed, intended, or configured as a HIPAA-covered service. CMS CoP Compliance Suite does not execute a Business Associate Agreement (BAA) with Subscribers, and no BAA is offered in connection with any Subscription tier.
+
+6.2 No PHI Permitted. You must not submit, upload, paste, or otherwise transmit any Protected Health Information (PHI) through the Service, as that term is defined under the Health Insurance Portability and Accountability Act of 1996 (HIPAA) and its implementing regulations. PHI includes, but is not limited to, patient names, medical record numbers, dates of service, dates of birth, Social Security numbers, geographic identifiers smaller than a state, and any other information that could reasonably be used to identify an individual patient.
+
+6.3 Compliance Documents Only. The Service is intended solely for use with compliance policy documents, regulatory templates, and self-assessment materials. All documents submitted must be de-identified and free of any patient-specific or individually identifiable health information before upload or submission.
+
+6.4 Your Responsibility. If you submit PHI through the Service in violation of this Section 6, you assume full and exclusive liability for any resulting HIPAA violations, breach notification obligations, civil or criminal penalties, or other consequences under federal or state law. CMS CoP Compliance Suite shall bear no liability for PHI submitted in violation of these Terms.
+
+7. NOT LEGAL OR REGULATORY ADVICE
 All content generated by the Service is for educational and preparation purposes only. It does not constitute legal advice, regulatory guidance, or a guarantee of survey compliance. All output must be reviewed by qualified compliance counsel and verified against current official regulatory sources before implementation. Regulatory citations should be independently confirmed. User assumes all liability for decisions made based on Service output.
 
-7. ACCURACY OF INFORMATION
+8. ACCURACY OF INFORMATION
 The Service uses AI-generated content and live data from publicly available sources (including the Electronic Code of Federal Regulations at eCFR.gov). While we strive for accuracy, we make no warranties that the content is complete, current, or free of error. Regulatory requirements change frequently; users are responsible for verifying all information against official sources.
 
-8. ACCEPTABLE USE
+9. ACCEPTABLE USE
 You agree not to:
 - Use the Service to generate content intended to deceive regulators or surveyors
 - Attempt to circumvent rate limits or access controls
 - Reverse-engineer, copy, or redistribute the Service or its underlying prompts and logic
 - Use the Service for any unlawful purpose
 
-9. RATE LIMITS
+10. RATE LIMITS
 To ensure fair access, the Service enforces request limits per IP address. Excessive automated use is prohibited.
 
-10. INTELLECTUAL PROPERTY
+11. INTELLECTUAL PROPERTY
 The Service, including its design, prompts, and logic, is proprietary. Generated output documents belong to the user. Joint Commission, DNV NIAHO, and ISO 9001:2015 standards are copyrighted by their respective organizations; the Service does not reproduce or distribute their full text.
 
-11. TERMINATION
+12. TERMINATION
 
-11.1 By You. You may cancel your Subscription at any time through your account settings or by contacting HectorSamlut@outlook.com. Cancellation takes effect at the end of the current billing period; no refunds are issued for any unused portion of the period.
+12.1 By You. You may cancel your Subscription at any time through your account settings or by contacting HectorSamlut@outlook.com. Cancellation takes effect at the end of the current billing period; no refunds are issued for any unused portion of the period.
 
-11.2 By Us. CMS CoP Compliance Suite may suspend or terminate your account immediately, without prior notice or refund, if you breach these Terms (including Section 3), provide false information at registration, or engage in conduct that CMS CoP Compliance Suite reasonably determines to be harmful to other users, the Service, or third parties.
+12.2 By Us. CMS CoP Compliance Suite may suspend or terminate your account immediately, without prior notice or refund, if you breach these Terms (including Section 3), provide false information at registration, or engage in conduct that CMS CoP Compliance Suite reasonably determines to be harmful to other users, the Service, or third parties.
 
-11.3 Effect of Termination. Upon termination, your right to access the Service ceases immediately. Data stored in your browser's local storage (e.g., gap analysis history) remains accessible locally but cannot be recovered from our servers after account deletion.
+12.3 Effect of Termination. Upon termination, your right to access the Service ceases immediately. Data stored in your browser's local storage (e.g., gap analysis history) remains accessible locally but cannot be recovered from our servers after account deletion. To request permanent deletion of your account data, contact HectorSamlut@outlook.com.
 
-12. DISCLAIMER OF WARRANTIES
+13. DISCLAIMER OF WARRANTIES
 THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. CMS COP COMPLIANCE SUITE DOES NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR SECURE.
 
-13. LIMITATION OF LIABILITY
+14. LIMITATION OF LIABILITY
 TO THE FULLEST EXTENT PERMITTED BY APPLICABLE LAW, CMS COP COMPLIANCE SUITE AND ITS OPERATORS SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING FROM USE OF THE SERVICE, INCLUDING SURVEY DEFICIENCIES, CERTIFICATION ACTIONS, OR REGULATORY PENALTIES. IN NO EVENT SHALL OUR TOTAL LIABILITY TO YOU FOR ANY CLAIM ARISING UNDER THESE TERMS EXCEED THE TOTAL AMOUNT YOU PAID FOR THE SERVICE IN THE THREE (3) MONTHS IMMEDIATELY PRECEDING THE CLAIM.
 
-14. INDEMNIFICATION
+15. INDEMNIFICATION
 You agree to indemnify, defend, and hold harmless CMS CoP Compliance Suite and its operators from and against any and all claims, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or relating to: (a) your use of the Service in violation of these Terms; (b) your violation of any applicable law or regulation; or (c) your infringement of any third-party right.
 
-15. GOVERNING LAW AND JURISDICTION
+16. GOVERNING LAW AND JURISDICTION
 These Terms are governed by and construed in accordance with the laws of the State of Florida, without regard to its conflict-of-law principles. Any legal action or proceeding arising under or relating to these Terms shall be brought exclusively in the state or federal courts located in the State of Florida, and you hereby irrevocably consent to the personal jurisdiction and venue of such courts.
 
-16. SEVERABILITY AND ENTIRE AGREEMENT
+17. SEVERABILITY AND ENTIRE AGREEMENT
 If any provision of these Terms is found by a court of competent jurisdiction to be unenforceable or invalid, that provision shall be limited or eliminated to the minimum extent necessary such that the remaining Terms shall continue in full force and effect. These Terms, together with the Privacy Policy, constitute the entire agreement between you and CMS CoP Compliance Suite with respect to your use of the Service and supersede all prior or contemporaneous agreements and understandings.
 
-17. PRIVACY POLICY
+18. PRIVACY POLICY
 Your use of the Service is also governed by our Privacy Policy, incorporated herein by reference. By using the Service, you confirm that you have read and understood the Privacy Policy.
 
-18. MODIFICATIONS
+19. MODIFICATIONS
 We reserve the right to modify these Terms at any time. We will provide notice of material changes by updating the "Last Updated" date at the top of this document. Continued use of the Service after the effective date of any change constitutes acceptance of the revised Terms.
 
-19. CONTACT
+20. CONTACT
 Questions about these Terms may be directed to: HectorSamlut@outlook.com`;
 
 const PRIVACY = `PRIVACY POLICY
-Last updated: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+Last updated: August 13, 2026
 
 1. OVERVIEW
 This Privacy Policy explains how the CMS CoP Compliance Suite ("the Service") handles your information. We are committed to collecting only what is necessary to operate the Service and to keeping your data secure.
@@ -2743,10 +2808,13 @@ Account data is transmitted over HTTPS. Login events are logged for license comp
 10. CHILDREN'S PRIVACY
 The Service is intended for healthcare compliance professionals and is not directed at children under 13. We do not knowingly collect information from children.
 
-11. CHANGES TO THIS POLICY
+11. CALIFORNIA PRIVACY RIGHTS (CCPA)
+If you are a California resident, you have the following rights under the California Consumer Privacy Act (CCPA): (a) the right to know what personal information we collect, use, and disclose about you; (b) the right to request deletion of your personal information, subject to certain exceptions; and (c) the right to opt out of the sale of your personal information — we do not sell personal information. To exercise these rights, contact us at HectorSamlut@outlook.com with the subject line "CCPA Privacy Request." We will respond within 45 days. Note that certain information may be retained as required by law or to complete transactions you have requested (e.g., billing records during or after an active Subscription period). We will not discriminate against you for exercising any of your CCPA rights.
+
+12. CHANGES TO THIS POLICY
 We may update this Privacy Policy from time to time. The "last updated" date at the top will reflect any changes. Continued use of the Service after changes constitutes acceptance of the updated Policy.
 
-12. CONTACT
+13. CONTACT
 For privacy questions or concerns, contact: HectorSamlut@outlook.com`;
 
 // ─── Legal Modal ──────────────────────────────────────────────────────────────
@@ -2826,6 +2894,7 @@ export default function CoPGuidelineBuilder() {
       </div>
 
       <div style={S.container}>
+        <OnboardingBanner />
         {/* Institution selector */}
         <div style={{ ...S.card, marginBottom: "20px" }}>
           <label style={S.label}>Institution Type</label>
