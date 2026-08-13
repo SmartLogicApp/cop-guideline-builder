@@ -32,6 +32,7 @@ export interface AccountData {
   account:     Account | null;
   accountUser: AccountUser | null;
   isActive:    boolean;
+  isAdminUser: boolean;
 }
 
 export function useAccount() {

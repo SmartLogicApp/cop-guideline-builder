@@ -104,14 +104,22 @@ router.get("/me", requireAuth, async (req, res) => {
   const [account] = await db.select().from(accounts).where(eq(accounts.id, au.accountId)).limit(1);
   if (!account) return res.json({ account: null, accountUser: null, isActive: false });
 
+  // Admin bypass — Clerk user IDs listed in ADMIN_CLERK_USER_IDS (comma-separated) always have full access.
+  const adminIds = (process.env.ADMIN_CLERK_USER_IDS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const isAdminUser = adminIds.includes(userId);
+
   const now = new Date();
   const isActive =
+    isAdminUser ||
     account.subscriptionStatus === "active" ||
     (account.subscriptionStatus === "trial" &&
       account.trialEndsAt != null &&
       account.trialEndsAt > now);
 
-  return res.json({ account, accountUser: au, isActive });
+  return res.json({ account, accountUser: au, isActive, isAdminUser });
 });
 
 // POST /api/accounts/register — register a CCN account and link the current user
