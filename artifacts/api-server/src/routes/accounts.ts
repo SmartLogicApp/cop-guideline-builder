@@ -1,8 +1,8 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
-import { accounts, accountUsers } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { accounts, accountUsers, adminUsers } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -104,12 +104,22 @@ router.get("/me", requireAuth, async (req, res) => {
   const [account] = await db.select().from(accounts).where(eq(accounts.id, au.accountId)).limit(1);
   if (!account) return res.json({ account: null, accountUser: null, isActive: false });
 
-  // Admin bypass — Clerk user IDs listed in ADMIN_CLERK_USER_IDS (comma-separated) always have full access.
-  const adminIds = (process.env.ADMIN_CLERK_USER_IDS ?? "")
+  // Super-admins: listed in ADMIN_CLERK_USER_IDS env var — can manage the admin list.
+  const superAdminIds = (process.env.ADMIN_CLERK_USER_IDS ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const isAdminUser = adminIds.includes(userId);
+  const isSuperAdmin = superAdminIds.includes(userId);
+
+  // DB-managed admins: active rows in admin_users table.
+  const [dbAdminRow] = await db
+    .select()
+    .from(adminUsers)
+    .where(and(eq(adminUsers.clerkUserId, userId), eq(adminUsers.isActive, true)))
+    .limit(1);
+  const isDbAdmin = !!dbAdminRow;
+
+  const isAdminUser = isSuperAdmin || isDbAdmin;
 
   const now = new Date();
   const isActive =
@@ -119,7 +129,7 @@ router.get("/me", requireAuth, async (req, res) => {
       account.trialEndsAt != null &&
       account.trialEndsAt > now);
 
-  return res.json({ account, accountUser: au, isActive, isAdminUser });
+  return res.json({ account, accountUser: au, isActive, isAdminUser, isSuperAdmin });
 });
 
 // POST /api/accounts/register — register a CCN account and link the current user

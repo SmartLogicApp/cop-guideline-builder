@@ -33,6 +33,7 @@ export interface AccountData {
   accountUser: AccountUser | null;
   isActive:    boolean;
   isAdminUser: boolean;
+  isSuperAdmin: boolean;
 }
 
 export function useAccount() {

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, boolean } from "drizzle-orm/pg-core";
 
 export const accounts = pgTable("accounts", {
   id:                   uuid("id").primaryKey().defaultRandom(),
@@ -25,5 +25,17 @@ export const accountUsers = pgTable("account_users", {
   createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
+// Platform-level admins — managed via the /admin UI; bypasses subscription checks.
+export const adminUsers = pgTable("admin_users", {
+  id:          uuid("id").primaryKey().defaultRandom(),
+  clerkUserId: text("clerk_user_id").unique().notNull(),
+  email:       text("email").notNull(),
+  label:       text("label"),                      // optional display name / note
+  isActive:    boolean("is_active").default(true).notNull(),
+  addedBy:     text("added_by").notNull(),          // Clerk user ID of the super-admin who granted access
+  addedAt:     timestamp("added_at", { withTimezone: true }).defaultNow(),
+});
+
 export type Account     = typeof accounts.$inferSelect;
 export type AccountUser = typeof accountUsers.$inferSelect;
+export type AdminUser   = typeof adminUsers.$inferSelect;

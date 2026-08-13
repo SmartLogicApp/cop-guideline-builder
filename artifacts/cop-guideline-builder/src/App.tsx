@@ -11,6 +11,7 @@ import SignInPage from "@/pages/sign-in";
 import SignUpPage from "@/pages/sign-up";
 import CcnRegistrationPage from "@/pages/ccn-registration";
 import BillingPage from "@/pages/billing";
+import AdminPage   from "@/pages/admin";
 import { useAccount } from "@/hooks/useAccount";
 import CoPGuidelineBuilder from "../../../index.jsx";
 
@@ -252,6 +253,7 @@ function AppRouter() {
               <Route path="/sign-up/*?"   component={SignUpPage} />
               <Route path="/register-ccn" component={() => <Protected><CcnRegistrationPage /></Protected>} />
               <Route path="/billing"      component={() => <Protected><BillingPage /></Protected>} />
+              <Route path="/admin"        component={() => <Protected><AdminPage /></Protected>} />
               <Route                      component={NotFound} />
             </Switch>
           </ErrorBoundary>
