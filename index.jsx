@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { useAccount } from "@/hooks/useAccount";
-import { useClerk } from "@clerk/react";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -2864,12 +2863,11 @@ function Footer({ onTerms, onPrivacy }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
-export default function CoPGuidelineBuilder() {
+export default function CoPGuidelineBuilder({ onSignOut }) {
   const [tab, setTab] = useState("guidelines");
   const [institution, setInstitution] = useState("hospital");
   const [legal, setLegal] = useState(null); // "terms" | "privacy" | null
   const { data: accountData } = useAccount();
-  const { signOut } = useClerk();
   const isAdmin = accountData?.isSuperAdmin || accountData?.isAdminUser;
   const basePath = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -2903,7 +2901,7 @@ export default function CoPGuidelineBuilder() {
                 ✉ Share Feedback
               </a>
               <button
-                onClick={() => signOut({ redirectUrl: `${basePath}/` })}
+                onClick={() => onSignOut?.()}
                 style={{ padding: "8px 14px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
                 Sign Out
               </button>

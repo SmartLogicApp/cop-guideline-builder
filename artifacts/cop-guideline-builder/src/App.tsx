@@ -160,6 +160,7 @@ function Landing() {
 function HomeRedirect() {
   const { isSignedIn, isLoaded } = useAuth();
   const { data: accountData, isLoading: accountLoading } = useAccount();
+  const { signOut } = useClerk();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
@@ -179,7 +180,7 @@ function HomeRedirect() {
     <>
       <Show when="signed-out"><Landing /></Show>
       <Show when="signed-in">
-        <CoPGuidelineBuilder />
+        <CoPGuidelineBuilder onSignOut={() => signOut({ redirectUrl: `${basePath}/` })} />
       </Show>
     </>
   );

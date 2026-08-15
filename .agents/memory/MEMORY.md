@@ -1,0 +1,1 @@
+- [Root-level index.jsx import constraints](root-index-import-constraints.md) — files at the workspace root cannot import from packages only installed in a specific artifact; pass values as props from artifact components instead.
