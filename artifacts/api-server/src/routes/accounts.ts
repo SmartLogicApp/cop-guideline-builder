@@ -94,6 +94,12 @@ router.get("/validate-ccn", async (req, res) => {
   return res.json({ ccn, alreadyRegistered: false, ...info });
 });
 
+// GET /api/accounts/whoami — returns the authenticated user's own Clerk ID (diagnostic / setup helper)
+router.get("/whoami", requireAuth, (req, res) => {
+  const userId = (req as any).clerkUserId as string;
+  res.json({ clerkUserId: userId });
+});
+
 // GET /api/accounts/me — get the current user's account + subscription status
 router.get("/me", requireAuth, async (req, res) => {
   const userId = (req as any).clerkUserId as string;

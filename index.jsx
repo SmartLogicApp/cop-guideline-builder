@@ -2896,6 +2896,10 @@ export default function CoPGuidelineBuilder({ onSignOut }) {
                   🔐 Admin Dashboard
                 </a>
               )}
+              <a href={`${basePath}/billing`}
+                style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "8px 14px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
+                💳 Billing
+              </a>
               <a href="mailto:HectorSamlut@outlook.com?subject=CMS CoP Compliance Suite Feedback&body=Institution type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
                 style={{ display: "inline-block", padding: "8px 14px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
                 ✉ Share Feedback
