@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Libre+Baskerville:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Libre+Baskerville:wght@400;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -67,84 +67,85 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* LIGHT MODE */
+/* LIGHT MODE — Medical / Clinical */
 :root {
-  --button-outline: rgba(0, 0, 0, 0.1);
-  --badge-outline: rgba(0, 0, 0, 0.05);
+  --button-outline: rgba(0, 0, 0, 0.12);
+  --badge-outline: rgba(0, 0, 0, 0.06);
 
   /* Automatic computation of border around primary / danger buttons */
-  --opaque-button-border-intensity: -8; /* In terms of percentages */
+  --opaque-button-border-intensity: -10; /* In terms of percentages */
 
   /* Backgrounds applied on top of other backgrounds when hovered/active */
-  --elevate-1: rgba(0, 0, 0, 0.03);
-  --elevate-2: rgba(0, 0, 0, 0.08);
+  --elevate-1: rgba(0, 0, 0, 0.04);
+  --elevate-2: rgba(0, 0, 0, 0.09);
 
-  --background: 45 24% 96%;
+  /* Clinical blue-white — clean, cool, hospital-grade white */
+  --background: 207 28% 97%;
 
-  --foreground: 199 28% 15%;
+  /* Deep medical navy */
+  --foreground: 213 55% 13%;
 
-  --border: 42 18% 82%;
+  /* Cool clinical gray border */
+  --border: 210 18% 84%;
 
+  /* Pure white cards */
   --card: 0 0% 100%;
+  --card-foreground: 213 55% 13%;
+  --card-border: 210 18% 84%;
 
-  --card-foreground: 199 28% 15%;
+  /* Deep medical navy sidebar */
+  --sidebar: 213 58% 11%;
+  --sidebar-foreground: 207 25% 96%;
+  --sidebar-border: 213 42% 20%;
 
-  --card-border: 42 18% 82%;
+  /* Medical teal — sidebar active/primary */
+  --sidebar-primary: 185 65% 34%;
+  --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar: 199 28% 15%;
-
-  --sidebar-foreground: 45 24% 96%;
-
-  --sidebar-border: 199 21% 26%;
-
-  --sidebar-primary: 174 43% 31%;
-
-  --sidebar-primary-foreground: 45 24% 96%;
-
-  --sidebar-accent: 199 21% 26%;
-
-  --sidebar-accent-foreground: 45 24% 96%;
-
-  --sidebar-ring: 174 43% 31%;
+  /* Sidebar hover state */
+  --sidebar-accent: 213 42% 20%;
+  --sidebar-accent-foreground: 207 25% 96%;
+  --sidebar-ring: 185 65% 34%;
 
   --popover: 0 0% 100%;
+  --popover-foreground: 213 55% 13%;
+  --popover-border: 210 18% 84%;
 
-  --popover-foreground: 199 28% 15%;
+  /* Clinical blue primary — #0B3D8E */
+  --primary: 213 76% 29%;
+  --primary-foreground: 0 0% 100%;
 
-  --popover-border: 42 18% 82%;
+  /* Light clinical gray secondary */
+  --secondary: 207 22% 93%;
+  --secondary-foreground: 213 55% 13%;
 
-  --primary: 174 43% 31%;
+  /* Muted — cool gray */
+  --muted: 207 22% 93%;
+  --muted-foreground: 213 18% 45%;
 
-  --primary-foreground: 45 24% 96%;
+  /* Medical teal accent */
+  --accent: 185 65% 34%;
+  --accent-foreground: 0 0% 100%;
 
-  --secondary: 43 20% 91%;
+  /* Medical red destructive — distinct from accent */
+  --destructive: 0 68% 44%;
+  --destructive-foreground: 0 0% 100%;
 
-  --secondary-foreground: 199 28% 15%;
+  --input: 210 18% 84%;
+  --ring: 213 76% 29%;
 
-  --muted: 43 20% 91%;
+  /* Chart palette: clinical blue, teal, green, red, slate */
+  --chart-1: 213 76% 29%;
+  --chart-2: 185 65% 34%;
+  --chart-3: 143 55% 30%;
+  --chart-4: 0 68% 44%;
+  --chart-5: 213 18% 45%;
 
-  --muted-foreground: 199 12% 42%;
-
-  --accent: 16 88% 35%;
-
-  --accent-foreground: 45 24% 96%;
-
-  --destructive: 16 88% 35%;
-
-  --destructive-foreground: 45 24% 96%;
-
-  --input: 42 18% 82%;
-  --ring: 174 43% 31%;
-  --chart-1: 174 43% 31%;
-  --chart-2: 16 88% 35%;
-  --chart-3: 42 62% 48%;
-  --chart-4: 199 28% 15%;
-  --chart-5: 199 12% 42%;
-
-  --app-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Inter first for that modern clinical SaaS feel */
+  --app-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --app-font-serif: 'Libre Baskerville', Georgia, serif;
   --app-font-mono: 'DM Mono', Menlo, monospace;
-  --radius: 0.5rem; /* 8px */
+  --radius: 0.5rem; /* 8px — clean and precise */
   --shadow-2xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0); /*replace with H S L */
   --shadow-xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0); /*replace with H S L */
   --shadow-sm:
@@ -220,76 +221,68 @@
 
 .dark {
   --button-outline: rgba(255, 255, 255, 0.1);
-  --badge-outline: rgba(255, 255, 255, 0.05);
+  --badge-outline: rgba(255, 255, 255, 0.06);
 
-  --opaque-button-border-intensity: 9; /* In terms of percentages */
+  --opaque-button-border-intensity: 10; /* In terms of percentages */
 
   /* Backgrounds applied on top of other backgrounds when hovered/active */
   --elevate-1: rgba(255, 255, 255, 0.04);
   --elevate-2: rgba(255, 255, 255, 0.09);
 
-  --background: 199 28% 11%;
+  /* Deep medical navy background */
+  --background: 213 52% 10%;
 
-  --foreground: 45 24% 96%;
+  --foreground: 207 25% 96%;
 
-  --border: 199 21% 26%;
+  --border: 213 38% 22%;
 
-  --card: 199 25% 15%;
+  /* Slightly lighter navy for cards */
+  --card: 213 48% 14%;
+  --card-foreground: 207 25% 96%;
+  --card-border: 213 38% 22%;
 
-  --card-foreground: 45 24% 96%;
+  /* Darkest navy for sidebar */
+  --sidebar: 213 60% 8%;
+  --sidebar-foreground: 207 25% 96%;
+  --sidebar-border: 213 42% 18%;
 
-  --card-border: 199 21% 26%;
+  /* Medical teal — brighter for dark mode legibility */
+  --sidebar-primary: 185 58% 40%;
+  --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar: 199 31% 9%;
+  --sidebar-accent: 213 42% 18%;
+  --sidebar-accent-foreground: 207 25% 96%;
+  --sidebar-ring: 185 58% 40%;
 
-  --sidebar-foreground: 45 24% 96%;
+  --popover: 213 48% 14%;
+  --popover-foreground: 207 25% 96%;
+  --popover-border: 213 38% 22%;
 
-  --sidebar-border: 199 21% 22%;
+  /* Medical teal as dark-mode primary (lighter than clinical blue for contrast) */
+  --primary: 185 58% 40%;
+  --primary-foreground: 0 0% 100%;
 
-  --sidebar-primary: 174 43% 37%;
+  --secondary: 213 42% 18%;
+  --secondary-foreground: 207 25% 96%;
 
-  --sidebar-primary-foreground: 45 24% 96%;
+  --muted: 213 42% 18%;
+  --muted-foreground: 213 18% 65%;
 
-  --sidebar-accent: 199 21% 22%;
+  /* Brighter teal accent in dark */
+  --accent: 185 58% 46%;
+  --accent-foreground: 0 0% 100%;
 
-  --sidebar-accent-foreground: 45 24% 96%;
+  /* Medical red — distinct in dark mode */
+  --destructive: 0 68% 52%;
+  --destructive-foreground: 0 0% 100%;
 
-  --sidebar-ring: 174 43% 37%;
-
-  --popover: 199 25% 15%;
-
-  --popover-foreground: 45 24% 96%;
-
-  --popover-border: 199 21% 26%;
-
-  --primary: 174 43% 37%;
-
-  --primary-foreground: 45 24% 96%;
-
-  --secondary: 199 21% 22%;
-
-  --secondary-foreground: 45 24% 96%;
-
-  --muted: 199 21% 22%;
-
-  --muted-foreground: 199 14% 68%;
-
-  --accent: 16 88% 45%;
-
-  --accent-foreground: 45 24% 96%;
-
-  --destructive: 16 88% 45%;
-
-  --destructive-foreground: 45 24% 96%;
-
-  /* Used as the border around inputs. Dark mode: Should be a border that is light enough to have high contrast when rendered on a --card background. More contrast than standard --border */
-  --input: 199 21% 31%;
-  --ring: 174 43% 37%;
-  --chart-1: 174 43% 37%;
-  --chart-2: 16 88% 45%;
-  --chart-3: 42 62% 58%;
-  --chart-4: 45 24% 96%;
-  --chart-5: 199 14% 68%;
+  --input: 213 38% 26%;
+  --ring: 185 58% 40%;
+  --chart-1: 185 58% 40%;
+  --chart-2: 213 76% 55%;
+  --chart-3: 143 55% 40%;
+  --chart-4: 0 68% 52%;
+  --chart-5: 213 18% 65%;
 
   --shadow-2xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0);
   --shadow-xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0);
@@ -431,4 +424,63 @@
   .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
     inset: -1px;
   }
+}
+
+/* ── MEDICAL THEME — Global refinements ─────────────────────────────────── */
+
+/* Crisp clinical letter-spacing on buttons */
+button, [role="button"] {
+  letter-spacing: 0.01em;
+}
+
+/* Subtle ECG-style top border on primary action panels */
+.medical-panel-header {
+  position: relative;
+}
+.medical-panel-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%);
+  opacity: 0.6;
+}
+
+/* Clinical status indicators */
+.status-compliant {
+  color: hsl(143 55% 30%);
+  background-color: hsl(143 55% 30% / 0.1);
+  border-color: hsl(143 55% 30% / 0.25);
+}
+.status-review {
+  color: hsl(38 90% 42%);
+  background-color: hsl(38 90% 42% / 0.1);
+  border-color: hsl(38 90% 42% / 0.25);
+}
+.status-gap {
+  color: hsl(0 68% 44%);
+  background-color: hsl(0 68% 44% / 0.1);
+  border-color: hsl(0 68% 44% / 0.25);
+}
+
+/* Smooth focus ring — clinical blue */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Medical pulse animation for live data indicators */
+@keyframes medical-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.medical-live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(143 55% 40%);
+  animation: medical-pulse 2s ease-in-out infinite;
 }
