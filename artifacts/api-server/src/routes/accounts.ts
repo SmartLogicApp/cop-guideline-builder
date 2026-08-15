@@ -98,28 +98,27 @@ router.get("/validate-ccn", async (req, res) => {
 router.get("/me", requireAuth, async (req, res) => {
   const userId = (req as any).clerkUserId as string;
 
-  const [au] = await db.select().from(accountUsers).where(eq(accountUsers.clerkUserId, userId)).limit(1);
-  if (!au?.accountId) return res.json({ account: null, accountUser: null, isActive: false });
-
-  const [account] = await db.select().from(accounts).where(eq(accounts.id, au.accountId)).limit(1);
-  if (!account) return res.json({ account: null, accountUser: null, isActive: false });
-
-  // Super-admins: listed in ADMIN_CLERK_USER_IDS env var — can manage the admin list.
+  // Check super-admin and DB-admin FIRST — before any account-lookup early returns,
+  // so admins without a registered facility still get isSuperAdmin/isAdminUser: true.
   const superAdminIds = (process.env.ADMIN_CLERK_USER_IDS ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
   const isSuperAdmin = superAdminIds.includes(userId);
 
-  // DB-managed admins: active rows in admin_users table.
   const [dbAdminRow] = await db
     .select()
     .from(adminUsers)
     .where(and(eq(adminUsers.clerkUserId, userId), eq(adminUsers.isActive, true)))
     .limit(1);
   const isDbAdmin = !!dbAdminRow;
-
   const isAdminUser = isSuperAdmin || isDbAdmin;
+
+  const [au] = await db.select().from(accountUsers).where(eq(accountUsers.clerkUserId, userId)).limit(1);
+  if (!au?.accountId) return res.json({ account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
+
+  const [account] = await db.select().from(accounts).where(eq(accounts.id, au.accountId)).limit(1);
+  if (!account) return res.json({ account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
 
   const now = new Date();
   const isActive =
