@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { accounts, accountUsers } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { accounts, accountUsers, tokenUsage } from "@workspace/db";
+import { eq, and, gte } from "drizzle-orm";
 import { requireAuth } from "./accounts";
 
 const router: IRouter = Router();
@@ -112,5 +112,54 @@ router.get("/portal", requireAuth, async (req, res) => {
 
   return res.json({ url: portalSession.url });
 });
+
+// GET /api/billing/token-usage — current month aggregate for the user's account
+router.get("/token-usage", requireAuth, async (req, res) => {
+  const account = await getUserAccount((req as any).clerkUserId);
+  if (!account) return res.json({
+    currentMonth: {
+      inputTokens: 0, outputTokens: 0, totalTokens: 0,
+      requestCount: 0, rawCostUsd: 0, markupUsd: 0,
+      totalAdditionalChargeUsd: 0, monthLabel: currentMonthLabel(),
+    },
+  });
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const rows = await db
+    .select()
+    .from(tokenUsage)
+    .where(
+      and(
+        eq(tokenUsage.accountId, account.id),
+        gte(tokenUsage.createdAt, monthStart),
+      )
+    );
+
+  const inputTokens  = rows.reduce((s, r) => s + (r.inputTokens  ?? 0), 0);
+  const outputTokens = rows.reduce((s, r) => s + (r.outputTokens ?? 0), 0);
+  const rawCostUsd   = rows.reduce((s, r) => s + (r.rawCostUsd   ?? 0), 0);
+  const markupUsd    = rows.reduce((s, r) => s + (r.markedUpCostUsd ?? 0), 0) - rawCostUsd;
+
+  return res.json({
+    currentMonth: {
+      inputTokens,
+      outputTokens,
+      totalTokens:              inputTokens + outputTokens,
+      requestCount:             rows.length,
+      rawCostUsd:               round(rawCostUsd),
+      markupUsd:                round(markupUsd),
+      totalAdditionalChargeUsd: round(rawCostUsd + markupUsd),
+      monthLabel:               currentMonthLabel(),
+    },
+  });
+});
+
+function round(n: number) { return Math.round(n * 1_000_000) / 1_000_000; }
+
+function currentMonthLabel() {
+  return new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
+}
 
 export default router;

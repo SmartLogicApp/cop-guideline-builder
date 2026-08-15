@@ -1,8 +1,30 @@
 import { randomUUID } from "crypto";
 import { Router, type IRouter } from "express";
 import { GenerateWithAnthropicBody } from "@workspace/api-zod";
+import { db } from "@workspace/db";
+import { accountUsers, tokenUsage } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { requireAuth } from "./accounts";
 
 const router: IRouter = Router();
+
+// ─── Claude model pricing (USD per 1M tokens) ────────────────────────────────
+
+const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }> = {
+  "claude-sonnet-4-6": { inputPer1M: 3.00,  outputPer1M: 15.00 },
+  "claude-sonnet-4-5": { inputPer1M: 3.00,  outputPer1M: 15.00 },
+  "claude-opus-4-5":   { inputPer1M: 15.00, outputPer1M: 75.00 },
+};
+const MARKUP = 1.5; // 50% markup applied on top of raw API cost
+
+function calcCost(model: string, inputTokens: number, outputTokens: number) {
+  const pricing = MODEL_PRICING[model] ?? MODEL_PRICING["claude-sonnet-4-6"]!;
+  const inputCostUsd  = (inputTokens  / 1_000_000) * pricing.inputPer1M;
+  const outputCostUsd = (outputTokens / 1_000_000) * pricing.outputPer1M;
+  const rawCostUsd    = inputCostUsd + outputCostUsd;
+  const markedUpCostUsd = rawCostUsd * MARKUP;
+  return { inputCostUsd, outputCostUsd, rawCostUsd, markedUpCostUsd };
+}
 
 // ─── eCFR institution → CFR part mapping ────────────────────────────────────
 
@@ -19,10 +41,9 @@ const CFR_PARTS: Record<string, { title: number; part: number; label: string }> 
 
 // ─── eCFR XML text extraction ────────────────────────────────────────────────
 
-const MAX_XML_BYTES   = 500_000; // max raw XML to buffer (500 KB — enough for any single CFR part)
-const MAX_ECFR_CHARS  = 20_000; // max plain-text chars injected into the prompt
+const MAX_XML_BYTES   = 500_000;
+const MAX_ECFR_CHARS  = 20_000;
 
-/** Decode common XML/HTML entities. */
 function decodeXmlEntities(s: string): string {
   return s
     .replace(/&amp;/g, "&")
@@ -38,10 +59,9 @@ function decodeXmlEntities(s: string): string {
     .replace(/&[a-zA-Z]+;/g, " ");
 }
 
-/** Strip XML tags from a string, preserving HEAD content as section labels. */
 function stripXml(xml: string): string {
   return xml
-    .replace(/<HEAD[^>]*>([\s\S]*?)<\/HEAD>/gi, "\n$1\n") // preserve headings
+    .replace(/<HEAD[^>]*>([\s\S]*?)<\/HEAD>/gi, "\n$1\n")
     .replace(/<\/P>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/\n{3,}/g, "\n\n")
@@ -49,14 +69,7 @@ function stripXml(xml: string): string {
     .trim();
 }
 
-/**
- * Extract plain text from a complete CFR XML string.
- * Parses every <DIV8> (section) element so content from the whole document
- * is represented — not just the truncated beginning.
- * Returns up to `charLimit` characters of plain text.
- */
 function extractSectionsFromXml(xml: string, charLimit = MAX_ECFR_CHARS): string {
-  // Capture each <DIV8 ...>...</DIV8> block (a CFR section)
   const sectionRe = /<DIV8[^>]*>([\s\S]*?)<\/DIV8>/gi;
   const sections: string[] = [];
   let m: RegExpExecArray | null;
@@ -66,16 +79,13 @@ function extractSectionsFromXml(xml: string, charLimit = MAX_ECFR_CHARS): string
     if (text) sections.push(text);
   }
 
-  // If no DIV8 found, fall back to stripping the entire document
   if (sections.length === 0) {
     return decodeXmlEntities(stripXml(xml)).slice(0, charLimit);
   }
 
-  // Join all sections; if the total exceeds the limit distribute evenly
   const joined = sections.join("\n\n---\n\n");
   if (joined.length <= charLimit) return joined;
 
-  // Too long: keep proportional slices of each section so all sections appear
   const perSection = Math.floor(charLimit / sections.length);
   return sections
     .map((s) => s.slice(0, perSection))
@@ -85,7 +95,7 @@ function extractSectionsFromXml(xml: string, charLimit = MAX_ECFR_CHARS): string
 
 // ─── eCFR response cache ─────────────────────────────────────────────────────
 
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface CacheEntry {
   result: EcfrResult;
@@ -94,7 +104,6 @@ interface CacheEntry {
 
 const ecfrCache = new Map<string, CacheEntry>();
 
-/** Return a cached eCFR result if one exists and is still fresh; otherwise undefined. */
 function getCachedEcfr(institutionValue: string): EcfrResult | undefined {
   const entry = ecfrCache.get(institutionValue);
   if (!entry) return undefined;
@@ -105,11 +114,8 @@ function getCachedEcfr(institutionValue: string): EcfrResult | undefined {
   return entry.result;
 }
 
-/** Store an eCFR result in the cache with a 24-hour TTL and evict expired entries. */
 function setCachedEcfr(institutionValue: string, result: EcfrResult): void {
   ecfrCache.set(institutionValue, { result, expiresAt: Date.now() + CACHE_TTL_MS });
-
-  // Evict all expired entries to prevent unbounded growth
   for (const [k, entry] of ecfrCache) {
     if (Date.now() > entry.expiresAt) ecfrCache.delete(k);
   }
@@ -127,11 +133,8 @@ async function fetchEcfrText(institutionValue: string): Promise<EcfrResult> {
   const mapping = CFR_PARTS[institutionValue];
   if (!mapping) return { text: "", fetchDate: "", source: "ai" };
 
-  // eCFR only publishes on amendment dates, so try recent dates going back
-  // up to a year in coarse steps to find the latest published version.
   const today = new Date();
 
-  // ── Cache lookup: keyed by institution only; TTL is the sole freshness guard ─
   const cached = getCachedEcfr(institutionValue);
   if (cached) {
     console.info(`[eCFR cache] HIT  institution=${institutionValue} fetchDate=${cached.fetchDate}`);
@@ -147,7 +150,6 @@ async function fetchEcfrText(institutionValue: string): Promise<EcfrResult> {
   }
 
   for (const dateStr of datesToTry) {
-    // Use the XML endpoint — full/{date}/title-N.json returns 406 for large parts.
     const url =
       `https://ecfr.gov/api/versioner/v1/full/${dateStr}/title-${mapping.title}.xml` +
       `?part=${mapping.part}`;
@@ -158,10 +160,9 @@ async function fetchEcfrText(institutionValue: string): Promise<EcfrResult> {
         headers: { Accept: "application/xml, text/xml" },
       });
 
-      if (resp.status === 404) continue; // no version on this date — try older
-      if (!resp.ok) break;              // unexpected error — bail
+      if (resp.status === 404) continue;
+      if (!resp.ok) break;
 
-      // Buffer the complete response up to MAX_XML_BYTES
       const reader = resp.body?.getReader();
       if (!reader) break;
 
@@ -180,22 +181,20 @@ async function fetchEcfrText(institutionValue: string): Promise<EcfrResult> {
         }
       }
 
-      // Concatenate all chunks into one string
       let raw = "";
       for (const chunk of chunks) raw += decoder.decode(chunk, { stream: true });
-      raw += decoder.decode(); // flush
+      raw += decoder.decode();
       if (!raw.trim()) continue;
 
       const text = extractSectionsFromXml(raw, MAX_ECFR_CHARS);
       if (!text) continue;
 
       const result: EcfrResult = { text, fetchDate: dateStr, source: "ecfr" };
-      // Cache keyed by institution; TTL controls freshness across day boundaries
       setCachedEcfr(institutionValue, result);
       console.info(`[eCFR cache] STORED institution=${institutionValue} fetchDate=${dateStr} ttl=24h`);
       return result;
     } catch {
-      break; // network / timeout — give up
+      break;
     }
   }
 
@@ -215,8 +214,8 @@ type Job =
 
 const jobs = new Map<string, Job>();
 
-// POST /api/generate — returns jobId immediately; Anthropic call runs in background.
-router.post("/generate", async (req, res): Promise<void> => {
+// POST /api/generate — requireAuth so we can record token usage per account.
+router.post("/generate", requireAuth, async (req, res): Promise<void> => {
   const parsed = GenerateWithAnthropicBody.safeParse(req.body);
   if (!parsed.success) {
     req.log.warn({ errors: parsed.error.message }, "Invalid generation request");
@@ -231,13 +230,16 @@ router.post("/generate", async (req, res): Promise<void> => {
     return;
   }
 
+  // Capture auth context before the response is sent (closure used in background job)
+  const clerkUserId = (req as any).clerkUserId as string;
+
   const jobId = randomUUID();
   jobs.set(jobId, { status: "pending" });
 
-  // Respond immediately — connection closes in < 100 ms.
   res.json({ jobId });
 
-  // Background: fetch eCFR then call Anthropic after the HTTP response is sent.
+  const model = "claude-sonnet-4-6";
+
   void (async () => {
     try {
       // ── 1. Optionally pre-fetch live eCFR text ───────────────────────────
@@ -250,7 +252,6 @@ router.post("/generate", async (req, res): Promise<void> => {
 
         if (ecfr.source === "ecfr" && ecfr.text) {
           dataSource = { kind: "ecfr", fetchDate: ecfr.fetchDate };
-          // Inject eCFR text into the system prompt as authoritative ground truth
           systemPrompt =
             `AUTHORITATIVE CMS REGULATORY TEXT (live from eCFR.gov, retrieved ${ecfr.fetchDate}):\n` +
             `The following is the actual current text of ${CFR_PARTS[parsed.data.institutionValue]?.label ?? "the applicable CFR part"}.\n` +
@@ -268,18 +269,22 @@ router.post("/generate", async (req, res): Promise<void> => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": apiKey,           // never returned to the browser
+          "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model,
           max_tokens: Math.max(parsed.data.maxTokens, 1500),
           system: systemPrompt,
           messages: [{ role: "user", content: parsed.data.userContent }],
         }),
       });
 
-      const data = await upstreamResponse.json() as { content?: unknown; error?: { message?: string } };
+      const data = await upstreamResponse.json() as {
+        content?: unknown;
+        usage?: { input_tokens?: number; output_tokens?: number };
+        error?: { message?: string };
+      };
 
       if (!upstreamResponse.ok) {
         const message = data?.error?.message ?? "The AI service rejected the request";
@@ -287,18 +292,54 @@ router.post("/generate", async (req, res): Promise<void> => {
         jobs.set(jobId, { status: "error", error: message });
       } else {
         jobs.set(jobId, { status: "done", content: data.content, dataSource });
+
+        // ── 3. Record token usage (best-effort — never fails the job) ────
+        try {
+          const inputTokens  = data.usage?.input_tokens  ?? 0;
+          const outputTokens = data.usage?.output_tokens ?? 0;
+
+          if (inputTokens > 0 || outputTokens > 0) {
+            const costs = calcCost(model, inputTokens, outputTokens);
+
+            // Look up the account for this user
+            const [au] = await db
+              .select({ accountId: accountUsers.accountId })
+              .from(accountUsers)
+              .where(eq(accountUsers.clerkUserId, clerkUserId))
+              .limit(1);
+
+            await db.insert(tokenUsage).values({
+              accountId:      au?.accountId ?? null,
+              clerkUserId,
+              model,
+              inputTokens,
+              outputTokens,
+              inputCostUsd:   costs.inputCostUsd,
+              outputCostUsd:  costs.outputCostUsd,
+              rawCostUsd:     costs.rawCostUsd,
+              markedUpCostUsd: costs.markedUpCostUsd,
+            });
+
+            req.log.info(
+              { inputTokens, outputTokens, rawCostUsd: costs.rawCostUsd, markedUpCostUsd: costs.markedUpCostUsd },
+              "Token usage recorded"
+            );
+          }
+        } catch (usageErr) {
+          // Non-fatal — never block the job result
+          req.log.warn({ err: usageErr }, "Failed to record token usage (non-fatal)");
+        }
       }
     } catch (err) {
       req.log.error({ err }, "AI generation background job failed");
       jobs.set(jobId, { status: "error", error: "Unable to reach the AI service" });
     }
 
-    // Auto-cleanup after 10 minutes.
     setTimeout(() => jobs.delete(jobId), 10 * 60 * 1000);
   })();
 });
 
-// GET /api/generate/result?jobId=... — fast poll; never holds the connection open.
+// GET /api/generate/result?jobId=...
 router.get("/generate/result", (req, res): void => {
   const { jobId } = req.query;
   if (!jobId || typeof jobId !== "string") {
