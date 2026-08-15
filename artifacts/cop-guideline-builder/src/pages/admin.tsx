@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/apiClient";
 import { useAccount } from "@/hooks/useAccount";
 import { useLocation } from "wouter";
+import { useClerk } from "@clerk/react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -569,6 +570,7 @@ const TABS = [
 export default function AdminPage() {
   const [, setLocation] = useLocation();
   const { data: accountData, isLoading: accountLoading } = useAccount();
+  const { signOut } = useClerk();
   const [activeTab, setActiveTab] = useState("overview");
 
   // Month picker shared across tabs (defaults to current month)
@@ -605,6 +607,12 @@ export default function AdminPage() {
           <span style={{ fontSize: "11px", padding: "3px 10px", borderRadius: "20px", background: accountData?.isSuperAdmin ? "rgba(245,197,66,0.15)" : "rgba(0,188,212,0.15)", color: accountData?.isSuperAdmin ? "#F5C542" : "#00BCD4", fontWeight: 700 }}>
             {accountData?.isSuperAdmin ? "Super Admin" : "Admin"}
           </span>
+          <button
+            onClick={() => signOut({ redirectUrl: "/" })}
+            style={{ padding: "5px 14px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "6px", color: "rgba(255,255,255,0.7)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+          >
+            Sign Out
+          </button>
           {/* Month picker in header for easy access */}
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)" }}>Month:</span>
