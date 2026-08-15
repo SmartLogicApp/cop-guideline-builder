@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
+import { useAccount } from "@/hooks/useAccount";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -2866,6 +2867,9 @@ export default function CoPGuidelineBuilder() {
   const [tab, setTab] = useState("guidelines");
   const [institution, setInstitution] = useState("hospital");
   const [legal, setLegal] = useState(null); // "terms" | "privacy" | null
+  const { data: accountData } = useAccount();
+  const isAdmin = accountData?.isSuperAdmin || accountData?.isAdminUser;
+  const basePath = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
   return (
     <div style={S.page}>
@@ -2885,10 +2889,18 @@ export default function CoPGuidelineBuilder() {
               Output is <strong>not legal advice</strong> and must be reviewed by qualified compliance counsel before implementation.
               Regulatory citations should be verified against current official sources. User assumes all liability.
             </div>
-            <a href="mailto:HectorSamlut@outlook.com?subject=CMS CoP Compliance Suite Feedback&body=Institution type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
-              style={{ display: "inline-block", marginTop: "14px", padding: "8px 14px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
-              ✉ Share Feedback
-            </a>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginTop: "14px", flexShrink: 0 }}>
+              {isAdmin && (
+                <a href={`${basePath}/admin`}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 14px", background: "rgba(245,197,66,0.18)", border: "1px solid rgba(245,197,66,0.5)", borderRadius: "6px", color: "#F5C542", fontSize: "12px", fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>
+                  🔐 Admin Dashboard
+                </a>
+              )}
+              <a href="mailto:HectorSamlut@outlook.com?subject=CMS CoP Compliance Suite Feedback&body=Institution type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
+                style={{ display: "inline-block", padding: "8px 14px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
+                ✉ Share Feedback
+              </a>
+            </div>
           </div>
         </div>
       </div>
