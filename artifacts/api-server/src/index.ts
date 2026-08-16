@@ -39,6 +39,15 @@ async function initStripeIfAvailable() {
 
 await initStripeIfAvailable();
 
+// ── Debug: log admin IDs at startup so we can verify the secret is set correctly ──
+const rawAdminIds = process.env.ADMIN_CLERK_USER_IDS ?? "";
+const parsedAdminIds = rawAdminIds.split(",").map((s) => s.trim()).filter(Boolean);
+logger.info({
+  adminIdCount: parsedAdminIds.length,
+  adminIdPrefixes: parsedAdminIds.map((id) => id.slice(0, 12) + "…"),
+  rawLength: rawAdminIds.length,
+}, "Admin IDs loaded from ADMIN_CLERK_USER_IDS");
+
 app.listen(port, (err) => {
   if (err) { logger.error({ err }, "Error listening on port"); process.exit(1); }
   logger.info({ port }, "Server listening");
