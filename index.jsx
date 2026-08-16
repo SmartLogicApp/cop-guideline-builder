@@ -2914,6 +2914,19 @@ export default function CoPGuidelineBuilder({ onSignOut }) {
         </div>
       </div>
 
+      {/* Admin access banner — only shown to admins, full-width and impossible to miss */}
+      {isAdmin && (
+        <div style={{ background: "linear-gradient(90deg,#1a3a1a,#2d5a1b)", borderBottom: "2px solid #4ade80", padding: "10px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
+          <span style={{ color: "#bbf7d0", fontSize: "13px", fontWeight: 600 }}>
+            🔐 You are signed in as a platform administrator.
+          </span>
+          <a href={`${basePath}/admin`}
+            style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 18px", background: "#16a34a", border: "none", borderRadius: "6px", color: "#fff", fontSize: "13px", fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>
+            Open Admin Dashboard →
+          </a>
+        </div>
+      )}
+
       <div style={S.container}>
         <OnboardingBanner />
         {/* Institution selector */}

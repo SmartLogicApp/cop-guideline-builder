@@ -14,13 +14,25 @@ export default function SignInPage() {
         signUpUrl={`${basePath}/sign-up`}
         fallbackRedirectUrl={basePath || "/"}
       />
+      <div style={{
+        marginTop: "12px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.2)",
+        borderRadius: "8px", padding: "10px 16px", maxWidth: "360px", textAlign: "center",
+      }}>
+        <p style={{ margin: 0, fontSize: "12px", color: "rgba(255,255,255,0.9)", fontWeight: 600 }}>
+          💡 Tip: Use <strong>Continue with Google</strong> to skip email codes entirely.
+        </p>
+        <p style={{ margin: "6px 0 0", fontSize: "11px", color: "rgba(255,255,255,0.6)", lineHeight: 1.5 }}>
+          If you signed up with email + password and are waiting for a verification code,
+          check your <strong style={{ color: "rgba(255,255,255,0.85)" }}>spam / junk folder</strong> — codes sometimes land there.
+        </p>
+      </div>
       <p style={{
-        marginTop: "16px", fontSize: "12px", color: "rgba(255,255,255,0.65)",
+        marginTop: "10px", fontSize: "12px", color: "rgba(255,255,255,0.55)",
         textAlign: "center", maxWidth: "360px", lineHeight: 1.5,
       }}>
         One subscription per facility location. Sharing credentials across multiple
         facilities violates our{" "}
-        <a href={`${basePath}/sign-in`} style={{ color: "rgba(255,255,255,0.85)", textDecoration: "underline" }}
+        <a href={`${basePath}/sign-in`} style={{ color: "rgba(255,255,255,0.75)", textDecoration: "underline" }}
           onClick={(e) => { e.preventDefault(); window.history.back(); }}>
           Terms of Service
         </a>.
