@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { ClerkProvider, Show, useClerk, useAuth } from "@clerk/react";
+import { ClerkProvider, Show, useClerk, useAuth, useUser } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { Switch, Route, useLocation, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -155,6 +155,12 @@ function Landing() {
   );
 }
 
+// ── Thin wrapper so useUser (an artifact package) never leaks into root index.jsx
+function SignedInApp({ onSignOut }: { onSignOut: () => void }) {
+  const { user } = useUser();
+  return <CoPGuidelineBuilder onSignOut={onSignOut} clerkUserId={user?.id} />;
+}
+
 // ── Home redirect — handles auth + account routing ────────────────────────────
 function HomeRedirect() {
   const { isSignedIn, isLoaded } = useAuth();
@@ -179,7 +185,7 @@ function HomeRedirect() {
     <>
       <Show when="signed-out"><Landing /></Show>
       <Show when="signed-in">
-        <CoPGuidelineBuilder onSignOut={() => signOut({ redirectUrl: `${basePath}/` })} />
+        <SignedInApp onSignOut={() => signOut({ redirectUrl: `${basePath}/` })} />
       </Show>
     </>
   );
