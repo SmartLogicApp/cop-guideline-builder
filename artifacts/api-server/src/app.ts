@@ -15,6 +15,10 @@ const app: Express = express();
 // from X-Forwarded-For instead of the internal proxy address.
 app.set("trust proxy", 1);
 
+// Disable ETags globally — prevents browsers from caching API responses
+// via If-None-Match / 304, which was causing stale isSuperAdmin=false results.
+app.set("etag", false);
+
 // ── Logging ──────────────────────────────────────────────────────────────────
 app.use(
   pinoHttp({
