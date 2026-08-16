@@ -125,11 +125,10 @@ function Landing() {
           <h2 style={{ fontSize: "clamp(22px, 4vw, 34px)", fontWeight: 800, margin: "0 0 10px", letterSpacing: "-0.3px" }}>One subscription per facility</h2>
           <p style={{ fontSize: "14px", opacity: 0.7, margin: 0 }}>All staff at your location share one plan. 30-day free trial, no credit card required.</p>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", maxWidth: "640px", margin: "0 auto" }}>
           {[
-            { name: "Individual", price: "$99", period: "/month", desc: "Solo compliance officer or consultant", features: ["1 user", "1 facility / CCN", "All 4 compliance tools", "AI gap scanning", "30-day free trial"], highlight: false },
-            { name: "Facility", price: "$299", period: "/month", desc: "Full compliance team at one location", features: ["Unlimited staff users", "1 facility / CCN", "All 4 compliance tools", "AI gap scanning", "Priority support", "30-day free trial"], highlight: true },
-            { name: "Enterprise", price: "Custom", period: "", desc: "Multi-site health systems", features: ["Unlimited users", "Multiple CCNs / facilities", "All tools + custom reporting", "Dedicated support", "SSO / SAML"], highlight: false, contact: true },
+            { name: "Facility", price: "$299", period: "/month", desc: "All staff at one facility location — unlimited users per CCN", features: ["Unlimited staff users", "1 facility / CCN", "All 4 compliance tools", "AI gap scanning", "Priority support", "30-day free trial"], highlight: true },
+            { name: "Enterprise", price: "Custom", period: "", desc: "Multi-site health systems — volume discounts available", features: ["Unlimited users", "Multiple CCNs / facilities", "All tools + custom reporting", "Dedicated support", "Volume discounts", "SSO / SAML"], highlight: false, contact: true },
           ].map((plan) => (
             <div key={plan.name} style={{
               background: plan.highlight ? "#fff" : "rgba(255,255,255,0.08)",
