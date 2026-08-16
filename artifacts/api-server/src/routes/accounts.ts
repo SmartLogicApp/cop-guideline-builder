@@ -112,14 +112,22 @@ router.get("/whoami", requireAuth, (req, res) => {
 
 // GET /api/accounts/me — get the current user's account + subscription status
 router.get("/me", requireAuth, async (req, res) => {
+  // Never cache — admin/subscription status can change at any time.
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
   const userId = (req as any).clerkUserId as string;
 
   // Check super-admin and DB-admin FIRST — before any account-lookup early returns,
   // so admins without a registered facility still get isSuperAdmin/isAdminUser: true.
-  const superAdminIds = (process.env.ADMIN_CLERK_USER_IDS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // HARDCODED fallback ensures access survives secret/DB issues across environments.
+  const HARDCODED_SUPER_ADMINS = ["user_3HyQAQQh8oexrrANO8yBOIYm2m8"];
+  const superAdminIds = [
+    ...HARDCODED_SUPER_ADMINS,
+    ...(process.env.ADMIN_CLERK_USER_IDS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.startsWith("user_")),
+  ];
   const isSuperAdmin = superAdminIds.includes(userId);
 
   const [dbAdminRow] = await db
