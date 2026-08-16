@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
+import { useUser } from "@clerk/react";
 import { useAccount } from "@/hooks/useAccount";
+
+// Clerk user IDs that get the admin button — covers dev and production environments.
+const ADMIN_CLERK_IDS = [
+  "user_3HyQAQQh8oexrrANO8yBOIYm2m8", // dev
+  "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production
+];
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -2946,9 +2953,12 @@ export default function CoPGuidelineBuilder({ onSignOut }) {
   const [institution, setInstitution] = useState("hospital");
   const [legal, setLegal] = useState(null); // "terms" | "privacy" | null
   const [adminOpen, setAdminOpen] = useState(false);
+  const { user } = useUser();
   const { data: accountData } = useAccount();
-  const isSuperAdmin = accountData?.isSuperAdmin;
-  const isAdmin = isSuperAdmin || accountData?.isAdminUser;
+  // Check Clerk user ID directly (no API/cache dependency) + fall back to server flags
+  const isAdmin = ADMIN_CLERK_IDS.includes(user?.id ?? "")
+    || accountData?.isSuperAdmin
+    || accountData?.isAdminUser;
   const basePath = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
   return (
