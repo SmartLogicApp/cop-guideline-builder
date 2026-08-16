@@ -122,7 +122,8 @@ router.get("/me", requireAuth, async (req, res) => {
   // HARDCODED fallback ensures access survives secret/DB issues across environments.
   const HARDCODED_SUPER_ADMINS = [
     "user_3HyQAQQh8oexrrANO8yBOIYm2m8", // dev Clerk ID
-    "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production Clerk ID
+    "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production facility-owner account
+    "user_3HxczU4Qjnwl3L2O5a8TssjtfON",  // actual production admin Clerk ID
   ];
   const superAdminIds = [
     ...HARDCODED_SUPER_ADMINS,

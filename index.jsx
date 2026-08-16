@@ -6,7 +6,8 @@ import { useAccount } from "@/hooks/useAccount";
 // Clerk user IDs that get the admin button — covers dev and production environments.
 const ADMIN_CLERK_IDS = [
   "user_3HyQAQQh8oexrrANO8yBOIYm2m8", // dev
-  "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production
+  "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production facility-owner account
+  "user_3HxczU4Qjnwl3L2O5a8TssjtfON",  // actual production admin Clerk ID
 ];
 
 // ─── Constants ───────────────────────────────────────────────────────────────

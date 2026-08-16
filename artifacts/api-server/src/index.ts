@@ -49,7 +49,8 @@ await initStripeIfAvailable();
 async function bootstrapSuperAdmins() {
   const HARDCODED_SUPER_ADMINS = [
     "user_3HyQAQQh8oexrrANO8yBOIYm2m8", // dev Clerk ID
-    "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production Clerk ID
+    "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production facility-owner account
+    "user_3HxczU4Qjnwl3L2O5a8TssjtfON",  // actual production admin Clerk ID ✓ confirmed
   ];
 
   const fromEnv = (process.env.ADMIN_CLERK_USER_IDS ?? "")
