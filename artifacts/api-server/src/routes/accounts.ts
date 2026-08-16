@@ -94,10 +94,20 @@ router.get("/validate-ccn", async (req, res) => {
   return res.json({ ccn, alreadyRegistered: false, ...info });
 });
 
-// GET /api/accounts/whoami — returns the authenticated user's own Clerk ID (diagnostic / setup helper)
+// GET /api/accounts/whoami — diagnostic: returns clerk ID + super-admin match result
 router.get("/whoami", requireAuth, (req, res) => {
   const userId = (req as any).clerkUserId as string;
-  res.json({ clerkUserId: userId });
+  const rawEnv = process.env.ADMIN_CLERK_USER_IDS ?? "";
+  const ids = rawEnv.split(",").map((s) => s.trim()).filter(Boolean);
+  const isSuperAdmin = ids.includes(userId);
+  res.json({
+    clerkUserId: userId,
+    isSuperAdmin,
+    adminIdCount: ids.length,
+    // Show partial IDs for debugging (first 8 chars of each)
+    adminIdPrefixes: ids.map((id) => id.slice(0, 10) + "…"),
+    yourIdPrefix: userId.slice(0, 10) + "…",
+  });
 });
 
 // GET /api/accounts/me — get the current user's account + subscription status
