@@ -2861,14 +2861,94 @@ function Footer({ onTerms, onPrivacy }) {
   );
 }
 
+// ─── Admin Quick Panel (super-admin only, embedded in main page) ──────────────
+
+function AdminQuickPanel({ basePath, onClose }) {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  useEffect(() => {
+    fetch(`${basePath}/api/admin/stats?month=${month}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => { setStats(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [basePath, month]);
+
+  function dl(type) {
+    window.open(`${basePath}/api/admin/reports/download?type=${type}&month=${encodeURIComponent(month)}`, "_blank");
+  }
+
+  const fN = (n) => (n != null ? Number(n).toLocaleString("en-US") : "—");
+  const fD = (n) => (n != null ? "$" + Number(n).toFixed(2) : "—");
+
+  return (
+    <div style={{ background: "#0B1F3A", borderBottom: "2px solid rgba(245,197,66,0.35)", padding: "18px 32px" }}>
+      <div style={{ maxWidth: "960px", margin: "0 auto" }}>
+
+        {/* Panel header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+          <div>
+            <div style={{ color: "#F5C542", fontWeight: 800, fontSize: "15px", letterSpacing: "-0.2px" }}>⚙ Admin Quick Access</div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: "11px", marginTop: "2px" }}>
+              {loading ? "Loading…" : `${stats?.monthLabel ?? month} · Platform overview`}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <a href={`${basePath}/admin`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "7px 16px", background: "#F5C542", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, fontSize: "12px", textDecoration: "none", whiteSpace: "nowrap" }}>
+              Full Dashboard →
+            </a>
+            <button onClick={onClose} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "6px", color: "rgba(255,255,255,0.55)", fontSize: "16px", lineHeight: 1, padding: "4px 11px", cursor: "pointer" }}>×</button>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "14px" }}>
+          {[
+            { label: "Total Facilities", value: fN(stats?.totalFacilities), color: "#60A5FA" },
+            { label: "Active Subscriptions", value: fN(stats?.activeSubscriptions), color: "#34D399" },
+            { label: "Trial Accounts", value: fN(stats?.trialAccounts), color: "#FBBF24" },
+            { label: "Token Revenue (month)", value: fD(stats?.thisMonth?.totalChargeUsd), color: "#C4B5FD" },
+          ].map((s) => (
+            <div key={s.label} style={{ background: "rgba(255,255,255,0.05)", borderRadius: "8px", padding: "11px 14px", border: "1px solid rgba(255,255,255,0.07)" }}>
+              <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.38)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", marginBottom: "5px" }}>{s.label}</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: s.color, lineHeight: 1 }}>{loading ? "…" : s.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Reports row */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+          <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", marginRight: "4px" }}>Download Reports:</span>
+          {[
+            { id: "clients", label: "📋 Client List" },
+            { id: "tokens",  label: "⚡ Token Usage" },
+            { id: "revenue", label: "💰 Revenue Summary" },
+          ].map((r) => (
+            <button key={r.id} onClick={() => dl(r.id)} style={{ padding: "6px 14px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+              {r.label}
+            </button>
+          ))}
+          <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.22)", margin: "0 2px" }}>·</span>
+          <a href={`${basePath}/admin`} style={{ fontSize: "12px", color: "rgba(255,255,255,0.45)", textDecoration: "none", fontWeight: 600 }}>Manage clients · Team access · Email reports →</a>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function CoPGuidelineBuilder({ onSignOut }) {
   const [tab, setTab] = useState("guidelines");
   const [institution, setInstitution] = useState("hospital");
   const [legal, setLegal] = useState(null); // "terms" | "privacy" | null
+  const [adminOpen, setAdminOpen] = useState(false);
   const { data: accountData } = useAccount();
-  const isAdmin = accountData?.isSuperAdmin || accountData?.isAdminUser;
+  const isSuperAdmin = accountData?.isSuperAdmin;
+  const isAdmin = isSuperAdmin || accountData?.isAdminUser;
   const basePath = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
   return (
@@ -2890,11 +2970,13 @@ export default function CoPGuidelineBuilder({ onSignOut }) {
               Regulatory citations should be verified against current official sources. User assumes all liability.
             </div>
             <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginTop: "14px", flexShrink: 0 }}>
+              {/* ⚙ Admin button — super-admin only, very prominent amber */}
               {isAdmin && (
-                <a href={`${basePath}/admin`}
-                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 14px", background: "rgba(245,197,66,0.18)", border: "1px solid rgba(245,197,66,0.5)", borderRadius: "6px", color: "#F5C542", fontSize: "12px", fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>
-                  🔐 Admin Dashboard
-                </a>
+                <button
+                  onClick={() => setAdminOpen((o) => !o)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 16px", background: adminOpen ? "#F5C542" : "rgba(245,197,66,0.22)", border: "2px solid #F5C542", borderRadius: "7px", color: adminOpen ? "#0B1F3A" : "#F5C542", fontSize: "13px", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", letterSpacing: "-0.2px" }}>
+                  ⚙ Admin
+                </button>
               )}
               <a href={`${basePath}/billing`}
                 style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "8px 14px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
@@ -2914,18 +2996,8 @@ export default function CoPGuidelineBuilder({ onSignOut }) {
         </div>
       </div>
 
-      {/* Admin access banner — only shown to admins, full-width and impossible to miss */}
-      {isAdmin && (
-        <div style={{ background: "linear-gradient(90deg,#1a3a1a,#2d5a1b)", borderBottom: "2px solid #4ade80", padding: "10px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
-          <span style={{ color: "#bbf7d0", fontSize: "13px", fontWeight: 600 }}>
-            🔐 You are signed in as a platform administrator.
-          </span>
-          <a href={`${basePath}/admin`}
-            style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 18px", background: "#16a34a", border: "none", borderRadius: "6px", color: "#fff", fontSize: "13px", fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>
-            Open Admin Dashboard →
-          </a>
-        </div>
-      )}
+      {/* Admin quick panel — toggles open when ⚙ Admin button is clicked */}
+      {isAdmin && adminOpen && <AdminQuickPanel basePath={basePath} onClose={() => setAdminOpen(false)} />}
 
       <div style={S.container}>
         <OnboardingBanner />

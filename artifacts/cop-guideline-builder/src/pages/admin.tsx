@@ -12,6 +12,10 @@ interface AdminUser {
   label: string | null; isActive: boolean; addedBy: string; addedAt: string | null;
 }
 
+interface FacilityUser {
+  clerkUserId: string; email: string | null; role: string | null; facilityName: string | null;
+}
+
 interface Stats {
   monthLabel: string;
   totalFacilities: number; activeSubscriptions: number;
@@ -392,23 +396,34 @@ function ReportsTab({ month, setMonth }: { month: string; setMonth: (m: string) 
   );
 }
 
-// ─── TEAM ACCESS TAB (existing admin user management) ────────────────────────
+// ─── TEAM ACCESS TAB ─────────────────────────────────────────────────────────
 
 function TeamAccessTab() {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ clerkUserId: "", email: "", label: "" });
-  const [formError, setFormError] = useState("");
+  const [search, setSearch] = useState("");
+  const [grantStatus, setGrantStatus] = useState<Record<string, string>>({});
+  const [revokeAllConfirm, setRevokeAllConfirm] = useState(false);
 
   const { data: admins = [], isLoading } = useQuery<AdminUser[]>({
     queryKey: ["admin", "users"],
     queryFn: () => apiFetch<AdminUser[]>("/api/admin/users"),
   });
 
+  const { data: facilityUsers = [], isLoading: fuLoading } = useQuery<FacilityUser[]>({
+    queryKey: ["admin", "facility-users"],
+    queryFn: () => apiFetch<FacilityUser[]>("/api/admin/facility-users"),
+  });
+
+  const adminSet = new Set(admins.filter((a) => a.isActive).map((a) => a.clerkUserId));
+
   const addMutation = useMutation({
     mutationFn: (body: { clerkUserId: string; email: string; label?: string }) =>
       apiFetch<AdminUser>("/api/admin/users", { method: "POST", body: JSON.stringify(body) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "users"] }); setForm({ clerkUserId: "", email: "", label: "" }); setFormError(""); },
-    onError: (e: any) => setFormError(e.message ?? "Failed to add admin"),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["admin", "users"] });
+      setGrantStatus((s) => ({ ...s, [vars.clerkUserId]: "granted" }));
+    },
+    onError: (e: any, vars) => setGrantStatus((s) => ({ ...s, [vars.clerkUserId]: "error: " + (e.message ?? "failed") })),
   });
 
   const toggleMutation = useMutation({
@@ -422,60 +437,97 @@ function TeamAccessTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
   });
 
-  function handleAdd(e: React.FormEvent) {
-    e.preventDefault(); setFormError("");
-    const { clerkUserId, email, label } = form;
-    if (!clerkUserId.trim() || !email.trim()) { setFormError("Clerk user ID and email are required"); return; }
-    addMutation.mutate({ clerkUserId: clerkUserId.trim(), email: email.trim(), label: label.trim() || undefined });
-  }
+  const revokeAllMutation = useMutation({
+    mutationFn: () => apiFetch("/api/admin/users", { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "users"] }); setRevokeAllConfirm(false); },
+  });
 
   const activeAdmins  = admins.filter((a) => a.isActive);
   const revokedAdmins = admins.filter((a) => !a.isActive);
 
+  const filteredFU = facilityUsers.filter((u) => {
+    const q = search.toLowerCase();
+    return !q || (u.email ?? "").toLowerCase().includes(q) || (u.facilityName ?? "").toLowerCase().includes(q);
+  });
+
   return (
     <div>
-      <SectionHeader title="Admin Team Access" sub="Grant or revoke platform-level dashboard access for collaborators" />
+      <SectionHeader title="Admin Team Access" sub="Grant or revoke platform-level dashboard access" />
 
-      {/* Add form */}
+      {/* ── Section 1: Registered facility users — one-click grant ── */}
       <div style={{ background: CLR.white, borderRadius: "10px", border: `1px solid ${CLR.border}`, padding: "22px", marginBottom: "20px" }}>
-        <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "12px" }}>Grant Access to a New Admin</div>
-        <p style={{ fontSize: "12px", color: CLR.muted, margin: "0 0 14px", lineHeight: 1.6 }}>
-          The person must first sign up at the app. Find their Clerk user ID at{" "}
-          <a href="https://dashboard.clerk.com" target="_blank" rel="noopener noreferrer" style={{ color: CLR.blue }}>dashboard.clerk.com</a>{" "}
-          → Users (starts with <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "3px" }}>user_</code>).
-        </p>
-        <form onSubmit={handleAdd} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", alignItems: "end" }}>
-          {[
-            { key: "clerkUserId", label: "Clerk User ID *", placeholder: "user_abc123…" },
-            { key: "email", label: "Email *", placeholder: "name@facility.org" },
-            { key: "label", label: "Label / Role", placeholder: "e.g. Compliance Director" },
-          ].map(({ key, label, placeholder }) => (
-            <div key={key}>
-              <label style={{ fontSize: "11px", fontWeight: 700, color: CLR.muted, display: "block", marginBottom: "4px" }}>{label}</label>
-              <input
-                style={{ width: "100%", padding: "8px 10px", border: `1px solid ${CLR.border}`, borderRadius: "6px", fontSize: "13px", boxSizing: "border-box" as const }}
-                placeholder={placeholder}
-                value={(form as any)[key]}
-                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-              />
-            </div>
-          ))}
-          <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: "12px" }}>
-            <button type="submit" style={{ padding: "8px 18px", background: CLR.blue, border: "none", borderRadius: "6px", color: "#fff", fontWeight: 700, fontSize: "13px", cursor: "pointer" }} disabled={addMutation.isPending}>
-              {addMutation.isPending ? "Granting…" : "Grant Access"}
-            </button>
-            {formError && <span style={{ fontSize: "13px", color: "#DC2626" }}>{formError}</span>}
-            {addMutation.isSuccess && <span style={{ fontSize: "13px", color: "#059669" }}>✓ Access granted</span>}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "14px", color: CLR.navy }}>Grant Admin to a Registered User</div>
+            <div style={{ fontSize: "12px", color: CLR.muted, marginTop: "3px" }}>All users who have signed up appear below. Click Grant to give admin access.</div>
           </div>
-        </form>
+          <input
+            placeholder="Filter by email or facility…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ padding: "7px 12px", border: `1px solid ${CLR.border}`, borderRadius: "7px", fontSize: "12px", width: "220px" }}
+          />
+        </div>
+
+        {fuLoading ? <Loader /> : (
+          <div style={{ maxHeight: "280px", overflowY: "auto", borderRadius: "8px", border: `1px solid ${CLR.border}` }}>
+            {filteredFU.length === 0 && (
+              <div style={{ padding: "24px", textAlign: "center", color: CLR.faint, fontSize: "13px" }}>No registered users found</div>
+            )}
+            {filteredFU.map((u) => {
+              const alreadyAdmin = adminSet.has(u.clerkUserId);
+              const st = grantStatus[u.clerkUserId];
+              return (
+                <div key={u.clerkUserId} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 14px", borderBottom: `1px solid ${CLR.border}`, background: alreadyAdmin ? "rgba(16,185,129,0.04)" : "#fff" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: "13px", color: CLR.navy, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email ?? "(no email)"}</div>
+                    <div style={{ fontSize: "11px", color: CLR.faint, marginTop: "1px" }}>{u.facilityName ?? "—"} · {u.clerkUserId}</div>
+                  </div>
+                  {alreadyAdmin
+                    ? <span style={{ fontSize: "11px", fontWeight: 700, color: "#059669", background: "rgba(16,185,129,0.1)", padding: "3px 10px", borderRadius: "20px" }}>✓ Admin</span>
+                    : st === "granted"
+                    ? <span style={{ fontSize: "11px", color: "#059669" }}>✓ Granted</span>
+                    : (
+                      <button
+                        disabled={addMutation.isPending}
+                        onClick={() => addMutation.mutate({ clerkUserId: u.clerkUserId, email: u.email ?? "", label: u.facilityName ?? undefined })}
+                        style={{ padding: "5px 14px", background: CLR.blue, border: "none", borderRadius: "6px", color: "#fff", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                      >
+                        {st?.startsWith("error") ? "Retry" : "Grant Admin"}
+                      </button>
+                    )
+                  }
+                  {st?.startsWith("error") && <span style={{ fontSize: "11px", color: "#DC2626" }}>{st}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Admin lists */}
+      {/* ── Section 2: Active admins with revoke / remove + Revoke All ── */}
       {isLoading ? <Loader /> : (
         <>
-          <AdminUserGroup label="Active Admins" admins={activeAdmins} onToggle={(id, a) => toggleMutation.mutate({ id, isActive: a })} onDelete={(id) => deleteMutation.mutate(id)} isPending={toggleMutation.isPending || deleteMutation.isPending} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+            <div style={{ fontWeight: 700, fontSize: "14px", color: CLR.navy }}>Active Admins ({activeAdmins.length})</div>
+            {activeAdmins.length > 0 && (
+              revokeAllConfirm
+                ? <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <span style={{ fontSize: "12px", color: "#DC2626", fontWeight: 600 }}>Revoke all {activeAdmins.length} admin(s)?</span>
+                    <SmallBtn color="#fff" bg="#DC2626" border="#DC2626" onClick={() => revokeAllMutation.mutate()} disabled={revokeAllMutation.isPending}>Confirm Revoke All</SmallBtn>
+                    <SmallBtn color={CLR.muted} bg="none" border={CLR.border} onClick={() => setRevokeAllConfirm(false)}>Cancel</SmallBtn>
+                  </div>
+                : <SmallBtn color="#DC2626" bg="rgba(239,68,68,0.06)" border="#FECACA" onClick={() => setRevokeAllConfirm(true)}>⚡ Revoke All Access</SmallBtn>
+            )}
+          </div>
+
+          <AdminUserGroup label="" admins={activeAdmins} onToggle={(id, a) => toggleMutation.mutate({ id, isActive: a })} onDelete={(id) => deleteMutation.mutate(id)} isPending={toggleMutation.isPending || deleteMutation.isPending} />
+
           {revokedAdmins.length > 0 && (
-            <AdminUserGroup label="Revoked" admins={revokedAdmins} onToggle={(id, a) => toggleMutation.mutate({ id, isActive: a })} onDelete={(id) => deleteMutation.mutate(id)} isPending={toggleMutation.isPending || deleteMutation.isPending} />
+            <>
+              <div style={{ fontWeight: 700, fontSize: "14px", color: CLR.navy, margin: "16px 0 10px" }}>Revoked ({revokedAdmins.length})</div>
+              <AdminUserGroup label="" admins={revokedAdmins} onToggle={(id, a) => toggleMutation.mutate({ id, isActive: a })} onDelete={(id) => deleteMutation.mutate(id)} isPending={toggleMutation.isPending || deleteMutation.isPending} />
+            </>
           )}
         </>
       )}

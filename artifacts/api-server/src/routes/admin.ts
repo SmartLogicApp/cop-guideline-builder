@@ -405,6 +405,22 @@ router.post("/reports/email", requireAnyAdmin, async (req, res) => {
   }
 });
 
+// ─── Facility users lookup (super-admin only) ────────────────────────────────
+
+router.get("/facility-users", requireSuperAdmin, async (_req, res) => {
+  const rows = await db
+    .select({
+      clerkUserId: accountUsers.clerkUserId,
+      email: accountUsers.email,
+      role: accountUsers.role,
+      facilityName: accounts.facilityName,
+    })
+    .from(accountUsers)
+    .leftJoin(accounts, eq(accountUsers.accountId, accounts.id))
+    .orderBy(accounts.facilityName, accountUsers.email);
+  return res.json(rows);
+});
+
 // ─── Admin user management (super-admin only) ─────────────────────────────────
 
 router.get("/users", requireSuperAdmin, async (_req, res) => {
@@ -446,6 +462,12 @@ router.delete("/users/:id", requireSuperAdmin, async (req, res) => {
   const deleted = await db.delete(adminUsers).where(eq(adminUsers.id, id)).returning();
   if (!deleted.length) return res.status(404).json({ error: "Admin user not found" });
   return res.json({ ok: true });
+});
+
+// DELETE /api/admin/users — revoke ALL DB-managed admin users at once
+router.delete("/users", requireSuperAdmin, async (_req, res) => {
+  const removed = await db.update(adminUsers).set({ isActive: false }).returning();
+  return res.json({ revokedCount: removed.length });
 });
 
 export default router;
