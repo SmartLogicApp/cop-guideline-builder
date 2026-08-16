@@ -245,12 +245,10 @@ export default function BillingPage() {
           </div>
 
           {/* Stats row */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "20px" }}>
             {[
-              { label: "AI Requests", value: usage ? fmtInt(usage.requestCount) : "—", sub: "generations" },
+              { label: "AI Requests", value: usage ? fmtInt(usage.requestCount) : "—", sub: "generations this month" },
               { label: "Total Tokens", value: usage ? fmtInt(usage.totalTokens) : "—", sub: `${usage ? fmtInt(usage.inputTokens) : "—"} in · ${usage ? fmtInt(usage.outputTokens) : "—"} out` },
-              { label: "API Cost", value: usage ? `$${fmt(usage.rawCostUsd)}` : "—", sub: "at Claude list rates" },
-              { label: "Service Markup", value: usage ? `$${fmt(usage.markupUsd)}` : "—", sub: "+50% on API cost" },
             ].map(s => (
               <div key={s.label} style={{
                 background: "#F8FAFC", borderRadius: "8px", padding: "12px 14px",
@@ -304,11 +302,10 @@ export default function BillingPage() {
             background: "#F0F9FF", border: "1px solid #BAE6FD", borderRadius: "7px",
             padding: "10px 14px", fontSize: "12px", color: "#0369A1", lineHeight: 1.6,
           }}>
-            <strong>How token charges work:</strong> Each AI generation uses Claude tokens.
-            You are charged at Claude's published list rates plus a 50% service fee.
+            <strong>How token charges work:</strong> Each AI generation consumes tokens processed by Claude.
             This month's token charge of <strong>${usage ? fmt(usage.totalAdditionalChargeUsd) : "0.00"}</strong> will
             be added to your next invoice alongside your base subscription fee.
-            Pricing: $3.00/M input tokens · $15.00/M output tokens · ×1.5 service markup.
+            Token billing rates are defined in your service agreement.
           </div>
         </div>
 
