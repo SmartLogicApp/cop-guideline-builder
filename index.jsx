@@ -1258,7 +1258,7 @@ function exportActionPlanXlsx(actions, inst, topic) {
 
 const S = {
   page: { minHeight: "100vh", background: "#F4F7FA", fontFamily: "system-ui, -apple-system, sans-serif", color: "#1A2332" },
-  header: { background: "#0D5C6B", color: "#fff", padding: "20px 32px" },
+  header: { background: "#0D5C6B", color: "#fff", padding: "16px clamp(12px, 4vw, 32px)" },
   headerTitle: { margin: 0, fontSize: "22px", fontWeight: 700, letterSpacing: "-0.3px" },
   headerSub: { margin: "4px 0 0", fontSize: "13px", opacity: 0.75 },
   disclaimer: { background: "#FEF3C7", border: "1px solid #F59E0B", borderRadius: "6px", padding: "10px 14px", marginTop: "14px", fontSize: "11.5px", color: "#78350F", lineHeight: 1.5 },
@@ -2969,7 +2969,7 @@ export default function CoPGuidelineBuilder({ onSignOut }) {
               Output is <strong>not legal advice</strong> and must be reviewed by qualified compliance counsel before implementation.
               Regulatory citations should be verified against current official sources. User assumes all liability.
             </div>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginTop: "14px", flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginTop: "14px", flexShrink: 0, overflowX: "auto", maxWidth: "100%", paddingBottom: "4px" }}>
               {/* ⚙ Admin button — super-admin only, very prominent amber */}
               {isAdmin && (
                 <button

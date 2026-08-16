@@ -1,5 +1,5 @@
 // CMS CoP Compliance Suite — Service Worker
-const CACHE = "cop-suite-v1";
+const CACHE = "cop-suite-v3";
 
 // Assets to pre-cache on install (shell + key statics)
 const PRECACHE = ["/", "/index.html"];
