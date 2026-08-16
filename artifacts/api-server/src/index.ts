@@ -1,5 +1,8 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { db } from "@workspace/db";
+import { adminUsers } from "@workspace/db";
+import { sql } from "drizzle-orm";
 
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
@@ -39,14 +42,32 @@ async function initStripeIfAvailable() {
 
 await initStripeIfAvailable();
 
-// ── Debug: log admin IDs at startup so we can verify the secret is set correctly ──
-const rawAdminIds = process.env.ADMIN_CLERK_USER_IDS ?? "";
-const parsedAdminIds = rawAdminIds.split(",").map((s) => s.trim()).filter(Boolean);
-logger.info({
-  adminIdCount: parsedAdminIds.length,
-  adminIdPrefixes: parsedAdminIds.map((id) => id.slice(0, 12) + "…"),
-  rawLength: rawAdminIds.length,
-}, "Admin IDs loaded from ADMIN_CLERK_USER_IDS");
+// ── Bootstrap super-admins into the DB on every startup ──────────────────────
+// Reads valid Clerk user IDs from ADMIN_CLERK_USER_IDS (comma-separated) and
+// upserts them into admin_users so the button works even if the secret is stale.
+// Also includes a hardcoded fallback so production never loses access.
+async function bootstrapSuperAdmins() {
+  const HARDCODED_SUPER_ADMINS = ["user_3HyQAQQh8oexrrANO8yBOIYm2m8"];
+
+  const fromEnv = (process.env.ADMIN_CLERK_USER_IDS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.startsWith("user_")); // only real Clerk IDs
+
+  const ids = Array.from(new Set([...HARDCODED_SUPER_ADMINS, ...fromEnv]));
+
+  for (const clerkUserId of ids) {
+    await db.execute(sql`
+      INSERT INTO admin_users (clerk_user_id, email, label, is_active, added_by)
+      VALUES (${clerkUserId}, 'super-admin', 'Super Admin', true, 'system')
+      ON CONFLICT (clerk_user_id) DO UPDATE SET is_active = true
+    `);
+  }
+
+  logger.info({ count: ids.length }, "Super-admin bootstrap complete");
+}
+
+await bootstrapSuperAdmins();
 
 app.listen(port, (err) => {
   if (err) { logger.error({ err }, "Error listening on port"); process.exit(1); }
