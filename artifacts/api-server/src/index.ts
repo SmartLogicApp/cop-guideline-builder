@@ -47,7 +47,10 @@ await initStripeIfAvailable();
 // upserts them into admin_users so the button works even if the secret is stale.
 // Also includes a hardcoded fallback so production never loses access.
 async function bootstrapSuperAdmins() {
-  const HARDCODED_SUPER_ADMINS = ["user_3HyQAQQh8oexrrANO8yBOIYm2m8"];
+  const HARDCODED_SUPER_ADMINS = [
+    "user_3HyQAQQh8oexrrANO8yBOIYm2m8", // dev Clerk ID
+    "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production Clerk ID
+  ];
 
   const fromEnv = (process.env.ADMIN_CLERK_USER_IDS ?? "")
     .split(",")

@@ -120,7 +120,10 @@ router.get("/me", requireAuth, async (req, res) => {
   // Check super-admin and DB-admin FIRST — before any account-lookup early returns,
   // so admins without a registered facility still get isSuperAdmin/isAdminUser: true.
   // HARDCODED fallback ensures access survives secret/DB issues across environments.
-  const HARDCODED_SUPER_ADMINS = ["user_3HyQAQQh8oexrrANO8yBOIYm2m8"];
+  const HARDCODED_SUPER_ADMINS = [
+    "user_3HyQAQQh8oexrrANO8yBOIYm2m8", // dev Clerk ID
+    "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production Clerk ID
+  ];
   const superAdminIds = [
     ...HARDCODED_SUPER_ADMINS,
     ...(process.env.ADMIN_CLERK_USER_IDS ?? "")
