@@ -1,1 +1,2 @@
 - [Root-level index.jsx import constraints](root-index-import-constraints.md) — files at the workspace root cannot import from packages only installed in a specific artifact; pass values as props from artifact components instead.
+- [Admin bootstrap pattern](admin-bootstrap.md) — dev and production Clerk IDs differ; both must be hardcoded. Production ID found in `account_users` table.
