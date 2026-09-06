@@ -6,6 +6,8 @@ import {
   LEGACY_INSTITUTION_TYPES,
   PROVIDER_CATEGORIES,
   getProviderProfile,
+  getRegulatorySource,
+  getRequirementsForProvider,
   getProviderTopics,
   getProvidersByCategory,
   isProviderContentAvailable,
@@ -1415,6 +1417,7 @@ function OnboardingBanner() {
 
 function GuidelinesTab({ institution }) {
   const topics = getProviderTopics(institution);
+  const verifiedRequirements = getRequirementsForProvider(institution);
   const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1534,6 +1537,43 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
 
   return (
     <div>
+      {verifiedRequirements.length > 0 && (
+        <details style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 800, color: "#0D5C6B", fontSize: "15px" }}>
+            Verified Hospital CMS Citation Library ({verifiedRequirements.length})
+          </summary>
+          <p style={{ fontSize: "12px", color: "#64748B", lineHeight: 1.6, margin: "10px 0 14px" }}>
+            Condition-level index from 42 CFR Part 482. Open the official eCFR link to review all standards and sub-requirements before relying on a citation.
+          </p>
+          <div style={{ display: "grid", gap: "8px" }}>
+            {verifiedRequirements.map((requirement) => {
+              const source = getRegulatorySource(requirement.sourceIds[0]);
+              return (
+                <div key={requirement.id} style={{ border: "1px solid #D8E4E8", borderRadius: "8px", padding: "10px 12px", background: "#F8FBFC" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 700 }}>{requirement.conditionCategory}</div>
+                      <div style={{ fontSize: "13px", color: "#1E293B", fontWeight: 600, marginTop: "2px" }}>{requirement.requirement}</div>
+                    </div>
+                    {source?.url && (
+                      <a href={source.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#0D5C6B", fontWeight: 800, whiteSpace: "nowrap" }}>
+                        {requirement.cfrReference} ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "12px" }}>
+            Verified September 6, 2026 · Scheduled review December 6, 2026 · Survey guidance:{" "}
+            <a href="https://www.cms.gov/regulations-and-guidance/guidance/manuals/downloads/som107ap_a_hospitals.pdf" target="_blank" rel="noopener noreferrer" style={{ color: "#0D5C6B", fontWeight: 700 }}>
+              CMS State Operations Manual Appendix A ↗
+            </a>
+          </div>
+        </details>
+      )}
+
       {/* Form */}
       <div style={S.card}>
         <div style={S.row}>
