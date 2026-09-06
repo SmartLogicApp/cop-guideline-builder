@@ -1540,10 +1540,10 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
       {verifiedRequirements.length > 0 && (
         <details style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
           <summary style={{ cursor: "pointer", fontWeight: 800, color: "#0D5C6B", fontSize: "15px" }}>
-            Verified Hospital CMS Citation Library ({verifiedRequirements.length})
+            Verified {inst.label} CMS Citation Library ({verifiedRequirements.length})
           </summary>
           <p style={{ fontSize: "12px", color: "#64748B", lineHeight: 1.6, margin: "10px 0 14px" }}>
-            Condition-level index from 42 CFR Part 482. Open the official eCFR link to review all standards and sub-requirements before relying on a citation.
+            Section-level index from {inst.cfr}. Open the official eCFR link to review all standards and sub-requirements before relying on a citation.
           </p>
           <div style={{ display: "grid", gap: "8px" }}>
             {verifiedRequirements.map((requirement) => {
@@ -1566,10 +1566,14 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
             })}
           </div>
           <div style={{ fontSize: "11px", color: "#64748B", marginTop: "12px" }}>
-            Verified September 6, 2026 · Scheduled review December 6, 2026 · Survey guidance:{" "}
-            <a href="https://www.cms.gov/regulations-and-guidance/guidance/manuals/downloads/som107ap_a_hospitals.pdf" target="_blank" rel="noopener noreferrer" style={{ color: "#0D5C6B", fontWeight: 700 }}>
-              CMS State Operations Manual Appendix A ↗
-            </a>
+            Verified September 6, 2026 · Scheduled review December 6, 2026
+            {getRegulatorySource(verifiedRequirements[0]?.sourceIds[1])?.url && (
+              <> · Survey guidance:{" "}
+                <a href={getRegulatorySource(verifiedRequirements[0].sourceIds[1]).url} target="_blank" rel="noopener noreferrer" style={{ color: "#0D5C6B", fontWeight: 700 }}>
+                  {institution === "cah" ? "CMS State Operations Manual Appendix W" : "CMS State Operations Manual Appendix A"} ↗
+                </a>
+              </>
+            )}
           </div>
         </details>
       )}

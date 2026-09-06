@@ -256,6 +256,38 @@ const HOSPITAL_REQUIREMENT_IDS = HOSPITAL_REQUIREMENT_SEEDS.map(
   ({ section }) => `hospital-cfr-${section.replace(".", "-")}`,
 );
 
+const CAH_REQUIREMENT_SEEDS = [
+  { section: "485.601", category: "Program Foundation", title: "Basis and scope." },
+  { section: "485.603", category: "Network Requirements", title: "Rural health network." },
+  { section: "485.604", category: "Personnel", title: "Personnel qualifications." },
+  { section: "485.606", category: "Certification", title: "Designation and certification of CAHs." },
+  { section: "485.608", category: "Administration", title: "Condition of participation: Compliance with Federal, State, and local laws and regulations." },
+  { section: "485.610", category: "Certification", title: "Condition of participation: Status and location." },
+  { section: "485.612", category: "Certification", title: "Condition of participation: Compliance with hospital requirements at the time of application." },
+  { section: "485.614", category: "Patient Rights", title: "Condition of participation: Patient's rights." },
+  { section: "485.616", category: "Network Requirements", title: "Condition of participation: Agreements." },
+  { section: "485.618", category: "Clinical Services", title: "Condition of participation: Emergency services." },
+  { section: "485.620", category: "Certification", title: "Condition of participation: Number of beds and length of stay." },
+  { section: "485.623", category: "Environment of Care", title: "Condition of participation: Physical plant and environment." },
+  { section: "485.625", category: "Emergency Preparedness", title: "Condition of participation: Emergency preparedness." },
+  { section: "485.627", category: "Administration", title: "Condition of participation: Organizational structure." },
+  { section: "485.631", category: "Personnel", title: "Condition of participation: Staffing and staff responsibilities." },
+  { section: "485.635", category: "Clinical Services", title: "Condition of participation: Provision of services." },
+  { section: "485.638", category: "Health Information", title: "Conditions of participation: Clinical records." },
+  { section: "485.639", category: "Clinical Services", title: "Condition of participation: Surgical services." },
+  { section: "485.640", category: "Infection Prevention", title: "Condition of participation: Infection prevention and control and antibiotic stewardship programs." },
+  { section: "485.641", category: "Quality", title: "Condition of participation: Quality assessment and performance improvement program." },
+  { section: "485.642", category: "Care Transitions", title: "Condition of participation: Discharge planning." },
+  { section: "485.643", category: "Organ Procurement", title: "Condition of participation: Organ, tissue, and eye procurement." },
+  { section: "485.645", category: "Special Services", title: "Special requirements for CAH providers of long-term care services (“swing-beds”)." },
+  { section: "485.647", category: "Special Services", title: "Condition of participation: Psychiatric and rehabilitation distinct part units." },
+  { section: "485.649", category: "Special Services", title: "Condition of participation: Obstetrical services." },
+] as const;
+
+const CAH_REQUIREMENT_IDS = CAH_REQUIREMENT_SEEDS.map(
+  ({ section }) => `cah-cfr-${section.replace(".", "-")}`,
+);
+
 type ProfileSeed = Omit<
   ProviderProfile,
   | "requirementIds"
@@ -273,7 +305,11 @@ function profile(seed: ProfileSeed): ProviderProfile {
   const verified = seed.contentStatus === "verified";
   return {
     ...seed,
-    requirementIds: seed.id === "hospital" ? [...HOSPITAL_REQUIREMENT_IDS] : [],
+    requirementIds: seed.id === "hospital"
+      ? [...HOSPITAL_REQUIREMENT_IDS]
+      : seed.id === "cah"
+        ? [...CAH_REQUIREMENT_IDS]
+        : [],
     policyIds: [],
     surveyReadinessItemIds: [],
     evidenceRequirementIds: [],
@@ -308,7 +344,7 @@ function pending(
 
 export const PROVIDER_PROFILES: readonly ProviderProfile[] = [
   profile({ id: "hospital", legacyKey: "hospital", name: "Acute Care Hospital", abbreviation: "ACH", categoryId: "hospitals-inpatient", framework: "CoP", frameworkLabel: "Conditions of Participation", displayReference: "42 CFR 482", cfrReferences: ["42 CFR 482"], topics: HOSPITAL_TOPICS, contentStatus: "verified", ecfrSource: { title: 42, part: 482, label: "42 CFR 482 – Conditions of Participation: Hospitals" } }),
-  profile({ id: "cah", legacyKey: "cah", name: "Critical Access Hospital", abbreviation: "CAH", categoryId: "hospitals-inpatient", framework: "CoP", frameworkLabel: "Conditions of Participation", displayReference: "42 CFR 485 Subpart F", cfrReferences: ["42 CFR 485 Subpart F"], topics: HOSPITAL_TOPICS, contentStatus: "legacy-supported", ecfrSource: { title: 42, part: 485, label: "42 CFR 485 – Conditions of Participation: Critical Access Hospitals" } }),
+  profile({ id: "cah", legacyKey: "cah", name: "Critical Access Hospital", abbreviation: "CAH", categoryId: "hospitals-inpatient", framework: "CoP", frameworkLabel: "Conditions of Participation", displayReference: "42 CFR 485 Subpart F", cfrReferences: ["42 CFR 485 Subpart F"], topics: HOSPITAL_TOPICS, contentStatus: "verified", ecfrSource: { title: 42, part: 485, label: "42 CFR 485 Subpart F – Conditions of Participation: Critical Access Hospitals" } }),
   pending("reh", "Rural Emergency Hospital", "REH", "hospitals-inpatient", HOSPITAL_TOPICS),
   profile({ id: "psych", legacyKey: "psych", name: "Psychiatric Hospital", abbreviation: "PH", categoryId: "hospitals-inpatient", framework: "CoP", frameworkLabel: "Conditions of Participation", displayReference: "42 CFR 482 Subpart E", cfrReferences: ["42 CFR 482 Subpart E"], topics: BEHAVIORAL_TOPICS, contentStatus: "legacy-supported" }),
   profile({ id: "ltch", legacyKey: "ltch", name: "Long-Term Care Hospital", abbreviation: "LTCH", categoryId: "hospitals-inpatient", framework: "CoP", frameworkLabel: "Conditions of Participation", displayReference: "42 CFR 482", cfrReferences: ["42 CFR 482"], topics: HOSPITAL_TOPICS, contentStatus: "legacy-supported" }),
@@ -345,8 +381,8 @@ export const PROVIDER_PROFILES: readonly ProviderProfile[] = [
   pending("pace", "PACE Organization", "PACE", "other-cms-providers", SPECIALTY_TOPICS),
 ] as const;
 
-export const CMS_REQUIREMENTS: readonly CmsRequirement[] = HOSPITAL_REQUIREMENT_SEEDS.map(
-  ({ section, category, title }) => ({
+export const CMS_REQUIREMENTS: readonly CmsRequirement[] = [
+  ...HOSPITAL_REQUIREMENT_SEEDS.map(({ section, category, title }): CmsRequirement => ({
     id: `hospital-cfr-${section.replace(".", "-")}`,
     providerTypeId: "hospital",
     framework: "CoP" as const,
@@ -363,8 +399,26 @@ export const CMS_REQUIREMENTS: readonly CmsRequirement[] = HOSPITAL_REQUIREMENT_
     verificationStatus: "verified" as const,
     lastVerifiedAt: "2026-09-06",
     nextReviewAt: "2026-12-06",
-  }),
-);
+  })),
+  ...CAH_REQUIREMENT_SEEDS.map(({ section, category, title }): CmsRequirement => ({
+    id: `cah-cfr-${section.replace(".", "-")}`,
+    providerTypeId: "cah",
+    framework: "CoP" as const,
+    conditionCategory: category,
+    cfrReference: `42 CFR § ${section}`,
+    requirement: title,
+    responsibleDepartments: [],
+    relatedPolicyIds: [],
+    evidenceRequirementIds: [],
+    staffInterviewConsiderations: [],
+    gapAssessmentQuestionIds: [],
+    correctiveActionRecommendationIds: [],
+    sourceIds: [`ecfr-42-cfr-${section}`, "cms-som-appendix-w-cah"],
+    verificationStatus: "verified" as const,
+    lastVerifiedAt: "2026-09-06",
+    nextReviewAt: "2026-12-06",
+  })),
+];
 
 export const REGULATORY_SOURCES: readonly RegulatorySource[] = [
   ...HOSPITAL_REQUIREMENT_SEEDS.map(({ section, subpart, title }) => ({
@@ -377,6 +431,16 @@ export const REGULATORY_SOURCES: readonly RegulatorySource[] = [
     lastVerifiedAt: "2026-09-06",
     nextReviewAt: "2026-12-06",
   })),
+  ...CAH_REQUIREMENT_SEEDS.map(({ section, title }) => ({
+    id: `ecfr-42-cfr-${section}`,
+    designation: "official" as const,
+    agency: "Centers for Medicare & Medicaid Services, Department of Health and Human Services",
+    title: `42 CFR § ${section} — ${title}`,
+    url: `https://www.ecfr.gov/current/title-42/chapter-IV/subchapter-G/part-485/subpart-f/section-${section}`,
+    cfrReference: `42 CFR § ${section}`,
+    lastVerifiedAt: "2026-09-06",
+    nextReviewAt: "2026-12-06",
+  })),
   {
     id: "cms-som-appendix-a-hospitals",
     designation: "application-guidance",
@@ -384,6 +448,16 @@ export const REGULATORY_SOURCES: readonly RegulatorySource[] = [
     title: "State Operations Manual Appendix A — Survey Protocol, Regulations and Interpretive Guidelines for Hospitals",
     url: "https://www.cms.gov/regulations-and-guidance/guidance/manuals/downloads/som107ap_a_hospitals.pdf",
     cfrReference: "42 CFR Part 482",
+    lastVerifiedAt: "2026-09-06",
+    nextReviewAt: "2026-12-06",
+  },
+  {
+    id: "cms-som-appendix-w-cah",
+    designation: "application-guidance",
+    agency: "Centers for Medicare & Medicaid Services",
+    title: "State Operations Manual Appendix W — Survey Protocol, Regulations and Interpretive Guidelines for Critical Access Hospitals",
+    url: "https://www.cms.gov/regulations-and-guidance/guidance/manuals/downloads/som107ap_w_cah.pdf",
+    cfrReference: "42 CFR Part 485 Subpart F",
     lastVerifiedAt: "2026-09-06",
     nextReviewAt: "2026-12-06",
   },
