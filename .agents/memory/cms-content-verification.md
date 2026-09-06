@@ -8,3 +8,5 @@ Keep all established provider identifiers stable when expanding the provider uni
 **Why:** Saved account state, history, prompts, and citation routing depend on the established identifiers. More importantly, presenting invented requirements or CFR citations as official content creates a serious compliance risk.
 
 **How to apply:** Add providers and relationship-ready records through the shared CMS data package. Do not enable generation or assessments for a pending provider until its official sources and requirement records have been verified.
+
+Two catalog labels require special handling: Outpatient Occupational Therapy is not established by CMS as a standalone certified provider category under the OPT/OSP framework, and an Indian Health Service facility must be classified by its underlying CMS-certified provider type. Keep both pending rather than assigning another provider's rules.
