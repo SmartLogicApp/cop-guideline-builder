@@ -202,11 +202,11 @@ export default function LandingPage() {
             <div className="mx-auto max-w-2xl text-center mb-16">
               <h2 className="text-base font-semibold leading-7 text-primary">Transparent Pricing</h2>
               <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-                The right plan for your facility
+                The Right Plan for You
               </p>
             </div>
 
-            <div className="mx-auto max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+            <div className="mx-auto max-w-md">
               {/* Facility Plan */}
               <Card className="border-slate-200 shadow-lg relative flex flex-col">
                 <CardHeader className="pb-8">
@@ -231,35 +231,6 @@ export default function LandingPage() {
                     <a href={SIGN_UP_URL} target="_blank" rel="noopener noreferrer">Start Free Trial</a>
                   </Button>
                   <p className="text-xs text-center text-slate-500">30-day free trial · No credit card required</p>
-                </CardFooter>
-              </Card>
-
-              {/* Enterprise Plan */}
-              <Card className="border-slate-200 bg-slate-900 text-white shadow-xl relative flex flex-col">
-                <div className="absolute -top-5 left-0 right-0 mx-auto w-32 rounded-full bg-amber-500 px-3 py-1 text-center text-xs font-semibold text-amber-950 shadow-sm">
-                  Most Popular
-                </div>
-                <CardHeader className="pb-8">
-                  <CardTitle className="text-2xl mb-2 text-white">Enterprise</CardTitle>
-                  <CardDescription className="text-slate-400 text-base">For multi-site health systems</CardDescription>
-                  <div className="mt-6 flex items-baseline gap-x-2">
-                    <span className="text-5xl font-bold tracking-tight text-white">Custom</span>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  <ul className="space-y-4 text-sm leading-6 text-slate-300">
-                    <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-amber-500" /> Everything in Facility plan</li>
-                    <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-amber-500" /> Multi-site health systems</li>
-                    <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-amber-500" /> Volume discounts</li>
-                    <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-amber-500" /> SSO / SAML integration</li>
-                    <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-amber-500" /> Dedicated compliance support</li>
-                  </ul>
-                </CardContent>
-                <CardFooter className="flex flex-col gap-4 mt-auto pt-8">
-                  <Button variant="accent" className="w-full h-12 text-base" asChild>
-                    <a href={CONTACT_URL} target="_blank" rel="noopener noreferrer">Contact Sales</a>
-                  </Button>
-                  <p className="text-xs text-center text-slate-400">Tailored to your organization's needs</p>
                 </CardFooter>
               </Card>
             </div>

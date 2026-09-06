@@ -125,13 +125,12 @@ function Landing() {
       <div style={{ maxWidth: "900px", margin: "0 auto", padding: "20px 24px 80px" }}>
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
           <div style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", opacity: 0.6, marginBottom: "8px" }}>Pricing</div>
-          <h2 style={{ fontSize: "clamp(22px, 4vw, 34px)", fontWeight: 800, margin: "0 0 10px", letterSpacing: "-0.3px" }}>One subscription per facility</h2>
+          <h2 style={{ fontSize: "clamp(22px, 4vw, 34px)", fontWeight: 800, margin: "0 0 10px", letterSpacing: "-0.3px" }}>The Right Plan for You</h2>
           <p style={{ fontSize: "14px", opacity: 0.7, margin: 0 }}>All staff at your location share one plan. 30-day free trial, no credit card required.</p>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", maxWidth: "640px", margin: "0 auto" }}>
+        <div style={{ maxWidth: "400px", margin: "0 auto" }}>
           {[
             { name: "Facility", price: "$299", period: "/month", desc: "All staff at one facility location — unlimited users per CCN", features: ["Unlimited staff users", "1 facility / CCN", "All 4 compliance tools", "AI gap scanning", "Priority support", "30-day free trial"], highlight: true },
-            { name: "Enterprise", price: "Custom", period: "", desc: "Multi-site health systems — volume discounts available", features: ["Unlimited users", "Multiple CCNs / facilities", "All tools + custom reporting", "Dedicated support", "Volume discounts", "SSO / SAML"], highlight: false, contact: true },
           ].map((plan) => (
             <div key={plan.name} style={{
               background: plan.highlight ? "#fff" : "rgba(255,255,255,0.08)",
@@ -145,10 +144,7 @@ function Landing() {
               <ul style={{ listStyle: "none", padding: 0, margin: "0 0 24px", fontSize: "13px", color: plan.highlight ? "#334155" : "rgba(255,255,255,0.85)", lineHeight: 2 }}>
                 {plan.features.map((f) => <li key={f}>✓ {f}</li>)}
               </ul>
-              {plan.contact
-                ? <a href="mailto:HectorSamlut@outlook.com?subject=Enterprise Inquiry" style={{ display: "block", textAlign: "center", padding: "11px", borderRadius: "8px", background: "rgba(255,255,255,0.15)", color: "#fff", fontWeight: 700, fontSize: "14px", textDecoration: "none", border: "1px solid rgba(255,255,255,0.3)" }}>Contact Sales</a>
-                : <button onClick={() => setLocation("/sign-up")} style={{ width: "100%", padding: "11px", borderRadius: "8px", background: plan.highlight ? "#0D5C6B" : "#fff", color: plan.highlight ? "#fff" : "#0D5C6B", fontWeight: 700, fontSize: "14px", border: "none", cursor: "pointer" }}>Start Free Trial</button>
-              }
+              <button onClick={() => setLocation("/sign-up")} style={{ width: "100%", padding: "11px", borderRadius: "8px", background: plan.highlight ? "#0D5C6B" : "#fff", color: plan.highlight ? "#fff" : "#0D5C6B", fontWeight: 700, fontSize: "14px", border: "none", cursor: "pointer" }}>Start Free Trial</button>
             </div>
           ))}
         </div>

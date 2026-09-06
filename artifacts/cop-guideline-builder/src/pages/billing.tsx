@@ -39,17 +39,6 @@ const PLANS = [
     priceId: null,
     highlight: true,
   },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "Multi-site health systems — volume discounts available",
-    features: ["Unlimited users", "Multiple CCNs", "All tools + custom reporting", "Dedicated support", "Volume discounts", "SSO / SAML"],
-    priceId: null,
-    highlight: false,
-    contactSales: true,
-  },
 ];
 
 function fmt(n: number) {
@@ -68,7 +57,7 @@ const S = {
   container: { maxWidth: "900px", margin: "0 auto", padding: "40px 24px" } as const,
   h2: { fontSize: "22px", fontWeight: 800, color: "hsl(213 76% 29%)", margin: "0 0 6px", letterSpacing: "-0.3px" } as const,
   sub: { color: "#64748B", fontSize: "14px", margin: "0 0 28px" } as const,
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "20px" } as const,
+  grid: { display: "grid", gridTemplateColumns: "minmax(0, 420px)", justifyContent: "center", gap: "20px" } as const,
   card: (highlight: boolean) => ({
     background: highlight ? "hsl(213 76% 29%)" : "#fff",
     color: highlight ? "#fff" : "#1E293B",
@@ -331,13 +320,7 @@ export default function BillingPage() {
                 ))}
               </ul>
 
-              {plan.contactSales ? (
-                <a href={`mailto:HectorSamlut@outlook.com?subject=Enterprise Inquiry – CoP Suite`}
-                  style={{ ...S.btn(plan.highlight), display: "block", textAlign: "center",
-                    textDecoration: "none", lineHeight: "1.4" }}>
-                  Contact Sales
-                </a>
-              ) : plan.priceId ? (
+              {plan.priceId ? (
                 <>
                   <button
                     style={{ ...S.btn(plan.highlight), opacity: loading ? 0.7 : 1 }}
