@@ -1,0 +1,82 @@
+[
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000001",
+    "position": 1,
+    "filepath": "src/pages/slides/Title.tsx",
+    "title": "CMS Compliance Suite",
+    "description": "Consultant-led staff training and web app navigation",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000002",
+    "position": 2,
+    "filepath": "src/pages/slides/Purpose.tsx",
+    "title": "What the suite helps your team do",
+    "description": "CMS Compliance Suite consultant staff training",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000003",
+    "position": 3,
+    "filepath": "src/pages/slides/ProviderType.tsx",
+    "title": "Start with the correct provider type",
+    "description": "CMS Compliance Suite consultant staff training",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000004",
+    "position": 4,
+    "filepath": "src/pages/slides/Workspaces.tsx",
+    "title": "Navigate the four compliance workspaces",
+    "description": "CMS Compliance Suite consultant staff training",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000005",
+    "position": 5,
+    "filepath": "src/pages/slides/GuidelinesPolicies.tsx",
+    "title": "Use Compliance Guidelines and Policy Templates",
+    "description": "CMS Compliance Suite consultant staff training",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000006",
+    "position": 6,
+    "filepath": "src/pages/slides/Inspection.tsx",
+    "title": "Run an Inspection Readiness check",
+    "description": "CMS Compliance Suite consultant staff training",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000007",
+    "position": 7,
+    "filepath": "src/pages/slides/GapScan.tsx",
+    "title": "Scan a policy for gaps",
+    "description": "CMS Compliance Suite consultant staff training",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000008",
+    "position": 8,
+    "filepath": "src/pages/slides/Privacy.tsx",
+    "title": "Understand privacy and session behavior",
+    "description": "CMS Compliance Suite consultant staff training",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000009",
+    "position": 9,
+    "filepath": "src/pages/slides/BillingAdmin.tsx",
+    "title": "Know what Billing and Admin show",
+    "description": "CMS Compliance Suite consultant staff training",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1e8a6d2-2e11-4d5f-9a01-100000000010",
+    "position": 10,
+    "filepath": "src/pages/slides/Workflow.tsx",
+    "title": "Recommended team workflow",
+    "description": "CMS Compliance Suite consultant staff training",
+    "speakerNotes": ""
+  }
+]

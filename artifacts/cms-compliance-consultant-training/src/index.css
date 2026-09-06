@@ -1,0 +1,4 @@
+@import 'tailwindcss';
+@theme inline {--color-primary:var(--slide-primary);--color-accent:var(--slide-accent);--color-bg:var(--slide-bg);--color-text:var(--slide-text);--color-muted:var(--slide-muted);--font-display:var(--font-display-family);--font-body:var(--font-body-family);}
+:root{--slide-primary:#2A7B7B;--slide-accent:#0B3D8E;--slide-bg:#F6F9F8;--slide-text:#1A1A2E;--slide-muted:#4A4A68;--font-display-family:'Inter',sans-serif;--font-body-family:'Inter',sans-serif;color-scheme:light;}
+html,body,#root{width:100%;height:100%;margin:0;}body{background:var(--slide-bg);color:var(--slide-text)}.slide{width:100vw;height:100vh;overflow:hidden}.slide-viewer{touch-action:none;user-select:none;-webkit-user-select:none}

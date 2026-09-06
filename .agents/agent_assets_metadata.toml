@@ -1,0 +1,23 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "sHV8a_HVF89gYEbeXHOfL"
+uri = "file://.local/outputs/CMS-Compliance-Suite-Consultant-Staff-Training.pptx"
+type = "slides"
+title = "CMS Compliance Suite – Consultant Staff Training (PPTX)"
+description = "A 10-slide consultant-ready PowerPoint for training staff to navigate and use CMS Compliance Suite."
+logical_id = "6713e1c6-efdb-4770-9597-967cdbe42af5"
+content_hash = "sha256:a3ccefa12bd8a9a931791c1ef2a42b6360261f0764af8077cd60726ea6c7af6d"
+size = 645825
+mtime_ms = 1788728671498
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:c74f4f5a-4945-488f-8870-64d8cc2e87fc/6713e1c6-efdb-4770-9597-967cdbe42af5/364a63ee-b467-433b-9079-7dc0a0d22a41"
+storage_version_token = "1788728671852721"
+content_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+[[outputs]]
+id = "kIwjGc5yZ8nkwRiDZbfob"
+uri = "file://artifacts/cms-compliance-tutorial-video/public/audio/bg_music.mp3"
+type = "audio"
+title = "tutorial background music"
+description = "Generated music: Cinematic uplifting instrumental background music scoring a healthcare compliance software tutorial. Soft piano, warm marimba pulse, restrained strings, light brushed percussion, 98 …"

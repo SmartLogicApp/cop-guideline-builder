@@ -1,0 +1,29 @@
+kind = "video"
+videoAspectRatio = "16:9"
+previewPath = "/cms-compliance-tutorial-video/"
+title = "CMS Compliance Suite – Web App Tutorial"
+description = "A 16:9 animated tutorial showing staff how to navigate CMS Compliance Suite, choose the correct provider type, use the four compliance workspaces, verify citations, protect policy data, and export results."
+version = "1.0.0"
+id = "artifacts/cms-compliance-tutorial-video"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/cms-compliance-tutorial-video/" ]
+localPort = 22851
+
+[services.development]
+run = "pnpm --filter @workspace/cms-compliance-tutorial-video run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/cms-compliance-tutorial-video", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/cms-compliance-tutorial-video/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22851"
+BASE_PATH = "/cms-compliance-tutorial-video/"

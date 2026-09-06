@@ -1,0 +1,28 @@
+kind = "slides"
+previewPath = "/cms-compliance-consultant-training/"
+title = "CMS Compliance Suite – Consultant Staff Training"
+description = "A consultant-ready staff training deck covering navigation, provider selection, verified citations, compliance tools, policy gap scanning, session privacy, billing, and recommended workflow."
+version = "1.0.0"
+id = "artifacts/cms-compliance-consultant-training"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/cms-compliance-consultant-training/" ]
+localPort = 25008
+
+[services.development]
+run = "pnpm --filter @workspace/cms-compliance-consultant-training run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/cms-compliance-consultant-training", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/cms-compliance-consultant-training/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25008"
+BASE_PATH = "/cms-compliance-consultant-training/"

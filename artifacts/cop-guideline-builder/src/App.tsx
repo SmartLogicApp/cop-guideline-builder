@@ -121,6 +121,37 @@ function Landing() {
         ))}
       </div>
 
+      {/* Tutorial */}
+      <section style={{ maxWidth: "1040px", margin: "0 auto", padding: "56px 24px 28px" }}>
+        <div style={{ textAlign: "center", maxWidth: "680px", margin: "0 auto 24px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase",
+            letterSpacing: "1.5px", opacity: 0.65, marginBottom: "8px" }}>
+            Staff tutorial
+          </div>
+          <h2 style={{ fontSize: "clamp(24px, 4vw, 38px)", fontWeight: 800,
+            margin: "0 0 12px", letterSpacing: "-0.3px" }}>
+            See the full compliance workflow
+          </h2>
+          <p style={{ fontSize: "15px", opacity: 0.76, lineHeight: 1.65, margin: 0 }}>
+            Learn how to select a provider profile, verify citations, assess inspection
+            readiness, scan policy gaps, and protect temporary session data.
+          </p>
+        </div>
+        <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 9",
+          overflow: "hidden", borderRadius: "18px", background: "#10213A",
+          border: "1px solid rgba(255,255,255,0.18)",
+          boxShadow: "0 24px 70px rgba(2,28,36,0.38)" }}>
+          <iframe
+            src="/cms-compliance-tutorial-video/"
+            title="CMS Compliance Suite web app tutorial"
+            loading="lazy"
+            allow="autoplay"
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%",
+              border: 0, background: "#10213A" }}
+          />
+        </div>
+      </section>
+
       {/* Pricing */}
       <div style={{ maxWidth: "900px", margin: "0 auto", padding: "20px 24px 80px" }}>
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
