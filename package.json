@@ -12,8 +12,8 @@
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1",
     "@workspace/cms-compliance-data": "workspace:*",
-    "express": "^5.2.1",
-    "xlsx": "^0.18.5"
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1"
   },
   "devDependencies": {
     "prettier": "^3.9.6",
@@ -21,8 +21,14 @@
   },
   "pnpm": {
     "overrides": {
+      "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0",
+      "brace-expansion@5.0.8": "5.0.9",
+      "fast-uri@3.1.4": "3.1.7",
       "js-yaml": ">=4.3.1",
-      "nanoid": ">=3.3.18"
+      "nanoid": ">=3.3.18",
+      "qs@6.15.3": "6.16.0",
+      "uuid@8.3.2": "11.1.1",
+      "vite>esbuild": "0.28.2"
     }
   }
 }

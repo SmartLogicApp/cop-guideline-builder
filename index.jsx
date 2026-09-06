@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { useAccount } from "@/hooks/useAccount";
 import {
   DEFAULT_COMPLIANCE_TOPICS,
@@ -934,18 +934,30 @@ async function callApiWithSource(systemPrompt, userContent, maxTokens, instituti
 
 // ─── Excel helpers ────────────────────────────────────────────────────────────
 
-function downloadXlsx(sheets, filename) {
-  const wb = XLSX.utils.book_new();
+async function downloadXlsx(sheets, filename) {
+  const workbook = new ExcelJS.Workbook();
+
   sheets.forEach(({ name, rows }) => {
-    const ws = XLSX.utils.json_to_sheet(rows);
-    // Auto-width columns
-    const colWidths = Object.keys(rows[0] || {}).map((key) => ({
-      wch: Math.max(key.length, ...rows.map((r) => String(r[key] ?? "").length)) + 2,
+    const worksheet = workbook.addWorksheet(name.slice(0, 31));
+    const keys = Object.keys(rows[0] || {});
+    worksheet.columns = keys.map((key) => ({
+      header: key,
+      key,
+      width: Math.max(key.length, ...rows.map((row) => String(row[key] ?? "").length)) + 2,
     }));
-    ws["!cols"] = colWidths;
-    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+    worksheet.addRows(rows);
   });
-  XLSX.writeFile(wb, filename);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function exportGuidelinesXlsx(result, inst, topic) {
