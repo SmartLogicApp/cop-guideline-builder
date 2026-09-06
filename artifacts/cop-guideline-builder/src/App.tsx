@@ -106,6 +106,26 @@ function Landing() {
         <div style={{ fontSize: "12px", opacity: 0.6, marginTop: "10px" }}>
           No credit card required · Per-CCN pricing · Cancel anytime · <strong style={{ opacity: 0.9 }}>No refunds after trial</strong>
         </div>
+        <div style={{ marginTop: "28px", display: "flex", flexWrap: "wrap",
+          justifyContent: "center", gap: "10px" }}>
+          <a href="/cms-compliance-tutorial-video/" target="_blank" rel="noreferrer"
+            style={{ color: "#fff", textDecoration: "none", border: "1px solid rgba(255,255,255,0.35)",
+              background: "rgba(255,255,255,0.1)", padding: "11px 18px", borderRadius: "9px",
+              fontSize: "13px", fontWeight: 700 }}>
+            ▶ Watch Staff Tutorial
+          </a>
+          <a href="/cms-compliance-consultant-training/" target="_blank" rel="noreferrer"
+            style={{ color: "#fff", textDecoration: "none", border: "1px solid rgba(255,255,255,0.35)",
+              background: "rgba(255,255,255,0.1)", padding: "11px 18px", borderRadius: "9px",
+              fontSize: "13px", fontWeight: 700 }}>
+            View Training Slides
+          </a>
+          <a href="/downloads/CMS-Compliance-Suite-Consultant-Staff-Training.pptx" download
+            style={{ color: "#0D5C6B", textDecoration: "none", background: "#DFF7F2",
+              padding: "11px 18px", borderRadius: "9px", fontSize: "13px", fontWeight: 800 }}>
+            Download PowerPoint
+          </a>
+        </div>
       </div>
 
       {/* Features */}
@@ -136,6 +156,18 @@ function Landing() {
             Learn how to select a provider profile, verify citations, assess inspection
             readiness, scan policy gaps, and protect temporary session data.
           </p>
+          <div style={{ marginTop: "16px", display: "flex", flexWrap: "wrap",
+            justifyContent: "center", gap: "10px" }}>
+            <a href="/cms-compliance-consultant-training/" target="_blank" rel="noreferrer"
+              style={{ color: "#fff", fontSize: "13px", fontWeight: 700 }}>
+              Open consultant slides
+            </a>
+            <span aria-hidden="true" style={{ opacity: 0.35 }}>•</span>
+            <a href="/downloads/CMS-Compliance-Suite-Consultant-Staff-Training.pptx" download
+              style={{ color: "#fff", fontSize: "13px", fontWeight: 700 }}>
+              Download PowerPoint
+            </a>
+          </div>
         </div>
         <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 9",
           overflow: "hidden", borderRadius: "18px", background: "#10213A",
