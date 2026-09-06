@@ -5,5 +5,7 @@ declare module '*.jsx' {
     onSignOut?: () => void;
     clerkUserId?: string;
   }>;
+  export function purgeEphemeralPolicySession(): Promise<void>;
+  export function bindEphemeralPolicySessionToUser(ownerId?: string): void;
   export default CoPGuidelineBuilder;
 }

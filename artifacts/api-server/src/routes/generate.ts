@@ -198,9 +198,9 @@ type DataSource =
   | { kind: "ai" };
 
 type Job =
-  | { status: "pending" }
-  | { status: "done"; content: unknown; dataSource: DataSource }
-  | { status: "error"; error: string };
+  | { status: "pending"; ownerId: string }
+  | { status: "done"; ownerId: string; content: unknown; dataSource: DataSource }
+  | { status: "error"; ownerId: string; error: string };
 
 const jobs = new Map<string, Job>();
 
@@ -208,8 +208,8 @@ const jobs = new Map<string, Job>();
 router.post("/generate", requireAuth, async (req, res): Promise<void> => {
   const parsed = GenerateWithAnthropicBody.safeParse(req.body);
   if (!parsed.success) {
-    req.log.warn({ errors: parsed.error.message }, "Invalid generation request");
-    res.status(400).json({ error: parsed.error.message });
+    req.log.warn({ issueCount: parsed.error.issues.length }, "Invalid generation request");
+    res.status(400).json({ error: "Invalid generation request" });
     return;
   }
 
@@ -231,7 +231,8 @@ router.post("/generate", requireAuth, async (req, res): Promise<void> => {
   const clerkUserId = (req as any).clerkUserId as string;
 
   const jobId = randomUUID();
-  jobs.set(jobId, { status: "pending" });
+  jobs.set(jobId, { status: "pending", ownerId: clerkUserId });
+  setTimeout(() => jobs.delete(jobId), 10 * 60 * 1000);
 
   res.json({ jobId });
 
@@ -284,11 +285,10 @@ router.post("/generate", requireAuth, async (req, res): Promise<void> => {
       };
 
       if (!upstreamResponse.ok) {
-        const message = data?.error?.message ?? "The AI service rejected the request";
-        req.log.error({ status: upstreamResponse.status, message }, "AI upstream error");
-        jobs.set(jobId, { status: "error", error: message });
+        req.log.error({ status: upstreamResponse.status }, "AI upstream error");
+        jobs.set(jobId, { status: "error", ownerId: clerkUserId, error: "The AI service rejected the request" });
       } else {
-        jobs.set(jobId, { status: "done", content: data.content, dataSource });
+        jobs.set(jobId, { status: "done", ownerId: clerkUserId, content: data.content, dataSource });
 
         // ── 3. Record token usage (best-effort — never fails the job) ────
         try {
@@ -328,16 +328,14 @@ router.post("/generate", requireAuth, async (req, res): Promise<void> => {
         }
       }
     } catch (err) {
-      req.log.error({ err }, "AI generation background job failed");
-      jobs.set(jobId, { status: "error", error: "Unable to reach the AI service" });
+      req.log.error({ errorType: err instanceof Error ? err.name : "unknown" }, "AI generation background job failed");
+      jobs.set(jobId, { status: "error", ownerId: clerkUserId, error: "Unable to reach the AI service" });
     }
-
-    setTimeout(() => jobs.delete(jobId), 10 * 60 * 1000);
   })();
 });
 
 // GET /api/generate/result?jobId=...
-router.get("/generate/result", (req, res): void => {
+router.get("/generate/result", requireAuth, (req, res): void => {
   const { jobId } = req.query;
   if (!jobId || typeof jobId !== "string") {
     res.status(400).json({ error: "Missing jobId" });
@@ -348,7 +346,22 @@ router.get("/generate/result", (req, res): void => {
     res.status(404).json({ error: "Job not found or expired" });
     return;
   }
+  const clerkUserId = (req as any).clerkUserId as string;
+  if (job.ownerId !== clerkUserId) {
+    res.status(404).json({ error: "Job not found or expired" });
+    return;
+  }
   res.json(job);
+  if (job.status !== "pending") jobs.delete(jobId);
+});
+
+// Purge all transient AI results owned by the authenticated session before logout.
+router.delete("/generate/session", requireAuth, (req, res): void => {
+  const clerkUserId = (req as any).clerkUserId as string;
+  for (const [jobId, job] of jobs.entries()) {
+    if (job.ownerId === clerkUserId) jobs.delete(jobId);
+  }
+  res.status(204).end();
 });
 
 export default router;

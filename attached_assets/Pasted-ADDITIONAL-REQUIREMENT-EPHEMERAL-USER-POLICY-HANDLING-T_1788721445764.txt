@@ -1,0 +1,349 @@
+ADDITIONAL REQUIREMENT: EPHEMERAL USER POLICY HANDLING
+
+This is a critical product requirement for CMS Compliance Suite.
+
+The application must allow users to:
+
+Upload an existing policy/document.
+Have the application analyze that policy against applicable CMS CoP/CfC requirements.
+Identify policy gaps, missing elements, potential deficiencies, and areas needing attention.
+Generate an improved/recommended policy or gap-analysis report.
+Download the resulting policy, gap analysis, and reports.
+However, CMS Compliance Suite must NOT become a repository for the user’s proprietary policies or organizational documents.
+
+1. USER DOCUMENTS MUST BE EPHEMERAL
+
+Uploaded policies and proprietary organizational documents must be treated as temporary session data.
+
+The system should NOT permanently store:
+
+Uploaded policies.
+Uploaded organizational documents.
+Generated policy documents derived from the user’s uploaded material.
+Gap-analysis documents containing the user’s proprietary policy language.
+Organization-specific policy content.
+Internal procedures, workflows, names, contact information, or other proprietary material contained in uploaded documents.
+The application may temporarily hold document data only for the duration necessary to perform the requested analysis.
+
+2. NO PERMANENT POLICY LIBRARY
+
+Do NOT create a permanent “My Policies,” “Policy Repository,” or similar document-storage feature unless the product is specifically redesigned in the future with explicit customer-controlled storage.
+
+The CMS Compliance Suite database should contain the application’s CMS regulatory content and application configuration—not the user’s proprietary policies.
+
+The distinction should be:
+
+CMS Compliance Suite owns/provides:
+
+CMS requirements.
+CoP/CfC information.
+CFR references.
+CMS survey-readiness guidance.
+Application-generated compliance guidance.
+Standard policy templates.
+Gap-analysis questions.
+Standard corrective-action frameworks.
+The customer temporarily provides:
+
+Their existing policy.
+Their organization-specific procedures.
+Their internal documentation.
+Customer-provided content should be processed temporarily and then discarded.
+
+3. SESSION-BASED PROCESSING
+
+Implement an ephemeral document-processing lifecycle:
+
+USER UPLOADS POLICY
+↓
+TEMPORARY SESSION
+↓
+DOCUMENT PARSED
+↓
+POLICY ANALYZED
+↓
+GAPS IDENTIFIED
+↓
+RESULTS DISPLAYED
+↓
+USER DOWNLOADS RESULTS
+↓
+SESSION ENDS / EXPIRES
+↓
+USER DOCUMENT DATA PURGED
+
+The system should automatically remove temporary policy/document data when the session ends or after a short inactivity/expiration period.
+
+Do not rely solely on the user manually deleting the document.
+
+4. DO NOT PUT USER DOCUMENT CONTENT INTO THE CMS DATABASE
+
+Do not store uploaded document text in the application’s permanent database.
+
+Do not store document embeddings/vector representations permanently.
+
+Do not store extracted policy sections permanently.
+
+Do not store uploaded files in permanent object storage.
+
+Do not put proprietary document contents into application logs.
+
+Do not include proprietary document contents in analytics events.
+
+Do not include proprietary policy text in error messages.
+
+Do not send proprietary document contents to third-party services unless absolutely necessary for the requested processing and explicitly disclosed.
+
+If a temporary processing service is required, configure it for the shortest practical retention period and do not use it as a permanent document repository.
+
+5. SESSION DATA SHOULD HAVE A CLEAR SEPARATION
+
+Create a clear conceptual separation between:
+
+Permanent Application Data
+
+CMS regulatory requirements.
+Provider types.
+Requirement mappings.
+Standard topics.
+Standard policy templates.
+Survey-readiness content.
+Application configuration.
+and:
+
+Temporary Session Data
+
+Uploaded policy.
+Extracted policy text.
+User-specific gap analysis.
+User-specific policy recommendations.
+Temporary generated documents.
+Temporary comparison results.
+The temporary session data must never accidentally migrate into permanent application data.
+
+6. DOWNLOAD MUST STILL WORK
+
+The user MUST be able to download their results before the session ends.
+
+Provide download options such as:
+
+Download analyzed policy.
+Download policy gap analysis.
+Download recommended/revised policy.
+Download CMS compliance comparison.
+Download corrective-action recommendations.
+Export to Excel where applicable.
+Copy results to clipboard.
+The downloaded file belongs to the user.
+
+Once downloaded, CMS Compliance Suite should not retain a permanent copy of that file.
+
+7. GAP SCANNER WORKFLOW
+
+The Policy Gap Scanner should continue to support:
+
+User selects provider type.
+User selects applicable department/unit.
+User selects CMS compliance topic.
+User uploads an existing policy.
+Application temporarily processes the policy.
+Application compares the policy against the applicable CMS requirements.
+Application identifies:
+Covered requirements.
+Partially covered requirements.
+Missing requirements.
+Potential deficiencies.
+Documentation gaps.
+Monitoring/QAPI gaps where applicable.
+Survey-readiness concerns.
+User reviews the results.
+User can generate an improved policy or corrective-action recommendations.
+User downloads the results.
+Temporary proprietary document data is subsequently purged.
+8. DO NOT STORE THE ORIGINAL POLICY AS PART OF THE RESULT
+
+Be especially careful when generating a revised policy.
+
+The application may use the uploaded policy to generate a revised version during the session.
+
+However, the revised policy must also be treated as temporary user content.
+
+Do not save the revised policy permanently.
+
+9. SESSION EXPIRATION
+
+Implement a defined temporary-session lifecycle.
+
+Recommended behavior:
+
+Session data exists only while needed.
+If the user becomes inactive, temporary document data expires automatically.
+When the session is explicitly ended/logged out, purge temporary document data.
+Temporary files should have an automatic maximum retention period as a safety mechanism even if logout does not occur normally.
+Browser refresh should not unnecessarily destroy an active analysis session, but logging out or session expiration should terminate it.
+The exact technical implementation is up to the Replit Agent, but the security objective is mandatory:
+
+No proprietary user policy should remain in permanent application storage after the temporary processing session has ended.
+
+10. LOGGING REQUIREMENTS
+
+Review all logging and error-handling mechanisms.
+
+Never log:
+
+Full uploaded policies.
+Full extracted text.
+Full generated policies.
+Proprietary organizational procedures.
+User-entered internal information.
+Logs should contain only technical information necessary for troubleshooting, such as:
+
+Session identifier.
+Processing status.
+Error type.
+Timestamp.
+Non-sensitive metadata.
+Avoid logging document names if they may reveal sensitive organizational information.
+
+11. ANALYTICS REQUIREMENTS
+
+Analytics should measure product behavior without collecting proprietary content.
+
+Acceptable examples:
+
+“Policy Gap Scanner opened.”
+“Policy uploaded.”
+“Analysis completed.”
+“Gap report downloaded.”
+“Policy template generated.”
+Do NOT send the policy text or its contents to analytics.
+
+12. AI/LLM PROCESSING
+
+If an external AI model/API is used to analyze uploaded policies, review the provider’s data-retention and training settings.
+
+The application must not knowingly send customer proprietary content to a service that uses the content for model training unless the customer has explicitly agreed to that use.
+
+Prefer API/configuration options that provide:
+
+No training on customer content.
+Minimal/no retention where available.
+Appropriate enterprise/API privacy controls.
+The Replit Agent should document which external services receive uploaded policy content and why.
+
+13. PRIVACY DISCLOSURE IN THE UI
+
+Add a concise privacy notice near the Policy Gap Scanner upload control.
+
+Suggested messaging:
+
+“Your policy is used temporarily to perform this analysis. CMS Compliance Suite does not permanently store your uploaded policy or proprietary policy content. Download your results before your session ends.”
+
+Also provide a “Privacy & Data Handling” explanation that clearly distinguishes:
+
+CMS regulatory content retained by the application.
+Customer documents processed temporarily.
+What is deleted.
+When temporary data expires.
+Whether any third-party AI/service processes uploaded content.
+Do not make stronger privacy claims than the actual technical implementation supports.
+
+14. LOGOUT / SESSION-END BEHAVIOR
+
+When the user logs out:
+
+End the authenticated/session context.
+Delete temporary uploaded documents.
+Delete extracted document text.
+Delete temporary analysis data containing proprietary content.
+Delete temporary generated policy documents.
+Delete temporary gap-analysis documents.
+Invalidate temporary references to those files.
+Ensure the user cannot retrieve the documents using an old URL or session identifier.
+If immediate physical deletion cannot be guaranteed because of an underlying infrastructure layer, implement the strongest available deletion/expiration controls and document the actual retention behavior.
+
+15. SECURITY TESTING
+
+Before completing the implementation, test that:
+
+An uploaded policy cannot be retrieved after logout.
+A generated policy cannot be retrieved after logout.
+A gap analysis containing proprietary information cannot be retrieved after logout.
+A new session cannot access another user’s temporary documents.
+Temporary document URLs cannot be reused after the session expires.
+Proprietary document content does not appear in logs.
+Proprietary document content does not appear in analytics.
+Proprietary document content is not accidentally inserted into permanent database records.
+Browser back/forward navigation does not expose deleted session documents.
+Session expiration actually removes temporary document access.
+16. IMPORTANT PRODUCT POSITIONING
+
+Do NOT market the product as:
+
+“Your permanent policy management system”
+
+unless permanent customer-controlled storage is intentionally added later.
+
+Instead, position the feature as:
+
+Analyze your existing policies against CMS requirements without turning CMS Compliance Suite into your organization’s document repository.
+
+The product’s value is the compliance intelligence, analysis, CMS requirement mapping, survey-readiness guidance, policy-generation capability, and gap identification—not possession of the customer’s proprietary documents.
+
+17. FUTURE-READY ARCHITECTURE
+
+Design the document-processing layer so permanent customer storage could theoretically be added later as an optional, separately designed capability.
+
+Do NOT implement that storage now.
+
+If permanent storage is added in the future, it should be an explicit customer-controlled feature with its own:
+
+Authentication.
+Authorization.
+Encryption.
+Retention controls.
+Deletion controls.
+Audit controls.
+Privacy disclosures.
+Data-processing terms.
+For the current CMS Compliance Suite release, keep customer policy content ephemeral.
+
+18. DO NOT BREAK THE EXISTING EXPERIENCE
+
+The existing ability to:
+
+Upload a policy.
+Compare it against requirements.
+Determine gaps.
+Generate recommendations.
+Export/download results.
+must remain fully functional.
+
+The privacy change should affect where and how long the data is stored, not remove the functionality.
+
+The desired user experience is:
+
+Upload → Analyze → Review → Improve → Download → Data disappears after session
+
+rather than:
+
+Upload → Store permanently → Analyze → Keep customer’s policy in the CMS Compliance Suite database.
+
+19. FINAL ACCEPTANCE CRITERION
+
+Do not consider this feature complete until you can demonstrate both of these simultaneously:
+
+A. Full functionality
+A user can upload a policy, perform a CMS CoP/CfC gap analysis, generate recommendations/revised policy content, and download the results.
+
+B. Ephemeral handling
+After the user’s session ends/expires, the application no longer provides access to the user’s uploaded or generated proprietary policy documents and those documents are not retained in the permanent application database.
+
+The Replit Agent should inspect the current application’s storage, database, file-upload, session, logging, analytics, and AI-processing architecture before implementing this requirement.
+Do not assume that “not saving it to our database” automatically means the document is not retained elsewhere.
+Trace the entire lifecycle of an uploaded document and eliminate unnecessary persistence at every stage.
+
+One important distinction: I would not tell the Replit Agent to promise “we hold no proprietary information” unless the implementation has actually been verified end-to-end. A better product promise is “customer policy documents are processed temporarily and are not permanently stored by CMS Compliance Suite.” That is much more defensible.
+
+And I strongly recommend keeping the download button. The privacy model should be a selling point: the customer gets the useful output, while your platform doesn’t become their document vault.
+

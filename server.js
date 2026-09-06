@@ -220,50 +220,16 @@ async function runGenerationJob(jobId, { systemPrompt, userContent, maxTokens, i
 
 // ─── POST /api/generate ───────────────────────────────────────────────────────
 
-app.post("/api/generate", async (req, res) => {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({ error: { message: "AI generation is not configured" } });
-    return;
-  }
-
-  const { systemPrompt, userContent, maxTokens, institutionValue } = req.body ?? {};
-
-  if (
-    typeof systemPrompt !== "string" || systemPrompt.length < 1 || systemPrompt.length > 30000 ||
-    typeof userContent  !== "string" || userContent.length  < 1 || userContent.length  > 30000 ||
-    !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 8192
-  ) {
-    res.status(400).json({ error: { message: "Invalid generation request" } });
-    return;
-  }
-
-  if (institutionValue !== undefined && (typeof institutionValue !== "string" || institutionValue.length > 50)) {
-    res.status(400).json({ error: { message: "Invalid institutionValue" } });
-    return;
-  }
-
-  const jobId = randomUUID();
-  jobs.set(jobId, { status: "pending" });
-  res.json({ jobId });
-
-  void runGenerationJob(jobId, { systemPrompt, userContent, maxTokens, institutionValue, apiKey });
+app.post("/api/generate", (_req, res) => {
+  res.status(410).json({
+    error: { message: "This legacy generation endpoint is disabled. Use the authenticated CMS Compliance Suite application." },
+  });
 });
 
 // ─── GET /api/generate/result ─────────────────────────────────────────────────
 
-app.get("/api/generate/result", (req, res) => {
-  const { jobId } = req.query;
-  if (!jobId || typeof jobId !== "string") {
-    res.status(400).json({ error: { message: "Missing jobId" } });
-    return;
-  }
-  const job = jobs.get(jobId);
-  if (!job) {
-    res.status(404).json({ error: { message: "Job not found or expired" } });
-    return;
-  }
-  res.json(job);
+app.get("/api/generate/result", (_req, res) => {
+  res.status(410).json({ error: { message: "This legacy generation endpoint is disabled." } });
 });
 
 const PORT = process.env.PORT || 3000;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { useAccount } from "@/hooks/useAccount";
 import {
@@ -1103,25 +1103,54 @@ function mergeGapResults(results) {
   return { score: avgScore, summary, met: dedup("met"), weak: dedup("weak"), missing: dedup("missing") };
 }
 
-// ─── Gap Analysis History (localStorage) ─────────────────────────────────────
+// ─── Ephemeral policy-analysis session ────────────────────────────────────────
 
-const GAP_HISTORY_KEY = "cop_gap_analysis_history";
-const GAP_HISTORY_MAX = 50; // cap stored entries
+const LEGACY_GAP_HISTORY_KEY = "cop_gap_analysis_history";
+const GAP_SESSION_KEY = "cms_ephemeral_policy_session";
+const GAP_SESSION_OWNER_KEY = "cms_ephemeral_policy_session_owner";
+const ACTIVE_WORKSPACE_TAB_KEY = "cms_active_workspace_tab";
+const GAP_SESSION_TTL_MS = 30 * 60 * 1000;
+const GAP_HISTORY_MAX = 10;
+
+function loadGapSession() {
+  try {
+    // Remove results created by older releases that used permanent browser storage.
+    localStorage.removeItem(LEGACY_GAP_HISTORY_KEY);
+    const raw = sessionStorage.getItem(GAP_SESSION_KEY);
+    if (!raw) return {};
+    const session = JSON.parse(raw);
+    if (!session.expiresAt || session.expiresAt <= Date.now()) {
+      sessionStorage.removeItem(GAP_SESSION_KEY);
+      return {};
+    }
+    return session;
+  } catch {
+    try { sessionStorage.removeItem(GAP_SESSION_KEY); } catch {}
+    return {};
+  }
+}
+
+function saveGapSession(patch) {
+  try {
+    const current = loadGapSession();
+    const next = { ...current, ...patch, expiresAt: Date.now() + GAP_SESSION_TTL_MS };
+    sessionStorage.setItem(GAP_SESSION_KEY, JSON.stringify(next));
+    return next;
+  } catch {
+    return {};
+  }
+}
 
 function loadGapHistory() {
-  try {
-    const raw = localStorage.getItem(GAP_HISTORY_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  const history = loadGapSession().history;
+  return Array.isArray(history) ? history : [];
 }
 
 function saveGapEntry(entry) {
   try {
     const existing = loadGapHistory();
     const updated = [entry, ...existing].slice(0, GAP_HISTORY_MAX);
-    localStorage.setItem(GAP_HISTORY_KEY, JSON.stringify(updated));
+    saveGapSession({ history: updated });
     return updated;
   } catch {
     return [];
@@ -1132,10 +1161,41 @@ function deleteGapEntry(id) {
   try {
     const existing = loadGapHistory();
     const updated = existing.filter((e) => e.id !== id);
-    localStorage.setItem(GAP_HISTORY_KEY, JSON.stringify(updated));
+    saveGapSession({ history: updated });
     return updated;
   } catch {
     return [];
+  }
+}
+
+export async function purgeEphemeralPolicySession() {
+  try {
+    sessionStorage.removeItem(GAP_SESSION_KEY);
+    sessionStorage.removeItem(GAP_SESSION_OWNER_KEY);
+    sessionStorage.removeItem(ACTIVE_WORKSPACE_TAB_KEY);
+    localStorage.removeItem(LEGACY_GAP_HISTORY_KEY);
+  } catch {
+    // Storage may be unavailable in restricted browser contexts.
+  }
+  try {
+    await fetch("/api/generate/session", { method: "DELETE", credentials: "include" });
+  } catch {
+    // Server-side jobs also have an automatic expiry safety limit.
+  }
+}
+
+export function bindEphemeralPolicySessionToUser(ownerId) {
+  if (!ownerId) return;
+  try {
+    const existingOwnerId = sessionStorage.getItem(GAP_SESSION_OWNER_KEY);
+    if (existingOwnerId !== ownerId) {
+      sessionStorage.removeItem(GAP_SESSION_KEY);
+      sessionStorage.removeItem(ACTIVE_WORKSPACE_TAB_KEY);
+      localStorage.removeItem(LEGACY_GAP_HISTORY_KEY);
+    }
+    sessionStorage.setItem(GAP_SESSION_OWNER_KEY, ownerId);
+  } catch {
+    // Storage may be unavailable in restricted browser contexts.
   }
 }
 
@@ -2004,10 +2064,13 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
 function GapScannerTab({ institution }) {
   const instUnits = INSTITUTION_UNITS[institution] || null;
   const topics = getProviderTopics(institution);
-  const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
-  const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
-  const [customTopic, setCustomTopic] = useState("");
-  const [policyText, setPolicyText] = useState("");
+  const [initialSession] = useState(() => loadGapSession());
+  const hasRestoredSession = initialSession.institution === institution;
+  const skipInitialProviderReset = useRef(hasRestoredSession);
+  const [unit, setUnit] = useState(() => hasRestoredSession ? initialSession.unit : (instUnits ? instUnits.units[0] : DEPARTMENTS[0]));
+  const [topic, setTopic] = useState(() => hasRestoredSession ? initialSession.topic : (topics[0] ?? TOPICS[0]));
+  const [customTopic, setCustomTopic] = useState(() => hasRestoredSession ? (initialSession.customTopic ?? "") : "");
+  const [policyText, setPolicyText] = useState(() => hasRestoredSession ? (initialSession.policyText ?? "") : "");
   const [fileName, setFileName] = useState(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [fileError, setFileError] = useState(null);
@@ -2015,28 +2078,50 @@ function GapScannerTab({ institution }) {
   const [loadingMsg, setLoadingMsg] = useState("Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…");
   const [sideBySide, setSideBySide] = useState(() => typeof window !== "undefined" && window.innerWidth >= 960);
   const [error, setError] = useState(null);
-  const [result, setResult] = useState(null);
-  const [resultMeta, setResultMeta] = useState(null); // { institution, topic, timestamp }
-  const [actionPlan, setActionPlan] = useState(null);
+  const [result, setResult] = useState(() => hasRestoredSession ? (initialSession.result ?? null) : null);
+  const [resultMeta, setResultMeta] = useState(() => hasRestoredSession ? (initialSession.resultMeta ?? null) : null); // { institution, topic, timestamp }
+  const [actionPlan, setActionPlan] = useState(() => hasRestoredSession ? (initialSession.actionPlan ?? null) : null);
   const [actionPlanLoading, setActionPlanLoading] = useState(false);
   const [actionPlanError, setActionPlanError] = useState(null);
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState(() => loadGapHistory());
   const [showHistory, setShowHistory] = useState(false);
   const [loadedEntryId, setLoadedEntryId] = useState(null); // which history entry is currently shown
 
-  // Load history from localStorage on mount
-  useEffect(() => {
-    setHistory(loadGapHistory());
-  }, []);
-
   // Reset unit when institution changes
   useEffect(() => {
+    if (skipInitialProviderReset.current) {
+      skipInitialProviderReset.current = false;
+      return;
+    }
     const iu = INSTITUTION_UNITS[institution] || null;
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
     setTopic(getProviderTopics(institution)[0] ?? TOPICS[0]);
     setCustomTopic("");
+    setPolicyText("");
+    setFileName(null);
     setResult(null); setResultMeta(null); setActionPlan(null); setLoadedEntryId(null);
   }, [institution]);
+
+  useEffect(() => {
+    saveGapSession({
+      institution,
+      unit,
+      topic,
+      customTopic,
+      policyText,
+      result,
+      resultMeta,
+      actionPlan,
+      history,
+    });
+  }, [institution, unit, topic, customTopic, policyText, result, resultMeta, actionPlan, history]);
+
+  useEffect(() => {
+    const expiryTimer = window.setTimeout(() => {
+      void clearSessionData();
+    }, GAP_SESSION_TTL_MS);
+    return () => window.clearTimeout(expiryTimer);
+  }, [policyText, result, actionPlan, history]);
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
   const topicFinal = customTopic.trim() || topic;
@@ -2054,6 +2139,7 @@ function GapScannerTab({ institution }) {
     } catch (err) {
       setFileError(err.message);
       setFileName(null);
+      setPolicyText("");
     } finally {
       setFileLoading(false);
     }
@@ -2245,6 +2331,19 @@ Rules:
     }
   }
 
+  async function clearSessionData() {
+    await purgeEphemeralPolicySession();
+    setPolicyText("");
+    setFileName(null);
+    setResult(null);
+    setResultMeta(null);
+    setActionPlan(null);
+    setHistory([]);
+    setShowHistory(false);
+    setLoadedEntryId(null);
+    setError(null);
+  }
+
   const metCount    = result?.met?.length     || 0;
   const weakCount   = result?.weak?.length    || 0;
   const missingCount = result?.missing?.length || 0;
@@ -2325,6 +2424,13 @@ Rules:
           <span><strong>Do not upload documents containing Protected Health Information (PHI).</strong> This Service is not HIPAA-compliant. Policy documents must not include patient names, medical record numbers, dates of service, or any other individually identifiable health information. Ensure all documents are de-identified before upload.</span>
         </div>
 
+        <div style={{ background: "#EFF6FF", border: "1px solid #93C5FD", borderRadius: "7px", padding: "11px 14px", marginBottom: "14px", fontSize: "12px", color: "#1E3A8A", lineHeight: 1.55 }}>
+          <strong>Temporary policy processing.</strong> Your policy is parsed in your browser and sent to Anthropic's API only to perform the analysis you request.
+          CMS Compliance Suite does not store the uploaded policy, extracted text, or proprietary analysis in its permanent database or file storage.
+          This browser session expires after 30 minutes and is cleared on logout. Download results before the session ends.
+          Third-party processing is governed by Anthropic's API data-handling terms.
+        </div>
+
         {/* Upload area */}
         <div style={{ marginBottom: "12px" }}>
           <label style={S.label}>Upload Policy Document (PDF, TXT, DOC, DOCX)</label>
@@ -2364,15 +2470,21 @@ Rules:
           })()}
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <button style={{ ...S.btnPrimary(loading || fileLoading), flex: 1, marginTop: 0 }} onClick={analyze} disabled={loading || fileLoading}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          <button style={{ ...S.btnPrimary(loading || fileLoading), flex: 1, minWidth: "230px", marginTop: 0 }} onClick={analyze} disabled={loading || fileLoading}>
             {loading ? "Analyzing…" : "🔍 Scan for Compliance Gaps"}
           </button>
           <button
             style={{ padding: "12px 16px", fontSize: "13px", fontWeight: 600, border: "1px solid #CBD5E1", borderRadius: "7px", background: showHistory ? "#0D5C6B" : "#fff", color: showHistory ? "#fff" : "#475569", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
             onClick={() => setShowHistory((v) => !v)}
           >
-            🕒 History{history.length > 0 ? ` (${history.length})` : ""}
+            🕒 Session Results{history.length > 0 ? ` (${history.length})` : ""}
+          </button>
+          <button
+            style={{ padding: "12px 14px", fontSize: "12px", fontWeight: 600, border: "1px solid #FCA5A5", borderRadius: "7px", background: "#FEF2F2", color: "#B91C1C", cursor: "pointer", whiteSpace: "nowrap" }}
+            onClick={clearSessionData}
+          >
+            Clear Session Data
           </button>
         </div>
         {error && <div style={S.error}>⚠️ {error}</div>}
@@ -2382,11 +2494,11 @@ Rules:
       {showHistory && (
         <div style={S.card}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            <div style={{ fontSize: "13px", fontWeight: 700, color: "#1A2332" }}>Past Gap Analyses</div>
-            <div style={{ fontSize: "11px", color: "#94A3B8" }}>Click a row to reload a result</div>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#1A2332" }}>Temporary Session Results</div>
+            <div style={{ fontSize: "11px", color: "#94A3B8" }}>Available only during this browser session</div>
           </div>
           {history.length === 0 ? (
-            <div style={{ color: "#94A3B8", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>No saved analyses yet. Run a scan to start tracking history.</div>
+            <div style={{ color: "#94A3B8", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>No temporary results yet. Run a scan to begin this session.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               {history.map((entry) => {
@@ -2756,7 +2868,7 @@ We reserve the right to modify these Terms at any time. We will provide notice o
 Questions about these Terms may be directed to: HectorSamlut@outlook.com`;
 
 const PRIVACY = `PRIVACY POLICY
-Last updated: August 13, 2026
+Last updated: September 6, 2026
 
 1. OVERVIEW
 This Privacy Policy explains how the CMS Compliance Suite ("the Service") handles your information. We are committed to collecting only what is necessary to operate the Service and to keeping your data secure.
@@ -2777,14 +2889,18 @@ To support per-facility subscriptions, we store the following on our servers:
 - Your subscription status and billing tier
 - Login event logs (timestamp, IP address, approximate region) retained for 90 days for security and license compliance purposes
 
-4. INFORMATION STORED ON YOUR DEVICE
-Gap analysis history and scan results are saved in your browser's local storage (localStorage). This data does not leave your device and is not accessible to us. Clearing your browser data will permanently remove it.
+4. TEMPORARY POLICY AND ANALYSIS DATA
+Uploaded policy files are parsed in your browser. The extracted policy text, organization-specific analysis, and generated recommendations are held only in temporary browser session storage so an active analysis can survive a page refresh. This temporary session expires after 30 minutes, is cleared when you log out, and normally ends when the browser tab closes.
+
+The Service does not place uploaded policies, extracted policy text, organization-specific analysis, generated policy documents, or proprietary recommendations into its permanent application database or permanent file/object storage. Results must be downloaded before the temporary session ends. Older gap-analysis data created by prior releases in permanent browser local storage is removed when the updated scanner opens.
 
 5. FEEDBACK EMAILS
 If you use the "Share Feedback" button, your email client will open a pre-addressed message to HectorSamlut@outlook.com. We receive only what you choose to write. We do not use third-party email tracking.
 
 6. AI PROCESSING
-Text you submit for analysis (policy documents, compliance topics, institution type) is sent to Anthropic's API for processing. Anthropic handles this data under their own Privacy Policy (anthropic.com/privacy). We do not sell or share your prompts with any other third party.
+Text you submit for analysis (policy documents, compliance topics, provider type, and department/unit) is sent to Anthropic's API only to perform the analysis or generation you request. CMS Compliance Suite does not use that content to train its own models. Anthropic's handling of API data is governed by Anthropic's applicable API terms and privacy documentation. Do not submit PHI or content you are not authorized to process.
+
+Generated AI responses are held briefly in server memory while your browser retrieves them. A completed result is deleted after retrieval; unclaimed jobs expire automatically within 10 minutes. Technical usage records contain token counts and costs, not policy text or generated content.
 
 7. LIVE REGULATORY DATA
 The Service fetches publicly available regulatory text from the Electronic Code of Federal Regulations (eCFR.gov). No personal data is transmitted in these requests.
@@ -2931,7 +3047,14 @@ function AdminQuickPanel({ basePath, onClose }) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
-  const [tab, setTab] = useState("guidelines");
+  const [tab, setTab] = useState(() => {
+    try {
+      const savedTab = sessionStorage.getItem(ACTIVE_WORKSPACE_TAB_KEY);
+      return ["guidelines", "policy", "inspection", "gap"].includes(savedTab) ? savedTab : "guidelines";
+    } catch {
+      return "guidelines";
+    }
+  });
   const [institution, setInstitution] = useState(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem("cms-compliance-provider-type") : null;
     return saved && getProviderProfile(saved) ? saved : "hospital";
@@ -2950,6 +3073,10 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
   useEffect(() => {
     localStorage.setItem("cms-compliance-provider-type", institution);
   }, [institution]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem(ACTIVE_WORKSPACE_TAB_KEY, tab); } catch {}
+  }, [tab]);
 
   return (
     <div style={S.page}>

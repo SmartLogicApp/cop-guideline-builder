@@ -13,7 +13,10 @@ import CcnRegistrationPage from "@/pages/ccn-registration";
 import BillingPage from "@/pages/billing";
 import AdminPage   from "@/pages/admin";
 import { useAccount } from "@/hooks/useAccount";
-import CoPGuidelineBuilder from "../../../index.jsx";
+import CoPGuidelineBuilder, {
+  bindEphemeralPolicySessionToUser,
+  purgeEphemeralPolicySession,
+} from "../../../index.jsx";
 
 // ── Clerk setup ───────────────────────────────────────────────────────────────
 const clerkPubKey = publishableKeyFromHost(
@@ -158,6 +161,9 @@ function Landing() {
 // ── Thin wrapper so useUser (an artifact package) never leaks into root index.jsx
 function SignedInApp({ onSignOut }: { onSignOut: () => void }) {
   const { user } = useUser();
+  useEffect(() => {
+    bindEphemeralPolicySessionToUser(user?.id);
+  }, [user?.id]);
   return <CoPGuidelineBuilder onSignOut={onSignOut} clerkUserId={user?.id} />;
 }
 
@@ -185,7 +191,10 @@ function HomeRedirect() {
     <>
       <Show when="signed-out"><Landing /></Show>
       <Show when="signed-in">
-        <SignedInApp onSignOut={() => signOut({ redirectUrl: `${basePath}/` })} />
+        <SignedInApp onSignOut={async () => {
+          await purgeEphemeralPolicySession();
+          await signOut({ redirectUrl: `${basePath}/` });
+        }} />
       </Show>
     </>
   );
@@ -208,7 +217,10 @@ function IdleTimeout({ timeoutMs = 8 * 60 * 60 * 1000 }: { timeoutMs?: number })
     let timer: ReturnType<typeof setTimeout>;
     const reset = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => signOut(), timeoutMs);
+      timer = setTimeout(async () => {
+        await purgeEphemeralPolicySession();
+        await signOut();
+      }, timeoutMs);
     };
     const events = ["mousemove", "keydown", "click", "scroll", "touchstart"] as const;
     events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
