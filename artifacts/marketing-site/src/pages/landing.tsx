@@ -27,8 +27,8 @@ export default function LandingPage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
-            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="CMS CoP Suite Logo" className="h-8 w-8" />
-            <span className="text-xl font-bold tracking-tight text-primary">CMS CoP Suite</span>
+            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="CMS Compliance Suite Logo" className="h-8 w-8" />
+            <span className="text-xl font-bold tracking-tight text-primary">CMS Compliance Suite</span>
           </div>
           <nav className="hidden md:flex gap-6">
             <a href="#features" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Features</a>
@@ -60,7 +60,7 @@ export default function LandingPage() {
                 Navigate healthcare compliance with absolute confidence.
               </motion.h1>
               <motion.p variants={fadeIn} className="mt-6 text-lg leading-8 text-slate-600 max-w-2xl mx-auto text-balance">
-                AI-powered tools that help clinical compliance officers at hospitals, SNFs, and home health agencies avoid costly CMS deficiencies and survey failures.
+                AI-powered tools that help compliance leaders across 30 CMS provider types prepare for surveys, strengthen policies, and identify gaps.
               </motion.p>
               <motion.div variants={fadeIn} className="mt-10 flex items-center justify-center gap-x-6">
                 <Button size="lg" className="h-12 px-8 text-base shadow-lg" asChild>
@@ -79,7 +79,7 @@ export default function LandingPage() {
         {/* TRUST SIGNALS */}
         <section className="border-y bg-white py-12">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <p className="text-sm font-semibold text-muted-foreground mb-8 uppercase tracking-wider">Trusted to maintain compliance across 17 CMS institution types</p>
+            <p className="text-sm font-semibold text-muted-foreground mb-8 uppercase tracking-wider">Built for compliance across 30 CMS provider types</p>
             <div className="flex flex-wrap justify-center gap-8 md:gap-16 items-center opacity-70 grayscale">
               <div className="flex items-center gap-2 font-bold text-xl text-slate-800"><Shield className="h-6 w-6"/> CMS CoPs</div>
               <div className="flex items-center gap-2 font-bold text-xl text-slate-800"><ClipboardCheck className="h-6 w-6"/> Joint Commission</div>
@@ -271,8 +271,8 @@ export default function LandingPage() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-2">
-              <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="CMS CoP Suite Logo" className="h-6 w-6 grayscale opacity-60" />
-              <span className="text-lg font-bold tracking-tight text-slate-900">CMS CoP Suite</span>
+              <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="CMS Compliance Suite Logo" className="h-6 w-6 grayscale opacity-60" />
+              <span className="text-lg font-bold tracking-tight text-slate-900">CMS Compliance Suite</span>
             </div>
             <div className="flex gap-6 text-sm text-slate-500">
               <a href={SIGN_IN_URL} target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 transition-colors">Sign In</a>
@@ -286,7 +286,7 @@ export default function LandingPage() {
               <strong>Disclaimer:</strong> This tool generates AI-assisted content for educational and preparation purposes only. Output is not legal advice and must be reviewed by qualified compliance counsel before implementation.
             </p>
             <div className="flex flex-col items-start md:items-end gap-1">
-              <p>&copy; {new Date().getFullYear()} CMS CoP Compliance Suite. All rights reserved.</p>
+              <p>&copy; {new Date().getFullYear()} CMS Compliance Suite. All rights reserved.</p>
               <p>Subscription terms apply.</p>
             </div>
           </div>

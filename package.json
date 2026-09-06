@@ -11,6 +11,7 @@
   "private": true,
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1",
+    "@workspace/cms-compliance-data": "workspace:*",
     "express": "^5.2.1",
     "xlsx": "^0.18.5"
   },

@@ -49,7 +49,7 @@ function TrialBanner({ daysLeft }: { daysLeft: number }) {
 function Landing() {
   const [, setLocation] = useLocation();
   const features = [
-    { icon: "📋", label: "Compliance Guidelines", desc: "Live eCFR data for all CMS CoPs" },
+    { icon: "📋", label: "Compliance Guidelines", desc: "Live eCFR data for configured CMS sources" },
     { icon: "📄", label: "Policy Templates",      desc: "Ready-to-use policy documents" },
     { icon: "🔍", label: "Inspection Readiness",  desc: "Surveyor-style self-assessment" },
     { icon: "🩺", label: "Policy Gap Scanner",    desc: "AI-powered compliance gap analysis" },
@@ -61,7 +61,7 @@ function Landing() {
       <nav style={{ padding: "20px 40px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <img src="/logo.svg" alt="logo" width={36} height={36} />
-          <span style={{ fontWeight: 700, fontSize: "16px" }}>CMS CoP Compliance Suite</span>
+          <span style={{ fontWeight: 700, fontSize: "16px" }}>CMS Compliance Suite</span>
           <span style={{ background: "#F59E0B", color: "#78350F", fontSize: "10px", fontWeight: 700,
             padding: "2px 7px", borderRadius: "8px" }}>BETA</span>
         </div>
@@ -91,7 +91,7 @@ function Landing() {
           Healthcare Compliance,<br />Powered by AI
         </h1>
         <p style={{ fontSize: "18px", opacity: 0.85, lineHeight: 1.6, margin: "0 0 36px" }}>
-          Trusted by compliance officers at hospitals, SNFs, and home health agencies.
+          Built for compliance teams across 30 CMS provider types.
           Generate guidelines, scan policy gaps, and prepare for surveys — in minutes.
         </p>
         <button onClick={() => setLocation("/sign-up")}

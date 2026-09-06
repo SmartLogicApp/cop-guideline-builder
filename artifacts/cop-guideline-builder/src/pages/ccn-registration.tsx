@@ -101,7 +101,7 @@ export default function CcnRegistrationPage() {
       <div style={S.card}>
         <div style={S.logo}>
           <img src="/logo.svg" alt="logo" width={40} height={40} />
-          <div style={S.h1}>CMS CoP Compliance Suite</div>
+          <div style={S.h1}>CMS Compliance Suite</div>
         </div>
 
         <p style={S.sub}>

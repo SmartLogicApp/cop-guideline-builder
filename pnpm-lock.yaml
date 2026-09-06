@@ -81,6 +81,9 @@ importers:
       '@replit/connectors-sdk':
         specifier: ^0.4.1
         version: 0.4.1
+      '@workspace/cms-compliance-data':
+        specifier: workspace:*
+        version: link:lib/cms-compliance-data
       express:
         specifier: ^5.2.1
         version: 5.2.1
@@ -109,6 +112,9 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
+      '@workspace/cms-compliance-data':
+        specifier: workspace:*
+        version: link:../../lib/cms-compliance-data
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
@@ -297,6 +303,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/cms-compliance-data':
+        specifier: workspace:*
+        version: link:../../lib/cms-compliance-data
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
@@ -762,6 +771,8 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+
+  lib/cms-compliance-data: {}
 
   lib/db:
     dependencies:

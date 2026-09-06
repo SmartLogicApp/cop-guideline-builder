@@ -652,7 +652,7 @@ export default function AdminPage() {
           <button onClick={() => setLocation("/")} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", fontSize: "18px", padding: 0 }}>←</button>
           <div>
             <div style={{ color: "#fff", fontWeight: 800, fontSize: "15px" }}>Admin Dashboard</div>
-            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: "10px", letterSpacing: "1.5px", textTransform: "uppercase" }}>CMS CoP Compliance Suite</div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: "10px", letterSpacing: "1.5px", textTransform: "uppercase" }}>CMS Compliance Suite</div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>

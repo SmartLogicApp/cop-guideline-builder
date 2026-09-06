@@ -92,7 +92,7 @@ export function ClinicalAuthority() {
             <path d="M16 18l1.5 1.5L20 16" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           <div>
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: "15px", letterSpacing: "-0.3px", lineHeight: 1 }}>CMS CoP Suite</div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: "15px", letterSpacing: "-0.3px", lineHeight: 1 }}>CMS Compliance Suite</div>
             <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "9px", letterSpacing: "1.5px", textTransform: "uppercase" }}>Healthcare Compliance Intelligence</div>
           </div>
         </div>
@@ -200,7 +200,7 @@ export function ClinicalAuthority() {
       <div style={{ padding: "56px 80px 40px", background: "#F0F4F8" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: "12px", marginBottom: "24px" }}>
           <h2 style={{ fontSize: "13px", fontWeight: 700, color: "#0B3D8E", textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Supported Facility Types</h2>
-          <span style={{ fontSize: "12px", color: "#94A3B8" }}>17 CMS-certified facility categories</span>
+          <span style={{ fontSize: "12px", color: "#94A3B8" }}>30 CMS provider types</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: "10px" }}>
           {facilities.map(f => (

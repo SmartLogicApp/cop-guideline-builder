@@ -18,7 +18,7 @@ export default function SignUpPage() {
           boxShadow: "0 8px 40px rgba(0,0,0,0.25)",
         }}>
           <div style={{ fontSize: "20px", fontWeight: 800, color: "#0D5C6B", marginBottom: "6px" }}>
-            CMS CoP Compliance Suite
+            CMS Compliance Suite
           </div>
           <div style={{ fontSize: "13px", color: "#64748B", marginBottom: "24px", lineHeight: 1.5 }}>
             Before creating your account, please review and accept our Terms of Service.

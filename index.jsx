@@ -1,6 +1,15 @@
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { useAccount } from "@/hooks/useAccount";
+import {
+  DEFAULT_COMPLIANCE_TOPICS,
+  LEGACY_INSTITUTION_TYPES,
+  PROVIDER_CATEGORIES,
+  getProviderProfile,
+  getProviderTopics,
+  getProvidersByCategory,
+  isProviderContentAvailable,
+} from "@workspace/cms-compliance-data";
 
 // Clerk user IDs that get the admin button — covers dev and production environments.
 const ADMIN_CLERK_IDS = [
@@ -11,49 +20,8 @@ const ADMIN_CLERK_IDS = [
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const INSTITUTION_TYPES = [
-  // Hospitals & health systems
-  { value: "hospital",   label: "Acute Care Hospital",                          cfr: "42 CFR 482" },
-  { value: "cah",        label: "Critical Access Hospital (CAH)",               cfr: "42 CFR 485 Subpart F" },
-  { value: "psych",      label: "Psychiatric Hospital",                         cfr: "42 CFR 482 Subpart E" },
-  { value: "ltch",       label: "Long-Term Care Hospital (LTCH)",               cfr: "42 CFR 482" },
-  { value: "childrens",  label: "Children's Hospital",                          cfr: "42 CFR 482" },
-  // Post-acute / long-term care
-  { value: "snf",        label: "Skilled Nursing Facility (SNF)",               cfr: "42 CFR 483 Subpart B" },
-  { value: "irf",        label: "Inpatient Rehabilitation Facility (IRF)",      cfr: "42 CFR 412 Subpart P" },
-  { value: "hha",        label: "Home Health Agency (HHA)",                     cfr: "42 CFR 484" },
-  { value: "hospice",    label: "Hospice",                                      cfr: "42 CFR 418" },
-  // Ambulatory / outpatient
-  { value: "asc",        label: "Ambulatory Surgery Center (ASC)",              cfr: "42 CFR 416" },
-  { value: "rhc",        label: "Rural Health Clinic (RHC)",                   cfr: "42 CFR 491" },
-  { value: "fqhc",       label: "Federally Qualified Health Center (FQHC)",    cfr: "42 CFR 405 Subpart X" },
-  { value: "corf",       label: "Comprehensive Outpatient Rehab Facility (CORF)", cfr: "42 CFR 485 Subpart B" },
-  // Other facility types
-  { value: "cmhc",       label: "Community Mental Health Center (CMHC)",       cfr: "42 CFR 485 Subpart H" },
-  { value: "opo",        label: "Organ Procurement Organization (OPO)",         cfr: "42 CFR 486 Subpart G" },
-  { value: "esrd",       label: "ESRD Facility",                                cfr: "42 CFR 494" },
-  { value: "xray",       label: "Portable X-Ray Supplier",                      cfr: "42 CFR 486 Subpart B" },
-];
-
-const TOPICS = [
-  "Infection Control & Prevention",
-  "Patient Rights & Grievances",
-  "Quality Assessment & Performance Improvement",
-  "Nursing Services",
-  "Medical Staff",
-  "Medication Management",
-  "Medical Records",
-  "Emergency Preparedness",
-  "Physical Environment & Safety",
-  "Discharge Planning",
-  "Surgical Services",
-  "Anesthesia Services",
-  "Governing Body Oversight",
-  "Staff Competency & Training",
-  "Patient Safety & Fall Prevention",
-  "Restraint & Seclusion",
-  "Laboratory Services",
-];
+const INSTITUTION_TYPES = LEGACY_INSTITUTION_TYPES;
+const TOPICS = DEFAULT_COMPLIANCE_TOPICS;
 
 // Generic fallback departments (used only if an institution type is not in INSTITUTION_UNITS)
 const DEPARTMENTS = [
@@ -1365,7 +1333,7 @@ function OnboardingBanner() {
         style={{ position: "absolute", top: "12px", right: "14px", background: "none", border: "none", fontSize: "18px", cursor: "pointer", color: "#64748B", lineHeight: 1 }}
         aria-label="Dismiss"
       >×</button>
-      <div style={{ fontWeight: 700, fontSize: "14px", color: "#0D5C6B", marginBottom: "12px" }}>👋 Welcome to CMS CoP Compliance Suite</div>
+      <div style={{ fontWeight: 700, fontSize: "14px", color: "#0D5C6B", marginBottom: "12px" }}>👋 Welcome to CMS Compliance Suite</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" }}>
         {steps.map((s) => (
           <div key={s.icon} style={{ background: "#fff", borderRadius: "7px", padding: "10px 13px", fontSize: "12.5px", color: "#334155", lineHeight: 1.5, border: "1px solid #E2E8F0" }}>
@@ -1386,7 +1354,8 @@ function OnboardingBanner() {
 // ─── Guidelines Tab ──────────────────────────────────────────────────────────
 
 function GuidelinesTab({ institution }) {
-  const [topic, setTopic] = useState(TOPICS[0]);
+  const topics = getProviderTopics(institution);
+  const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1394,6 +1363,13 @@ function GuidelinesTab({ institution }) {
   const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
+
+  useEffect(() => {
+    setTopic(getProviderTopics(institution)[0] ?? TOPICS[0]);
+    setCustomTopic("");
+    setResult(null);
+    setDataSource(null);
+  }, [institution]);
 
   async function generate() {
     const topicFinal = customTopic.trim() || topic;
@@ -1504,7 +1480,7 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
           <div>
             <label style={S.label}>Topic Preset</label>
             <select style={S.select} value={topic} onChange={(e) => { setTopic(e.target.value); setCustomTopic(""); }}>
-              {TOPICS.map((t) => <option key={t} value={t}>{t}</option>)}
+              {topics.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
@@ -1610,8 +1586,9 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
 
 function PolicyTab({ institution }) {
   const instUnits = INSTITUTION_UNITS[institution] || null;
+  const topics = getProviderTopics(institution);
   const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
-  const [topic, setTopic] = useState(TOPICS[0]);
+  const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1621,6 +1598,8 @@ function PolicyTab({ institution }) {
   useEffect(() => {
     const iu = INSTITUTION_UNITS[institution] || null;
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
+    setTopic(getProviderTopics(institution)[0] ?? TOPICS[0]);
+    setCustomTopic("");
     setResult(null);
     setDataSource(null);
   }, [institution]);
@@ -1718,7 +1697,7 @@ Output as plain text only (no JSON, no markdown headers with #).`;
           <div>
             <label style={S.label}>Topic Preset</label>
             <select style={S.select} value={topic} onChange={(e) => { setTopic(e.target.value); setCustomTopic(""); }}>
-              {TOPICS.map((t) => <option key={t} value={t}>{t}</option>)}
+              {topics.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
@@ -2024,8 +2003,9 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
 
 function GapScannerTab({ institution }) {
   const instUnits = INSTITUTION_UNITS[institution] || null;
+  const topics = getProviderTopics(institution);
   const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
-  const [topic, setTopic] = useState(TOPICS[0]);
+  const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
   const [policyText, setPolicyText] = useState("");
   const [fileName, setFileName] = useState(null);
@@ -2053,6 +2033,8 @@ function GapScannerTab({ institution }) {
   useEffect(() => {
     const iu = INSTITUTION_UNITS[institution] || null;
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
+    setTopic(getProviderTopics(institution)[0] ?? TOPICS[0]);
+    setCustomTopic("");
     setResult(null); setResultMeta(null); setActionPlan(null); setLoadedEntryId(null);
   }, [institution]);
 
@@ -2246,9 +2228,9 @@ Rules:
     setActionPlan(null);
     setActionPlanError(null);
     // Sync selectors to match the loaded entry
-    const matchedTopic = TOPICS.includes(entry.topic) ? entry.topic : TOPICS[0];
+    const matchedTopic = topics.includes(entry.topic) ? entry.topic : topics[0] ?? TOPICS[0];
     setTopic(matchedTopic);
-    setCustomTopic(TOPICS.includes(entry.topic) ? "" : entry.topic);
+    setCustomTopic(topics.includes(entry.topic) ? "" : entry.topic);
     setError(null);
   }
 
@@ -2328,7 +2310,7 @@ Rules:
           <div>
             <label style={S.label}>Policy Topic</label>
             <select style={S.select} value={topic} onChange={(e) => { setTopic(e.target.value); setCustomTopic(""); }}>
-              {TOPICS.map((t) => <option key={t} value={t}>{t}</option>)}
+              {topics.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
@@ -2672,7 +2654,7 @@ const TERMS = `TERMS OF SERVICE
 Last updated: August 13, 2026
 
 1. ACCEPTANCE OF TERMS
-By accessing or using the CMS CoP Compliance Suite ("the Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not access or use the Service.
+By accessing or using the CMS Compliance Suite ("the Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not access or use the Service.
 
 2. DEFINITIONS
 As used in these Terms:
@@ -2691,36 +2673,36 @@ As used in these Terms:
 
 3.2 Authorized Users. A Facility may designate multiple individual users to access its Subscription (e.g., compliance officer, administrator, department heads), provided all such users are acting on behalf of the single licensed Facility. This section does not limit the number of individual staff members at one Facility who may use the Service; it limits use to that one Facility.
 
-3.3 Monitoring for Compliance. CMS CoP Compliance Suite may monitor account usage patterns, including login timestamps, IP addresses, and approximate geographic location, for the purpose of verifying compliance with this Section 3. This monitoring is used solely to enforce these Terms and is not shared for any other purpose except as required by law.
+3.3 Monitoring for Compliance. CMS Compliance Suite may monitor account usage patterns, including login timestamps, IP addresses, and approximate geographic location, for the purpose of verifying compliance with this Section 3. This monitoring is used solely to enforce these Terms and is not shared for any other purpose except as required by law.
 
-3.4 Suspected Violations. If CMS CoP Compliance Suite reasonably believes that login credentials issued under a single Facility Subscription are being used by, or on behalf of, more than one Facility, CMS CoP Compliance Suite may: (a) request written confirmation from the Organization regarding account usage; (b) require the Organization to purchase additional Subscriptions to bring usage into compliance; and/or (c) suspend or terminate the Subscription without refund if the Organization fails to remedy the violation within fifteen (15) days of written notice.
+3.4 Suspected Violations. If CMS Compliance Suite reasonably believes that login credentials issued under a single Facility Subscription are being used by, or on behalf of, more than one Facility, CMS Compliance Suite may: (a) request written confirmation from the Organization regarding account usage; (b) require the Organization to purchase additional Subscriptions to bring usage into compliance; and/or (c) suspend or terminate the Subscription without refund if the Organization fails to remedy the violation within fifteen (15) days of written notice.
 
-3.5 No Waiver by Inaction. CMS CoP Compliance Suite's failure to enforce this Section 3 in any instance does not waive its right to enforce it in any other instance.
+3.5 No Waiver by Inaction. CMS Compliance Suite's failure to enforce this Section 3 in any instance does not waive its right to enforce it in any other instance.
 
 For multi-facility or enterprise pricing inquiries, contact: HectorSamlut@outlook.com
 
 4. SUBSCRIPTION AND PAYMENT TERMS
 
-4.1 Billing. Subscriptions are billed on a monthly, per-Facility basis. Payment is due at the start of each billing period. By subscribing, you authorize CMS CoP Compliance Suite (or its payment processor) to charge the payment method on file for recurring monthly fees.
+4.1 Billing. Subscriptions are billed on a monthly, per-Facility basis. Payment is due at the start of each billing period. By subscribing, you authorize CMS Compliance Suite (or its payment processor) to charge the payment method on file for recurring monthly fees.
 
 4.2 No Refunds. All Subscription fees are non-refundable. Upon cancellation or termination, you retain full access to the Service through the end of the current paid billing period. No partial-month refunds or credits are issued under any circumstances, including early cancellation or termination for a Terms violation.
 
-4.3 Price Changes. CMS CoP Compliance Suite reserves the right to change Subscription pricing at any time. You will receive notice of price changes at least thirty (30) days before they take effect. Continued use of the Service after the effective date of a price change constitutes acceptance of the new pricing.
+4.3 Price Changes. CMS Compliance Suite reserves the right to change Subscription pricing at any time. You will receive notice of price changes at least thirty (30) days before they take effect. Continued use of the Service after the effective date of a price change constitutes acceptance of the new pricing.
 
-4.4 Non-Payment. If payment is not received by the due date, access to the Service may be suspended until payment is made current. CMS CoP Compliance Suite is not liable for any loss, damages, or business interruption resulting from suspension due to non-payment.
+4.4 Non-Payment. If payment is not received by the due date, access to the Service may be suspended until payment is made current. CMS Compliance Suite is not liable for any loss, damages, or business interruption resulting from suspension due to non-payment.
 
 5. DESCRIPTION OF SERVICE
 The Service is an AI-assisted tool designed to help healthcare institutions prepare compliance guidelines, policy templates, inspection readiness checklists, and policy gap analyses based on CMS Conditions of Participation, Joint Commission standards, DNV NIAHO, and ISO 9001:2015.
 
 6. HIPAA AND PROTECTED HEALTH INFORMATION
 
-6.1 Not a HIPAA-Covered Service. This Service is not designed, intended, or configured as a HIPAA-covered service. CMS CoP Compliance Suite does not execute a Business Associate Agreement (BAA) with Subscribers, and no BAA is offered in connection with any Subscription tier.
+6.1 Not a HIPAA-Covered Service. This Service is not designed, intended, or configured as a HIPAA-covered service. CMS Compliance Suite does not execute a Business Associate Agreement (BAA) with Subscribers, and no BAA is offered in connection with any Subscription tier.
 
 6.2 No PHI Permitted. You must not submit, upload, paste, or otherwise transmit any Protected Health Information (PHI) through the Service, as that term is defined under the Health Insurance Portability and Accountability Act of 1996 (HIPAA) and its implementing regulations. PHI includes, but is not limited to, patient names, medical record numbers, dates of service, dates of birth, Social Security numbers, geographic identifiers smaller than a state, and any other information that could reasonably be used to identify an individual patient.
 
 6.3 Compliance Documents Only. The Service is intended solely for use with compliance policy documents, regulatory templates, and self-assessment materials. All documents submitted must be de-identified and free of any patient-specific or individually identifiable health information before upload or submission.
 
-6.4 Your Responsibility. If you submit PHI through the Service in violation of this Section 6, you assume full and exclusive liability for any resulting HIPAA violations, breach notification obligations, civil or criminal penalties, or other consequences under federal or state law. CMS CoP Compliance Suite shall bear no liability for PHI submitted in violation of these Terms.
+6.4 Your Responsibility. If you submit PHI through the Service in violation of this Section 6, you assume full and exclusive liability for any resulting HIPAA violations, breach notification obligations, civil or criminal penalties, or other consequences under federal or state law. CMS Compliance Suite shall bear no liability for PHI submitted in violation of these Terms.
 
 7. NOT LEGAL OR REGULATORY ADVICE
 All content generated by the Service is for educational and preparation purposes only. It does not constitute legal advice, regulatory guidance, or a guarantee of survey compliance. All output must be reviewed by qualified compliance counsel and verified against current official regulatory sources before implementation. Regulatory citations should be independently confirmed. User assumes all liability for decisions made based on Service output.
@@ -2745,7 +2727,7 @@ The Service, including its design, prompts, and logic, is proprietary. Generated
 
 12.1 By You. You may cancel your Subscription at any time through your account settings or by contacting HectorSamlut@outlook.com. Cancellation takes effect at the end of the current billing period; no refunds are issued for any unused portion of the period.
 
-12.2 By Us. CMS CoP Compliance Suite may suspend or terminate your account immediately, without prior notice or refund, if you breach these Terms (including Section 3), provide false information at registration, or engage in conduct that CMS CoP Compliance Suite reasonably determines to be harmful to other users, the Service, or third parties.
+12.2 By Us. CMS Compliance Suite may suspend or terminate your account immediately, without prior notice or refund, if you breach these Terms (including Section 3), provide false information at registration, or engage in conduct that CMS Compliance Suite reasonably determines to be harmful to other users, the Service, or third parties.
 
 12.3 Effect of Termination. Upon termination, your right to access the Service ceases immediately. Data stored in your browser's local storage (e.g., gap analysis history) remains accessible locally but cannot be recovered from our servers after account deletion. To request permanent deletion of your account data, contact HectorSamlut@outlook.com.
 
@@ -2756,13 +2738,13 @@ THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLI
 TO THE FULLEST EXTENT PERMITTED BY APPLICABLE LAW, CMS COP COMPLIANCE SUITE AND ITS OPERATORS SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING FROM USE OF THE SERVICE, INCLUDING SURVEY DEFICIENCIES, CERTIFICATION ACTIONS, OR REGULATORY PENALTIES. IN NO EVENT SHALL OUR TOTAL LIABILITY TO YOU FOR ANY CLAIM ARISING UNDER THESE TERMS EXCEED THE TOTAL AMOUNT YOU PAID FOR THE SERVICE IN THE THREE (3) MONTHS IMMEDIATELY PRECEDING THE CLAIM.
 
 15. INDEMNIFICATION
-You agree to indemnify, defend, and hold harmless CMS CoP Compliance Suite and its operators from and against any and all claims, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or relating to: (a) your use of the Service in violation of these Terms; (b) your violation of any applicable law or regulation; or (c) your infringement of any third-party right.
+You agree to indemnify, defend, and hold harmless CMS Compliance Suite and its operators from and against any and all claims, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or relating to: (a) your use of the Service in violation of these Terms; (b) your violation of any applicable law or regulation; or (c) your infringement of any third-party right.
 
 16. GOVERNING LAW AND JURISDICTION
 These Terms are governed by and construed in accordance with the laws of the State of Florida, without regard to its conflict-of-law principles. Any legal action or proceeding arising under or relating to these Terms shall be brought exclusively in the state or federal courts located in the State of Florida, and you hereby irrevocably consent to the personal jurisdiction and venue of such courts.
 
 17. SEVERABILITY AND ENTIRE AGREEMENT
-If any provision of these Terms is found by a court of competent jurisdiction to be unenforceable or invalid, that provision shall be limited or eliminated to the minimum extent necessary such that the remaining Terms shall continue in full force and effect. These Terms, together with the Privacy Policy, constitute the entire agreement between you and CMS CoP Compliance Suite with respect to your use of the Service and supersede all prior or contemporaneous agreements and understandings.
+If any provision of these Terms is found by a court of competent jurisdiction to be unenforceable or invalid, that provision shall be limited or eliminated to the minimum extent necessary such that the remaining Terms shall continue in full force and effect. These Terms, together with the Privacy Policy, constitute the entire agreement between you and CMS Compliance Suite with respect to your use of the Service and supersede all prior or contemporaneous agreements and understandings.
 
 18. PRIVACY POLICY
 Your use of the Service is also governed by our Privacy Policy, incorporated herein by reference. By using the Service, you confirm that you have read and understood the Privacy Policy.
@@ -2777,7 +2759,7 @@ const PRIVACY = `PRIVACY POLICY
 Last updated: August 13, 2026
 
 1. OVERVIEW
-This Privacy Policy explains how the CMS CoP Compliance Suite ("the Service") handles your information. We are committed to collecting only what is necessary to operate the Service and to keeping your data secure.
+This Privacy Policy explains how the CMS Compliance Suite ("the Service") handles your information. We are committed to collecting only what is necessary to operate the Service and to keeping your data secure.
 
 2. ACCOUNT INFORMATION
 The Service requires you to create an account to access its features. Account registration and authentication are handled by Clerk (clerk.com), a third-party identity platform. When you register, Clerk collects and stores:
@@ -2857,7 +2839,7 @@ function Footer({ onTerms, onPrivacy }) {
   return (
     <div style={{ borderTop: "1px solid #E2E8F0", marginTop: "40px", padding: "20px 32px", background: "#F8FAFC", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
       <div style={{ fontSize: "12px", color: "#94A3B8" }}>
-        © {new Date().getFullYear()} CMS CoP Compliance Suite. AI-generated content is not legal advice.
+        © {new Date().getFullYear()} CMS Compliance Suite. AI-generated content is not legal advice.
       </div>
       <div style={{ display: "flex", gap: "16px" }}>
         <button onClick={onTerms} style={{ background: "none", border: "none", fontSize: "12px", color: "#64748B", cursor: "pointer", textDecoration: "underline", padding: 0 }}>Terms of Service</button>
@@ -2950,7 +2932,10 @@ function AdminQuickPanel({ basePath, onClose }) {
 
 export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
   const [tab, setTab] = useState("guidelines");
-  const [institution, setInstitution] = useState("hospital");
+  const [institution, setInstitution] = useState(() => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem("cms-compliance-provider-type") : null;
+    return saved && getProviderProfile(saved) ? saved : "hospital";
+  });
   const [legal, setLegal] = useState(null); // "terms" | "privacy" | null
   const [adminOpen, setAdminOpen] = useState(false);
   const { data: accountData } = useAccount();
@@ -2959,6 +2944,12 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
     || accountData?.isSuperAdmin
     || accountData?.isAdminUser;
   const basePath = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const selectedProvider = getProviderProfile(institution);
+  const providerContentAvailable = isProviderContentAvailable(institution);
+
+  useEffect(() => {
+    localStorage.setItem("cms-compliance-provider-type", institution);
+  }, [institution]);
 
   return (
     <div style={S.page}>
@@ -2968,10 +2959,10 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
       <div style={S.header}>
         <div style={{ maxWidth: "960px", margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <h1 style={S.headerTitle}>CMS CoP Compliance Suite</h1>
+            <h1 style={S.headerTitle}>CMS Compliance Suite</h1>
             <span style={{ fontSize: "11px", fontWeight: 700, background: "#F59E0B", color: "#78350F", padding: "2px 8px", borderRadius: "10px", letterSpacing: "0.5px" }}>BETA</span>
           </div>
-          <p style={S.headerSub}>Guidelines · Policy Templates · Inspection Readiness · Policy Gap Scanner — CMS, Joint Commission, DNV NIAHO, ISO 9001:2015</p>
+          <p style={S.headerSub}>CoP & CfC Compliance + Survey Readiness</p>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap" }}>
             <div style={{ ...S.disclaimer, flex: 1, marginTop: "14px" }}>
               <strong>⚠ Important Disclaimer:</strong> This tool generates AI-assisted content for educational and preparation purposes only.
@@ -2991,7 +2982,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
                 style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "8px 14px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
                 💳 Billing
               </a>
-              <a href="mailto:HectorSamlut@outlook.com?subject=CMS CoP Compliance Suite Feedback&body=Institution type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
+              <a href="mailto:HectorSamlut@outlook.com?subject=CMS Compliance Suite Feedback&body=Provider type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
                 style={{ display: "inline-block", padding: "8px 14px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
                 ✉ Share Feedback
               </a>
@@ -3010,22 +3001,39 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
 
       <div style={S.container}>
         <OnboardingBanner />
-        {/* Institution selector */}
+        {/* Provider selector */}
         <div style={{ ...S.card, marginBottom: "20px" }}>
-          <label style={S.label}>Institution Type</label>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px" }}>
-            {INSTITUTION_TYPES.map((inst) => (
-              <button key={inst.value} onClick={() => setInstitution(inst.value)} style={{
-                padding: "10px 12px", fontSize: "12px", fontWeight: 600, textAlign: "left",
-                border: `2px solid ${institution === inst.value ? "#0D5C6B" : "#E2E8F0"}`,
-                borderRadius: "7px", cursor: "pointer",
-                background: institution === inst.value ? "#E8F4F5" : "#fff",
-                color: institution === inst.value ? "#0D5C6B" : "#475569",
-              }}>
-                <div>{inst.label}</div>
-                <div style={{ fontSize: "10px", fontWeight: 400, marginTop: "2px", opacity: 0.7 }}>{inst.cfr}</div>
-              </button>
-            ))}
+          <label style={S.label}>Select Your Provider Type</label>
+          <p style={{ margin: "-3px 0 14px", color: "#64748B", fontSize: "12px" }}>
+            Provider Category → Provider Type → Compliance Workspace
+          </p>
+          <div style={{ display: "grid", gap: "16px" }}>
+            {PROVIDER_CATEGORIES.map((category) => {
+              const providers = getProvidersByCategory(category.id);
+              return (
+                <section key={category.id}>
+                  <div style={{ fontSize: "11px", fontWeight: 800, letterSpacing: "0.7px", textTransform: "uppercase", color: "#0D5C6B", marginBottom: "7px" }}>
+                    {category.label}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px" }}>
+                    {providers.map((provider) => (
+                      <button key={provider.id} onClick={() => setInstitution(provider.id)} style={{
+                        padding: "10px 12px", fontSize: "12px", fontWeight: 600, textAlign: "left",
+                        border: `2px solid ${institution === provider.id ? "#0D5C6B" : "#E2E8F0"}`,
+                        borderRadius: "7px", cursor: "pointer",
+                        background: institution === provider.id ? "#E8F4F5" : "#fff",
+                        color: institution === provider.id ? "#0D5C6B" : "#475569",
+                      }}>
+                        <div>{provider.name}{provider.abbreviation ? ` (${provider.abbreviation})` : ""}</div>
+                        <div style={{ fontSize: "10px", fontWeight: 500, marginTop: "3px", color: provider.contentStatus === "pending-verification" ? "#B45309" : "inherit", opacity: 0.82 }}>
+                          {provider.displayReference}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         </div>
 
@@ -3038,10 +3046,25 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
         </div>
 
         {/* Tab content */}
-        {tab === "guidelines" && <GuidelinesTab institution={institution} />}
-        {tab === "policy"     && <PolicyTab     institution={institution} />}
-        {tab === "inspection" && <InspectionTab institution={institution} />}
-        {tab === "gap"        && <GapScannerTab institution={institution} />}
+        {!providerContentAvailable ? (
+          <div style={{ ...S.card, borderLeft: "4px solid #F59E0B", background: "#FFFBEB" }}>
+            <div style={{ fontSize: "14px", fontWeight: 800, color: "#92400E", marginBottom: "6px" }}>
+              Content Pending Verification
+            </div>
+            <div style={{ fontSize: "13px", lineHeight: 1.65, color: "#78350F" }}>
+              The compliance workspace for <strong>{selectedProvider?.name}</strong> is architected and ready for content,
+              but its official CMS requirements and CFR references have not yet been verified. Generation tools are
+              intentionally unavailable for this provider until sourced regulatory content is added.
+            </div>
+          </div>
+        ) : (
+          <>
+            {tab === "guidelines" && <GuidelinesTab institution={institution} />}
+            {tab === "policy"     && <PolicyTab     institution={institution} />}
+            {tab === "inspection" && <InspectionTab institution={institution} />}
+            {tab === "gap"        && <GapScannerTab institution={institution} />}
+          </>
+        )}
       </div>
       <Footer onTerms={() => setLegal("terms")} onPrivacy={() => setLegal("privacy")} />
     </div>

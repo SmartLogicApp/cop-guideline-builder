@@ -33,7 +33,7 @@ export function RegulatoryDoc() {
             <path d="M15 22l3 3 7-6" stroke="#F5C842" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           <div>
-            <div style={{ fontFamily: "'Georgia', serif", color: "#F5C842", fontWeight: 700, fontSize: "15px", letterSpacing: "0.5px" }}>CMS CoP Compliance Suite</div>
+            <div style={{ fontFamily: "'Georgia', serif", color: "#F5C842", fontWeight: 700, fontSize: "15px", letterSpacing: "0.5px" }}>CMS Compliance Suite</div>
             <div style={{ fontFamily: "'Inter', Arial, sans-serif", color: "rgba(255,255,255,0.35)", fontSize: "9px", letterSpacing: "2px", textTransform: "uppercase" }}>Healthcare Regulatory Intelligence</div>
           </div>
         </div>

@@ -66,7 +66,7 @@ export function RegulatoryInterior() {
             <path d="M15 22l3 3 7-6" stroke="#F5C842" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           <div>
-            <div style={{ color: "#F5C842", fontWeight: 700, fontSize: "13px", letterSpacing: "0.3px" }}>CMS CoP Suite</div>
+            <div style={{ color: "#F5C842", fontWeight: 700, fontSize: "13px", letterSpacing: "0.3px" }}>CMS Compliance Suite</div>
             <div style={{ fontFamily: "'Inter', Arial, sans-serif", color: "rgba(255,255,255,0.3)", fontSize: "9px", letterSpacing: "1.5px", textTransform: "uppercase" }}>Compliance Platform</div>
           </div>
         </div>
@@ -237,7 +237,7 @@ export function RegulatoryInterior() {
           {/* AI disclosure */}
           <div style={{ margin: "0 32px 28px", padding: "12px 18px", background: "rgba(107,114,128,0.05)", borderRadius: "6px", border: "1px solid #E8E0D0", fontFamily: "'Inter', Arial, sans-serif" }}>
             <p style={{ fontSize: "11px", color: "#9CA3AF", margin: 0, lineHeight: 1.7 }}>
-              <strong style={{ color: "#6B7280" }}>AI-generated content.</strong> These guidelines are produced by an AI model and should be reviewed by a qualified compliance officer or legal counsel before operational use. CMS CoP Suite does not constitute legal advice and is not a substitute for professional compliance management.
+              <strong style={{ color: "#6B7280" }}>AI-generated content.</strong> These guidelines are produced by an AI model and should be reviewed by a qualified compliance officer or legal counsel before operational use. CMS Compliance Suite does not constitute legal advice and is not a substitute for professional compliance management.
             </p>
           </div>
         </main>

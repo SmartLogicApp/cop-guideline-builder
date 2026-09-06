@@ -1,0 +1,1007 @@
+CMS COMPLIANCE SUITE — COMPLETE PRODUCT UPGRADE
+
+IMPORTANT
+
+You are modifying an existing web application.
+
+Do NOT rebuild the application from scratch unless technically necessary.
+
+First inspect the entire existing application, its current architecture, components, data structures, navigation, styling, functionality, and responsive behavior.
+
+Preserve existing working functionality unless these instructions explicitly replace or improve it.
+
+The goal is to evolve the existing product into a more comprehensive professional CMS compliance platform.
+
+
+
+1. PRODUCT NAME CHANGE
+
+Change the application name everywhere from:
+
+CMS CoP Compliance Suite
+
+to:
+
+CMS Compliance Suite
+
+Use this subtitle consistently on the primary landing/dashboard experience:
+
+CoP & CfC Compliance + Survey Readiness
+
+Update the name anywhere it appears, including:
+
+Browser/page title
+Header
+Logo/brand area
+Landing page
+Dashboard
+Navigation
+Login/authentication screens, if applicable
+Metadata
+About/help areas
+Empty states
+Footer
+Any hard-coded references
+Any generated reports or documents
+Do not leave the old product name visible anywhere.
+
+
+
+2. POSITIONING
+
+The application should no longer feel like a simple CMS policy/template tool.
+
+Position it as a:
+
+CMS compliance, policy management, gap assessment, and survey-readiness platform.
+
+The core workflow should communicate:
+
+Select Provider Type → Identify CMS Requirement → Assess Compliance → Build/Review Policy → Identify Evidence → Prepare for Survey → Track Corrective Action
+
+The application should support both:
+
+Conditions of Participation (CoPs)
+Conditions for Coverage (CfCs)
+Do not imply that every provider type uses CoPs. Use the correct regulatory terminology based on the provider type.
+
+
+
+3. UPDATE THE MAIN NAVIGATION
+
+The application should have the following primary navigation:
+
+Dashboard
+CMS Requirements
+Policy Builder
+Survey Readiness
+Gap Scanner
+Corrective Actions
+Reports
+If the existing application has equivalent features, reuse them rather than duplicating functionality.
+
+The interface should feel like one integrated compliance platform, not seven unrelated tools.
+
+
+
+4. PROVIDER TYPE ARCHITECTURE
+
+Replace the current flat institution-type presentation with a more organized:
+
+“Select Your Provider Type”
+
+structure.
+
+Group providers into logical categories.
+
+HOSPITALS & INPATIENT
+
+Include:
+
+Acute Care Hospital
+Critical Access Hospital (CAH)
+Rural Emergency Hospital (REH)
+Psychiatric Hospital
+Long-Term Care Hospital (LTCH)
+Inpatient Rehabilitation Facility (IRF)
+Children’s Hospital
+Hospital Swing Bed
+Transplant Program / Transplant Center
+LONG-TERM CARE
+
+Include:
+
+Skilled Nursing Facility (SNF)
+Nursing Facility
+Intermediate Care Facility for Individuals with Intellectual Disabilities (ICF/IID)
+OUTPATIENT & COMMUNITY
+
+Include:
+
+Ambulatory Surgical Center (ASC)
+Rural Health Clinic (RHC)
+Federally Qualified Health Center (FQHC)
+Comprehensive Outpatient Rehabilitation Facility (CORF)
+Outpatient Physical Therapy
+Outpatient Occupational Therapy
+Outpatient Speech-Language Pathology
+BEHAVIORAL HEALTH
+
+Include:
+
+Community Mental Health Center (CMHC)
+Opioid Treatment Program (OTP)
+HOME & END-OF-LIFE
+
+Include:
+
+Home Health Agency (HHA)
+Hospice
+RENAL & SPECIALTY
+
+Include:
+
+ESRD Facility
+Organ Procurement Organization (OPO)
+Histocompatibility Laboratory
+Portable X-Ray Supplier
+OTHER CMS-CERTIFIED PROVIDERS
+
+Include:
+
+Religious Nonmedical Health Care Institution (RNHCI)
+Indian Health Service Facility
+PACE Organization
+
+
+5. PROVIDER DATA MODEL
+
+Do not treat all providers as if they have identical CMS requirements.
+
+Each provider type should have its own compliance profile.
+
+Each provider profile should be capable of containing:
+
+Provider name
+Provider abbreviation
+Provider category
+Regulatory framework
+Applicable CMS CoPs
+Applicable CMS CfCs
+Applicable CFR sections
+Compliance topics
+Required policies
+Survey/readiness items
+Evidence/documentation requirements
+Common deficiency areas
+Corrective action categories
+The architecture must allow additional provider types to be added later without restructuring the application.
+
+
+
+6. CMS REQUIREMENT LIBRARY
+
+Create a central:
+
+CMS Requirements
+
+section.
+
+This should become the foundation of the application.
+
+Each requirement should conceptually contain:
+
+Provider type
+Regulatory framework
+CMS condition/category
+CFR reference
+Requirement
+Plain-language interpretation
+Responsible department
+Related policies
+Required documentation/evidence
+Surveyor focus
+Staff interview considerations
+Related gap-assessment questions
+Corrective-action recommendations
+The exact data should be structured so that the same requirement can feed the Policy Builder, Survey Readiness module, Gap Scanner, and Reports.
+
+Do not create isolated duplicate compliance information inside each feature.
+
+
+
+7. CMS REQUIREMENT → POLICY → EVIDENCE RELATIONSHIP
+
+The application should treat compliance as an interconnected system.
+
+A requirement should connect to:
+
+CMS Requirement
+↓
+Applicable Policy
+↓
+Required Evidence
+↓
+Compliance Assessment
+↓
+Survey Readiness
+↓
+Corrective Action
+
+Users should be able to navigate between these related objects.
+
+For example, when viewing a CMS requirement, the user should be able to see:
+
+Related policies
+Related evidence
+Gap status
+Survey readiness status
+Corrective actions
+
+
+8. POLICY BUILDER
+
+Rename/reframe the existing policy-template functionality as:
+
+Policy Builder
+
+The user should be able to select:
+
+Provider Type
+CMS Requirement
+Compliance Topic
+Department/Owner
+Then generate or create a policy framework.
+
+A policy should support:
+
+Policy title
+Policy number
+Effective date
+Review date
+Purpose
+Scope
+Definitions
+Responsibilities
+Policy statements
+Procedures
+Documentation requirements
+Monitoring requirements
+Quality/QAPI connection where applicable
+Staff competency requirements where applicable
+References
+Approval information
+Provide professional policy formatting.
+
+Include a clear indication that CMS requirements and references should be verified against current official CMS/regulatory sources before formal adoption.
+
+
+
+9. SURVEY READINESS
+
+Replace the existing generic “Inspection” concept with:
+
+Survey Readiness
+
+This should be a major feature of the product.
+
+For each provider type and applicable CMS requirement, provide a readiness workflow.
+
+The user should be able to see:
+
+Requirement
+
+What CMS requires.
+
+Surveyor Focus
+
+What a surveyor may examine.
+
+Evidence Expected
+
+Documents, records, logs, audits, policies, training records, etc.
+
+Staff Interview Preparation
+
+Potential areas staff should understand.
+
+Policy Review
+
+Which policies relate to the requirement.
+
+Readiness Status
+
+Examples:
+
+Ready
+Needs Attention
+Not Ready
+Not Applicable
+Notes
+
+Allow the organization to document internal notes.
+
+Evidence
+
+Allow the user to identify or attach evidence where supported by the existing architecture.
+
+Do NOT present invented surveyor questions as official CMS questions. Clearly distinguish:
+
+Official CMS requirements
+Application-generated preparation guidance
+Suggested internal questions
+
+
+10. GAP SCANNER
+
+Keep the existing Gap Scanner but substantially improve the workflow.
+
+The scanner should evaluate:
+
+Requirement → Policy → Evidence → Compliance Status
+
+Possible statuses:
+
+Compliant
+Partially Compliant
+Non-Compliant
+Not Applicable
+Needs Review
+Each identified gap should be capable of generating a corrective action.
+
+A gap should contain:
+
+Provider
+Requirement
+Gap description
+Risk/priority
+Recommended action
+Responsible owner
+Due date
+Status
+Notes
+Related policy
+Related evidence
+
+
+11. CORRECTIVE ACTIONS
+
+Add a dedicated:
+
+Corrective Actions
+
+module.
+
+This should allow users to manage compliance deficiencies.
+
+Each corrective action should include:
+
+Source requirement
+Source gap
+Deficiency/gap description
+Risk level
+Corrective action
+Responsible person/department
+Date identified
+Due date
+Completion date
+Status
+Verification
+Supporting evidence
+Notes
+Statuses:
+
+Open
+In Progress
+Pending Verification
+Completed
+Overdue
+Allow filtering and sorting.
+
+Provide dashboard counts for:
+
+Open
+Overdue
+In Progress
+Completed
+
+
+12. COMPLIANCE TOPICS
+
+Do not show the same topic list to every provider.
+
+Create provider-specific topic mappings.
+
+Retain existing topics where applicable, including:
+
+Infection Control
+Patient Rights
+QAPI
+Nursing
+Medical Staff
+Medication Management
+Medical Records
+Emergency Preparedness
+Physical Environment
+Discharge Planning
+Surgical Services
+Anesthesia
+Governing Body
+Staff Competency
+Patient Safety
+Restraint & Seclusion
+Laboratory Services
+Then add provider-specific topics.
+
+Examples:
+
+HOSPITALS
+
+Governing Body
+Medical Staff
+Nursing Services
+Patient Rights
+Quality Assessment and Performance Improvement
+Infection Prevention and Control
+Pharmaceutical Services
+Medical Records
+Emergency Services
+Surgical Services
+Anesthesia
+Laboratory
+Radiology
+Discharge Planning
+Utilization Review
+Emergency Preparedness
+Physical Environment
+Restraint/Seclusion
+SNF / NURSING FACILITY
+
+Add topics such as:
+
+Resident Rights
+Resident Assessment
+Comprehensive Care Plan
+Nursing Services
+Physician Services
+Pharmacy Services
+Dietary Services
+Infection Prevention and Control
+Quality Assurance and Performance Improvement
+Behavioral Health
+Activities
+Transfers/Discharges
+Abuse/Neglect Prevention
+Emergency Preparedness
+Physical Environment
+HOME HEALTH
+
+Add topics such as:
+
+Patient Rights
+Comprehensive Assessment
+Plan of Care
+Skilled Services
+Coordination of Care
+Clinical Records
+Infection Control
+Emergency Preparedness
+Quality Assessment and Performance Improvement
+Personnel/Competency
+HOSPICE
+
+Add topics such as:
+
+Patient/Family Rights
+Initial and Comprehensive Assessment
+Plan of Care
+Interdisciplinary Group
+Clinical Records
+Pharmaceutical Services
+Infection Control
+Bereavement
+Volunteer Services
+Quality Assessment and Performance Improvement
+ASC
+
+Add topics such as:
+
+Governing Body
+Surgical Services
+Anesthesia
+Infection Control
+Patient Rights
+Quality Assessment
+Medical Records
+Pharmaceutical Services
+Emergency Preparedness
+Transfer/Emergency Procedures
+Physical Environment
+The system should allow additional topic mappings later.
+
+
+
+13. DASHBOARD
+
+Redesign the dashboard around compliance management.
+
+Display:
+
+Provider Profile
+
+Selected provider type
+Organization name, if available
+Compliance Overview
+
+Show:
+
+Total requirements
+Compliant
+Partially compliant
+Non-compliant
+Needs review
+Survey Readiness
+
+Show:
+
+Ready
+Needs Attention
+Not Ready
+Policy Status
+
+Show:
+
+Policies complete
+Policies needing review
+Missing policies
+Corrective Actions
+
+Show:
+
+Open
+Overdue
+In Progress
+Completed
+Priority Risks
+
+Show the highest-priority compliance gaps.
+
+The dashboard should immediately answer:
+
+“How ready are we for a CMS survey?”
+
+
+
+14. REPORTS
+
+Add a Reports section.
+
+Allow users to generate professional compliance reports such as:
+
+CMS Compliance Summary
+
+Overall compliance status.
+
+Survey Readiness Report
+
+Outstanding survey-readiness issues.
+
+Policy Gap Report
+
+Missing or outdated policies.
+
+Corrective Action Report
+
+Open and overdue corrective actions.
+
+Provider Compliance Report
+
+Comprehensive provider-level report.
+
+Reports should be professional enough to present to:
+
+Compliance leadership
+Quality committees
+Governing bodies
+Executive leadership
+Survey-readiness teams
+If PDF/export functionality already exists, integrate these reports with it.
+
+
+
+15. SEARCH
+
+Add a global search function if the current application does not already have one.
+
+Search should be capable of finding:
+
+CMS requirements
+Provider types
+Policies
+Topics
+Evidence
+Gaps
+Corrective actions
+Search results should indicate what type of object was found.
+
+
+
+16. FILTERING
+
+Provide useful filters throughout the application.
+
+Examples:
+
+Provider
+
+Provider type
+Provider category
+Compliance
+
+Compliant
+Partial
+Non-compliant
+Needs review
+Survey readiness
+
+Ready
+Needs attention
+Not ready
+Corrective actions
+
+Status
+Priority
+Owner
+Due date
+
+
+17. CMS / CFR SOURCING
+
+This is extremely important.
+
+Do not invent CMS regulations, CFR citations, or official CMS requirements.
+
+Where a requirement is represented as an official regulatory requirement, provide:
+
+CMS reference
+CFR reference where applicable
+Source designation
+Last reviewed/verified date where appropriate
+Clearly distinguish between:
+
+Official Requirement
+
+and
+
+Application Guidance
+
+and
+
+Suggested Best Practice
+
+The product should never imply that AI-generated guidance itself is an official CMS requirement.
+
+Provide a way for the underlying CMS requirement library to be updated as regulations change.
+
+
+
+18. “LAST VERIFIED” FUNCTIONALITY
+
+Add the ability for CMS requirements to have:
+
+Last Verified
+
+and, where useful:
+
+Next Review
+
+This is particularly important because CMS requirements can change.
+
+Do not claim a requirement is current unless the underlying source has actually been verified.
+
+
+
+19. COMPLIANCE SCORE
+
+Add an overall compliance/readiness score to the dashboard.
+
+The score should be transparent.
+
+Do not create an arbitrary score that looks official.
+
+Label it something like:
+
+Application Compliance Readiness Score
+
+and provide a short explanation of how the score is calculated.
+
+For example, it may incorporate:
+
+Requirement status
+Critical gaps
+Missing policies
+Survey-readiness items
+Open corrective actions
+Do not call it a “CMS score” unless CMS actually defines such a score.
+
+
+
+20. VISUAL / UX DIRECTION
+
+Keep the professional healthcare/compliance aesthetic of the current application.
+
+The redesigned application should feel:
+
+Professional
+Trustworthy
+Enterprise-ready
+Clean
+Easy to navigate
+Data-driven
+Not overly flashy
+Use visual hierarchy to distinguish:
+
+Requirements
+Policies
+Gaps
+Survey readiness
+Corrective actions
+Use consistent status indicators.
+
+Avoid clutter.
+
+The provider-type selector should be much easier to navigate than a large undifferentiated grid.
+
+
+
+21. PROVIDER SELECTION EXPERIENCE
+
+The first step should be:
+
+Select Your Provider Type
+
+Then:
+
+Provider Category → Provider Type → Compliance Workspace
+
+Once selected, the entire application should adapt to that provider.
+
+For example, selecting:
+
+Ambulatory Surgery Center
+
+should change the relevant:
+
+Requirements
+Topics
+Policies
+Survey-readiness items
+Gap assessments
+Reports
+Do not make the user repeatedly select the provider type unnecessarily.
+
+Persist the selection within the user’s workspace/session using the application’s existing persistence architecture.
+
+
+
+22. MULTI-PROVIDER SUPPORT
+
+Design the architecture so a consultant or health system can eventually manage multiple organizations/providers.
+
+The application should not hard-code a single provider into the entire application.
+
+Structure the data model so it can support:
+
+Organization → Facility → Provider Type → Requirements → Policies → Gaps → Corrective Actions
+
+This is particularly important for future expansion into healthcare consulting.
+
+Do not necessarily build a complex multi-tenant system unless the existing application already supports it, but make the architecture extensible.
+
+
+
+23. CONSULTANT USE CASE
+
+Design the application so it can eventually serve:
+
+Healthcare compliance consultants
+Survey-readiness consultants
+Quality consultants
+Hospital compliance departments
+SNF consultants
+Hospice consultants
+Home health consultants
+A consultant should be able to work with multiple provider organizations in the future.
+
+This should influence the information architecture, even if full multi-client management is not implemented in this version.
+
+
+
+24. HOME PAGE / MARKETING MESSAGE
+
+Update the primary messaging to communicate:
+
+CMS Compliance Suite
+
+CoP & CfC Compliance + Survey Readiness
+
+Supporting healthcare organizations with:
+
+CMS Requirements
+Policy Development
+Compliance Gap Assessment
+Survey Readiness
+Corrective Action Tracking
+Compliance Reporting
+Avoid claiming:
+
+CMS endorsement
+CMS certification
+Official CMS status
+Guaranteed survey outcomes
+unless such claims are actually substantiated.
+
+
+
+25. HELP / DISCLAIMER
+
+Add an appropriate compliance disclaimer.
+
+The product should make clear that it provides compliance guidance and workflow support and does not replace:
+
+Official CMS regulations
+Applicable federal/state laws
+CMS manuals
+State requirements
+Accreditation requirements
+Legal counsel
+Professional compliance advice
+Keep the disclaimer professional and unobtrusive.
+
+
+
+26. DATA QUALITY
+
+Do not populate the new provider categories with fabricated regulations.
+
+If detailed CMS requirements are not yet available for a provider type, create the provider profile and clearly mark its content as:
+
+Content Pending Verification
+
+rather than inventing regulatory information.
+
+The architecture should allow verified content to be added later.
+
+
+
+27. DO NOT BREAK EXISTING FEATURES
+
+Before making changes:
+
+Inspect the current application.
+Identify existing functionality.
+Preserve working components where possible.
+Refactor rather than duplicate.
+Maintain existing responsive behavior.
+Maintain existing state management where practical.
+Maintain existing styling conventions where practical.
+Preserve existing data.
+After changes, test:
+
+Navigation
+Provider selection
+Policy functionality
+Gap Scanner
+Survey Readiness
+Reports
+Responsive/mobile layout
+Existing interactions
+
+
+28. FINAL ACCEPTANCE CRITERIA
+
+The finished application should feel like a genuine evolution from:
+
+CMS CoP Compliance Suite
+
+to:
+
+CMS Compliance Suite
+
+CoP & CfC Compliance + Survey Readiness
+
+It should no longer feel like a collection of policy templates.
+
+It should feel like an integrated compliance workspace.
+
+The core relationship should be:
+
+CMS Requirement
+→ Policy
+→ Evidence
+→ Compliance Assessment
+→ Survey Readiness
+→ Gap
+→ Corrective Action
+→ Report
+
+The provider selector should cover the expanded CMS-oriented provider universe described above.
+
+The application should be architected so additional CMS provider types, requirements, regulations, policies, and survey-readiness content can be added without redesigning the application.
+
+
+
+29. IMPORTANT IMPLEMENTATION ORDER
+
+Implement in this order:
+
+Phase 1 — Foundation
+
+Inspect existing architecture
+Rename application
+Update branding
+Update navigation
+Refactor provider-type architecture
+Phase 2 — Provider Coverage
+
+Add missing provider types
+Organize provider categories
+Build provider-specific topic mappings
+Phase 3 — CMS Requirement Library
+
+Create centralized requirement architecture
+Connect requirements to providers/topics
+Add source/reference fields
+Add verification dates
+Phase 4 — Core Compliance Workflow
+
+Upgrade Policy Builder
+Upgrade Gap Scanner
+Build Survey Readiness
+Build Corrective Actions
+Phase 5 — Management
+
+Upgrade Dashboard
+Add Reports
+Add search/filtering
+Add compliance/readiness scoring
+Phase 6 — QA
+
+Test every provider selection
+Test navigation
+Test all workflows
+Test responsive layouts
+Check for broken links/routes
+Check for old product name references
+Check for unsupported or fabricated CMS claims
+Check all existing functionality for regressions
+
+
+30. BEFORE YOU FINISH
+
+Perform a complete application audit.
+
+Search the entire codebase for:
+
+CMS CoP Compliance Suite
+
+and remove/replace every obsolete reference.
+
+Search for hard-coded provider lists and make sure the new provider architecture is being used consistently.
+
+Verify that the application is not presenting generic requirements as applicable to every provider.
+
+Verify that the application clearly differentiates:
+
+CoP
+CfC
+Application Guidance
+Official CMS Requirement
+
+Verify that all new screens work on desktop and mobile.
+
+Do not finish with a partially implemented UI.
+
+Every new navigation item should either be functional or clearly marked as unavailable/coming soon rather than appearing to work when it does not.
+
+The final product should be coherent, professional, extensible, and ready for continued CMS compliance content expansion.

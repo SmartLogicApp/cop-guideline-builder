@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { accountUsers, tokenUsage } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "./accounts";
+import { getEcfrSource, isProviderContentAvailable } from "@workspace/cms-compliance-data";
 
 const router: IRouter = Router();
 
@@ -27,17 +28,6 @@ function calcCost(model: string, inputTokens: number, outputTokens: number) {
 }
 
 // ─── eCFR institution → CFR part mapping ────────────────────────────────────
-
-const CFR_PARTS: Record<string, { title: number; part: number; label: string }> = {
-  hospital: { title: 42, part: 482, label: "42 CFR 482 – Conditions of Participation: Hospitals" },
-  cah:      { title: 42, part: 485, label: "42 CFR 485 – Conditions of Participation: CAH" },
-  snf:      { title: 42, part: 483, label: "42 CFR 483 – Conditions of Participation: SNF" },
-  hha:      { title: 42, part: 484, label: "42 CFR 484 – Conditions of Participation: HHA" },
-  hospice:  { title: 42, part: 418, label: "42 CFR 418 – Conditions of Participation: Hospice" },
-  asc:      { title: 42, part: 416, label: "42 CFR 416 – Conditions for Coverage: ASC" },
-  esrd:     { title: 42, part: 494, label: "42 CFR 494 – Conditions for Coverage: ESRD" },
-  rhc:      { title: 42, part: 491, label: "42 CFR 491 – Conditions of Participation: RHC/FQHC" },
-};
 
 // ─── eCFR XML text extraction ────────────────────────────────────────────────
 
@@ -130,7 +120,7 @@ interface EcfrResult {
 }
 
 async function fetchEcfrText(institutionValue: string): Promise<EcfrResult> {
-  const mapping = CFR_PARTS[institutionValue];
+  const mapping = getEcfrSource(institutionValue);
   if (!mapping) return { text: "", fetchDate: "", source: "ai" };
 
   const today = new Date();
@@ -223,6 +213,13 @@ router.post("/generate", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
+  if (parsed.data.institutionValue && !isProviderContentAvailable(parsed.data.institutionValue)) {
+    res.status(409).json({
+      error: "Official CMS content for this provider type is pending verification. Generation is unavailable until verified sources are added.",
+    });
+    return;
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     req.log.error("ANTHROPIC_API_KEY is not configured");
@@ -254,7 +251,7 @@ router.post("/generate", requireAuth, async (req, res): Promise<void> => {
           dataSource = { kind: "ecfr", fetchDate: ecfr.fetchDate };
           systemPrompt =
             `AUTHORITATIVE CMS REGULATORY TEXT (live from eCFR.gov, retrieved ${ecfr.fetchDate}):\n` +
-            `The following is the actual current text of ${CFR_PARTS[parsed.data.institutionValue]?.label ?? "the applicable CFR part"}.\n` +
+            `The following is the actual current text of ${getEcfrSource(parsed.data.institutionValue)?.label ?? "the applicable CFR part"}.\n` +
             `Use this as ground truth for all CMS citations. Do not contradict it.\n\n` +
             `---BEGIN eCFR TEXT---\n${ecfr.text}\n---END eCFR TEXT---\n\n` +
             systemPrompt;

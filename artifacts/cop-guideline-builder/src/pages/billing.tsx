@@ -168,7 +168,7 @@ export default function BillingPage() {
       <div style={S.header}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <img src="/logo.svg" alt="" width={28} height={28} />
-          <span style={{ fontWeight: 800, fontSize: "15px" }}>CMS CoP Compliance Suite</span>
+          <span style={{ fontWeight: 800, fontSize: "15px" }}>CMS Compliance Suite</span>
         </div>
         <a href="/" style={{ color: "#fff", fontSize: "13px", opacity: 0.75, textDecoration: "none" }}>
           ← Back to app

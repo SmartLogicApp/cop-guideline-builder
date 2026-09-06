@@ -109,7 +109,7 @@ export function Meridian() {
               <rect x="16" y="25" width="12" height="2" rx="1" fill="rgba(255,255,255,0.5)"/>
               <path d="M20 35L22.5 37.5L28 32" stroke="#06B6D4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            <span style={{ color: "#fff", fontWeight: 700, fontSize: "14px" }}>CMS CoP Suite</span>
+            <span style={{ color: "#fff", fontWeight: 700, fontSize: "14px" }}>CMS Compliance Suite</span>
           </div>
           <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
             {["Guidelines", "Policies", "Gap Scanner", "Inspection"].map((item) => (

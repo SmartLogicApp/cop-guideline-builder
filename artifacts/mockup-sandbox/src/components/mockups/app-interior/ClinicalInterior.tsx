@@ -82,7 +82,7 @@ export function ClinicalInterior() {
             <path d="M16 18l1.5 1.5L20 16" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           <div>
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: "13px", letterSpacing: "-0.3px" }}>CMS CoP Suite</div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: "13px", letterSpacing: "-0.3px" }}>CMS Compliance Suite</div>
             <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "9px", letterSpacing: "1.5px", textTransform: "uppercase" }}>v2.1.0</div>
           </div>
         </div>

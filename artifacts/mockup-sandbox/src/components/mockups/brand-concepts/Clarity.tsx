@@ -60,7 +60,7 @@ export function Clarity() {
             <path d="M25 13L26.5 17H31L27.5 19.5L29 23.5L25 21L21 23.5L22.5 19.5L19 17H23.5L25 13Z" fill="#C9963A"/>
           </svg>
           <div>
-            <div style={{ fontSize: "18px", fontWeight: 700, color: "#F5C842", fontFamily: "'Georgia', serif", letterSpacing: "0.3px" }}>CMS CoP Compliance Suite</div>
+            <div style={{ fontSize: "18px", fontWeight: 700, color: "#F5C842", fontFamily: "'Georgia', serif", letterSpacing: "0.3px" }}>CMS Compliance Suite</div>
             <div style={{ fontFamily: "'Inter', Arial, sans-serif", fontSize: "11px", color: "rgba(255,255,255,0.45)", marginTop: "2px", letterSpacing: "2px", textTransform: "uppercase" }}>The Standard in Healthcare Compliance</div>
           </div>
         </div>
