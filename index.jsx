@@ -1123,8 +1123,28 @@ const LEGACY_GAP_HISTORY_KEY = "cop_gap_analysis_history";
 const GAP_SESSION_KEY = "cms_ephemeral_policy_session";
 const GAP_SESSION_OWNER_KEY = "cms_ephemeral_policy_session_owner";
 const ACTIVE_WORKSPACE_TAB_KEY = "cms_active_workspace_tab";
+const ACTION_COMPLETION_KEY_PREFIX = "cms_action_completion:";
 const GAP_SESSION_TTL_MS = 30 * 60 * 1000;
 const GAP_HISTORY_MAX = 10;
+
+function loadActionCompletion(entryId) {
+  if (!entryId) return {};
+  try {
+    const saved = JSON.parse(localStorage.getItem(`${ACTION_COMPLETION_KEY_PREFIX}${entryId}`) || "{}");
+    return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveActionCompletion(entryId, completion) {
+  if (!entryId) return;
+  try {
+    localStorage.setItem(`${ACTION_COMPLETION_KEY_PREFIX}${entryId}`, JSON.stringify(completion));
+  } catch {
+    // Storage may be unavailable in restricted browser contexts.
+  }
+}
 
 function loadGapSession() {
   try {
@@ -2551,7 +2571,8 @@ function GapScannerTab({ institution }) {
   const [actionPlanError, setActionPlanError] = useState(null);
   const [history, setHistory] = useState(() => loadGapHistory());
   const [showHistory, setShowHistory] = useState(false);
-  const [loadedEntryId, setLoadedEntryId] = useState(null); // which history entry is currently shown
+  const [loadedEntryId, setLoadedEntryId] = useState(() => hasRestoredSession ? (initialSession.loadedEntryId ?? null) : null); // which history entry is currently shown
+  const [actionCompletion, setActionCompletion] = useState(() => loadActionCompletion(hasRestoredSession ? initialSession.loadedEntryId : null));
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState([]); // up to 2 selected ids
   const [comparison, setComparison] = useState(null); // { entryA, entryB } when comparison is open
@@ -2568,7 +2589,7 @@ function GapScannerTab({ institution }) {
     setCustomTopic("");
     setPolicyText("");
     setFileName(null);
-    setResult(null); setResultMeta(null); setActionPlan(null); setLoadedEntryId(null);
+    setResult(null); setResultMeta(null); setActionPlan(null); setLoadedEntryId(null); setActionCompletion({});
   }, [institution]);
 
   useEffect(() => {
@@ -2582,8 +2603,9 @@ function GapScannerTab({ institution }) {
       resultMeta,
       actionPlan,
       history,
+      loadedEntryId,
     });
-  }, [institution, unit, topic, customTopic, policyText, result, resultMeta, actionPlan, history]);
+  }, [institution, unit, topic, customTopic, policyText, result, resultMeta, actionPlan, history, loadedEntryId]);
 
   useEffect(() => {
     const expiryTimer = window.setTimeout(() => {
@@ -2670,6 +2692,7 @@ Rules:
       const raw = await callApi(systemPrompt, userContent, 3000);
       const parsed = repairJson(raw);
       setActionPlan(parsed.actions || parsed);
+      setActionCompletion(loadActionCompletion(loadedEntryId));
     } catch (e) {
       setActionPlanError(e.message);
     } finally {
@@ -2755,7 +2778,6 @@ Rules:
       setResult(parsed);
       const meta = { institution, topic: topicFinal };
       setResultMeta(meta);
-      setLoadedEntryId(null);
       const entry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         institution,
@@ -2765,6 +2787,8 @@ Rules:
         timestamp: new Date().toISOString(),
         result: parsed,
       };
+      setLoadedEntryId(entry.id);
+      setActionCompletion(loadActionCompletion(entry.id));
       const updated = saveGapEntry(entry);
       setHistory(updated);
     } catch (e) {
@@ -2779,6 +2803,7 @@ Rules:
     setResult(entry.result);
     setResultMeta({ institution: entry.institution, topic: entry.topic });
     setLoadedEntryId(entry.id);
+    setActionCompletion(loadActionCompletion(entry.id));
     setShowHistory(false);
     setActionPlan(null);
     setActionPlanError(null);
@@ -2810,6 +2835,7 @@ Rules:
     setHistory([]);
     setShowHistory(false);
     setLoadedEntryId(null);
+    setActionCompletion({});
     setError(null);
   }
 
@@ -2817,6 +2843,18 @@ Rules:
   const weakCount   = result?.weak?.length    || 0;
   const missingCount = result?.missing?.length || 0;
   const score       = result?.score           ?? null;
+  const completedActionCount = actionPlan
+    ? actionPlan.reduce((count, _action, idx) => count + (actionCompletion[idx] ? 1 : 0), 0)
+    : 0;
+
+  function toggleActionComplete(index) {
+    if (!loadedEntryId) return;
+    setActionCompletion((current) => {
+      const next = { ...current, [index]: !current[index] };
+      saveActionCompletion(loadedEntryId, next);
+      return next;
+    });
+  }
 
   const scoreColor = score === null ? "#64748B" : score >= 75 ? "#065F46" : score >= 50 ? "#92400E" : "#991B1B";
   const scoreBg    = score === null ? "#F1F5F9"  : score >= 75 ? "#D1FAE5"  : score >= 50 ? "#FEF3C7"  : "#FEE2E2";
@@ -3248,12 +3286,30 @@ Rules:
                 </div>
               </div>
 
+              {/* Progress */}
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "6px", fontSize: "12px", fontWeight: 700, color: "#475569" }}>
+                  <span>Remediation progress</span>
+                  <span>{completedActionCount} of {actionPlan.length} actions completed</span>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-label="Remediation progress"
+                  aria-valuemin={0}
+                  aria-valuemax={actionPlan.length}
+                  aria-valuenow={completedActionCount}
+                  style={{ height: "9px", overflow: "hidden", borderRadius: "999px", background: "#EDE9FE" }}
+                >
+                  <div style={{ width: `${actionPlan.length ? (completedActionCount / actionPlan.length) * 100 : 0}%`, height: "100%", borderRadius: "999px", background: "#7C3AED", transition: "width 180ms ease" }} />
+                </div>
+              </div>
+
               {/* Table */}
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
                   <thead>
                     <tr style={{ background: "#F8F4FF" }}>
-                      {["Priority", "Requirement", "Responsible Role", "Deadline", "Action Steps"].map((h) => (
+                      {["Status", "Priority", "Requirement", "Responsible Role", "Deadline", "Action Steps"].map((h) => (
                         <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: "11px", fontWeight: 700, color: "#7C3AED", textTransform: "uppercase", letterSpacing: "0.4px", borderBottom: "2px solid #DDD6FE", whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
@@ -3261,8 +3317,19 @@ Rules:
                   <tbody>
                     {actionPlan.map((action, idx) => {
                       const priColor = action.priority === "High" ? { color: "#991B1B", bg: "#FEE2E2" } : action.priority === "Medium" ? { color: "#92400E", bg: "#FEF3C7" } : { color: "#065F46", bg: "#D1FAE5" };
+                      const isComplete = Boolean(actionCompletion[idx]);
                       return (
-                        <tr key={idx} style={{ borderBottom: "1px solid #EDE9FE", background: idx % 2 === 0 ? "#FAFAFA" : "#fff" }}>
+                        <tr key={idx} style={{ borderBottom: "1px solid #EDE9FE", background: isComplete ? "#F0FDF4" : idx % 2 === 0 ? "#FAFAFA" : "#fff", opacity: isComplete ? 0.78 : 1 }}>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top" }}>
+                            <button
+                              type="button"
+                              onClick={() => toggleActionComplete(idx)}
+                              aria-pressed={isComplete}
+                              style={{ padding: "5px 9px", borderRadius: "6px", border: `1px solid ${isComplete ? "#16A34A" : "#CBD5E1"}`, background: isComplete ? "#DCFCE7" : "#fff", color: isComplete ? "#166534" : "#475569", fontSize: "11px", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              {isComplete ? "✓ Complete" : "Mark Complete"}
+                            </button>
+                          </td>
                           <td style={{ padding: "10px 12px", verticalAlign: "top" }}>
                             <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: "10px", fontWeight: 700, fontSize: "11.5px", background: priColor.bg, color: priColor.color, whiteSpace: "nowrap" }}>
                               {action.priority}
