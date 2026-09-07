@@ -2,9 +2,10 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { accounts, accountUsers, adminUsers } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 
 const router: IRouter = Router();
+const CURRENT_TERMS_VERSION = "2026-08-13";
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 
@@ -157,6 +158,86 @@ router.get("/me", requireAuth, async (req, res) => {
       account.trialEndsAt > now);
 
   return res.json({ account, accountUser: au, isActive, isAdminUser, isSuperAdmin });
+});
+
+// POST /api/accounts/terms-acceptance
+// Records the first acceptance only. The authenticated server receipt time is
+// authoritative so a client cannot backdate or overwrite the legal record.
+router.post("/terms-acceptance", requireAuth, async (req, res) => {
+  const userId = (req as any).clerkUserId as string;
+  const { termsVersion, acceptedAt } = req.body as {
+    termsVersion?: string;
+    acceptedAt?: string;
+  };
+
+  if (termsVersion !== CURRENT_TERMS_VERSION) {
+    return res.status(400).json({
+      error: `termsVersion must be ${CURRENT_TERMS_VERSION}`,
+    });
+  }
+
+  if (acceptedAt != null && Number.isNaN(Date.parse(acceptedAt))) {
+    return res.status(400).json({ error: "acceptedAt must be a valid ISO timestamp" });
+  }
+
+  const [accountUser] = await db
+    .select()
+    .from(accountUsers)
+    .where(eq(accountUsers.clerkUserId, userId))
+    .limit(1);
+  if (!accountUser?.accountId) {
+    return res.status(409).json({
+      error: "Complete facility registration before recording terms acceptance",
+    });
+  }
+
+  const [existing] = await db
+    .select({
+      id: accounts.id,
+      termsAcceptedAt: accounts.termsAcceptedAt,
+      termsVersion: accounts.termsVersion,
+    })
+    .from(accounts)
+    .where(eq(accounts.id, accountUser.accountId))
+    .limit(1);
+  if (!existing) return res.status(404).json({ error: "Facility account not found" });
+
+  if (existing.termsAcceptedAt) {
+    return res.json({
+      termsAcceptedAt: existing.termsAcceptedAt,
+      termsVersion: existing.termsVersion,
+      recorded: false,
+    });
+  }
+
+  const [updated] = await db
+    .update(accounts)
+    .set({
+      termsAcceptedAt: new Date(),
+      termsVersion: CURRENT_TERMS_VERSION,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(accounts.id, accountUser.accountId),
+      isNull(accounts.termsAcceptedAt),
+    ))
+    .returning({
+      termsAcceptedAt: accounts.termsAcceptedAt,
+      termsVersion: accounts.termsVersion,
+    });
+
+  if (updated) return res.status(201).json({ ...updated, recorded: true });
+
+  // A concurrent first request won the update; return its immutable record.
+  const [record] = await db
+    .select({
+      termsAcceptedAt: accounts.termsAcceptedAt,
+      termsVersion: accounts.termsVersion,
+    })
+    .from(accounts)
+    .where(eq(accounts.id, accountUser.accountId))
+    .limit(1);
+  return res.json({ ...record, recorded: false });
 });
 
 // POST /api/accounts/register — register a CCN account and link the current user

@@ -170,6 +170,8 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
         state:               a.state,
         subscriptionStatus:  a.subscriptionStatus,
         trialEndsAt:         a.trialEndsAt,
+        termsAcceptedAt:     a.termsAcceptedAt,
+        termsVersion:        a.termsVersion,
         createdAt:           a.createdAt,
         userCount:           userCountByAccount.get(a.id) ?? 0,
         thisMonth: {

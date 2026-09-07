@@ -39,6 +39,8 @@ router.get("/subscription", requireAuth, async (req, res) => {
       status:          account.subscriptionStatus,
       stripeId:        account.stripeSubscriptionId,
       trialEndsAt:     account.trialEndsAt,
+      termsAcceptedAt: account.termsAcceptedAt,
+      termsVersion:    account.termsVersion,
       isActive:        account.subscriptionStatus === "active" || trialActive,
       daysLeftInTrial: trialActive
         ? Math.ceil((account.trialEndsAt!.getTime() - now.getTime()) / 86_400_000)
