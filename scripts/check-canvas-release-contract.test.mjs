@@ -376,6 +376,21 @@ test("rejects file fixtures that do not equal their discovery path", () => {
   );
 });
 
+test("reports a canonical fixture replacement before its file-path conflict", () => {
+  const locations = [
+    {
+      type: "file",
+      path: "Jenkinsfile.release",
+      fixturePath: "./ci/Jenkinsfile.release",
+    },
+  ];
+
+  assert.deepEqual(failures({ workflowLocations: locations }), [
+    'supported workflow location entry 1 field "fixturePath" uses non-canonical workflow path "./ci/Jenkinsfile.release"; use "ci/Jenkinsfile.release" instead',
+    'supported workflow location entry 1 has conflicting fields: file fixturePath "./ci/Jenkinsfile.release" must equal path "Jenkinsfile.release"',
+  ]);
+});
+
 test("rejects directory fixtures that are not nested under their discovery path", () => {
   const mismatchedLocations = [
     {
