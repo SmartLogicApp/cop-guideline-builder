@@ -84,7 +84,7 @@ function normalizedWorkflowPath(value) {
     posix
       .normalize(value.replaceAll("\\", "/"))
       .replace(/\/+$/, "")
-      .normalize("NFC") || "/"
+      || "/"
   );
 }
 
@@ -108,6 +108,13 @@ export function workflowLocationShapeFailures(
       if (typeof location[field] !== "string" || location[field].trim() === "") {
         failures.push(
           `${entry} field "${field}" must be a non-empty string; received ${JSON.stringify(location[field])}`,
+        );
+        continue;
+      }
+
+      if (/[^\x00-\x7f]/u.test(location[field])) {
+        failures.push(
+          `${entry} field "${field}" must contain ASCII characters only; received ${JSON.stringify(location[field])}`,
         );
         continue;
       }
@@ -329,6 +336,19 @@ function assertNoCaseCollidingWorkflowEntries(
   }
 }
 
+function assertAsciiWorkflowEntries(entries, directory, rootDirectory) {
+  for (const entry of entries) {
+    if (/[^\x00-\x7f]/u.test(entry.name)) {
+      const path = normalizedWorkflowPath(
+        relative(rootDirectory, resolve(directory, entry.name)),
+      );
+      throw new Error(
+        `workflow path ${JSON.stringify(path)} must contain ASCII characters only; non-ASCII workflow names are unsupported so discovery is identical across filesystems`,
+      );
+    }
+  }
+}
+
 // Supported runtimes/filesystems must expose a stable, non-zero inode together
 // with its device ID through Node's bigint Stats API. This is the portable
 // identity Node provides for hard links on supported Unix and Windows filesystems.
@@ -382,25 +402,10 @@ async function filesBelow(
     if (error.code === "ENOENT") return [];
     throw error;
   }
-  entries.sort((first, second) => {
-    const firstName = first.name.normalize("NFC");
-    const secondName = second.name.normalize("NFC");
-    if (firstName !== secondName) {
-      return firstName < secondName ? -1 : 1;
-    }
-    return first.name < second.name ? -1 : first.name > second.name ? 1 : 0;
-  });
-  const entriesByNormalizedName = new Map();
-  for (const entry of entries) {
-    const normalizedName = entry.name.normalize("NFC");
-    const existingName = entriesByNormalizedName.get(normalizedName);
-    if (existingName !== undefined && existingName !== entry.name) {
-      throw new Error(
-        `supported workflow location "${relative(rootDirectory, directory)}" contains canonically equivalent names ${JSON.stringify(existingName)} and ${JSON.stringify(entry.name)}; workflow paths use Unicode NFC and must be unique after normalization`,
-      );
-    }
-    entriesByNormalizedName.set(normalizedName, entry.name);
-  }
+  assertAsciiWorkflowEntries(entries, directory, rootDirectory);
+  entries.sort((first, second) =>
+    first.name < second.name ? -1 : first.name > second.name ? 1 : 0,
+  );
   assertNoCaseCollidingWorkflowEntries(entries, directory, rootDirectory);
 
   const nestedAncestors = new Set(ancestorDirectories).add(resolvedDirectory);

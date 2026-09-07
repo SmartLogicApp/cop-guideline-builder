@@ -338,45 +338,22 @@ test("rejects a unique embedded-dot fixture path and shows its canonical replace
   );
 });
 
-test("rejects decomposed Unicode workflow declarations and shows the NFC replacement", () => {
-  const decomposedPath = ".github/workflows/cafe\u0301";
-  const composedPath = ".github/workflows/caf\u00e9";
-  const locations = [
-    {
-      type: "directory",
-      path: decomposedPath,
-      fixturePath: `${decomposedPath}/canvas.yml`,
-    },
-  ];
+test("rejects composed, decomposed, and case-varied non-ASCII workflow declarations identically", () => {
+  const variants = ["caf\u00e9", "cafe\u0301", "CAF\u00c9"];
 
-  assert.deepEqual(failures({ workflowLocations: locations }), [
-    `supported workflow location entry 1 field "path" uses non-canonical workflow path ${JSON.stringify(decomposedPath)}; use ${JSON.stringify(composedPath)} instead`,
-    `supported workflow location entry 1 field "fixturePath" uses non-canonical workflow path ${JSON.stringify(`${decomposedPath}/canvas.yml`)}; use ${JSON.stringify(`${composedPath}/canvas.yml`)} instead`,
-  ]);
-});
-
-test("treats composed and decomposed workflow declarations as duplicates", () => {
-  const decomposedPath = ".github/workflows/cafe\u0301";
-  const composedPath = ".github/workflows/caf\u00e9";
-  const locations = [
-    {
-      type: "directory",
-      path: composedPath,
-      fixturePath: `${composedPath}/canvas.yml`,
-    },
-    {
-      type: "directory",
-      path: decomposedPath,
-      fixturePath: `${decomposedPath}/other.yml`,
-    },
-  ];
-
-  assert.match(
-    failures({ workflowLocations: locations }).join("\n"),
-    new RegExp(
-      `duplicate supported workflow path entries ${JSON.stringify(composedPath)} and ${JSON.stringify(decomposedPath)} normalize to ${JSON.stringify(composedPath)}`,
-    ),
-  );
+  for (const name of variants) {
+    const path = `.github/workflows/${name}`;
+    const fixturePath = `${path}/canvas.yml`;
+    assert.deepEqual(
+      failures({
+        workflowLocations: [{ type: "directory", path, fixturePath }],
+      }),
+      [
+        `supported workflow location entry 1 field "path" must contain ASCII characters only; received ${JSON.stringify(path)}`,
+        `supported workflow location entry 1 field "fixturePath" must contain ASCII characters only; received ${JSON.stringify(fixturePath)}`,
+      ],
+    );
+  }
 });
 
 test("rejects duplicate representative fixture paths and identifies the conflict", () => {
@@ -662,40 +639,32 @@ test("discovers and accepts safe Buildkite JSON-array producers", async (t) => {
   assert.deepEqual(failures({ workflowConfigs }), []);
 });
 
-test("rejects canonically equivalent workflow filenames when the host preserves both forms", async (t) => {
+test("rejects composed, decomposed, and case-varied non-ASCII discovered workflow paths identically", async (t) => {
   const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
   t.after(() => rm(rootDirectory, { recursive: true, force: true }));
   const workflowDirectory = join(rootDirectory, ".github", "workflows");
   await mkdir(workflowDirectory, { recursive: true });
 
-  const composedName = "caf\u00e9.yml";
-  const decomposedName = "cafe\u0301.yml";
-  await writeFile(
-    join(workflowDirectory, composedName),
-    'CANVAS_RELEASE_CHANGED_PATHS=["README.md"]',
-  );
-  await writeFile(
-    join(workflowDirectory, decomposedName),
-    "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
-  );
-
-  const storedNames = await readdir(workflowDirectory);
-  if (!(storedNames.includes(composedName) && storedNames.includes(decomposedName))) {
-    t.skip(
-      "host filesystem does not preserve composed and decomposed Unicode filenames as distinct directory entries; canonical-collision fixture is unsupported",
+  await writeFile(join(workflowDirectory, "canvas.yml"), "safe");
+  const [entry] = await readdir(workflowDirectory, { withFileTypes: true });
+  for (const name of ["caf\u00e9.yml", "cafe\u0301.yml", "CAF\u00c9.yml"]) {
+    await assert.rejects(
+      readCheckedInWorkflowConfigs(rootDirectory, {
+        readDirectory: async (directory, options) => {
+          const entries = await readdir(directory, options);
+          if (directory !== workflowDirectory) return entries;
+          return [{ ...entry, name }];
+        },
+      }),
+      (error) => {
+        assert.equal(
+          error.message,
+          `workflow path ${JSON.stringify(`.github/workflows/${name}`)} must contain ASCII characters only; non-ASCII workflow names are unsupported so discovery is identical across filesystems`,
+        );
+        return true;
+      },
     );
-    return;
   }
-
-  await assert.rejects(
-    readCheckedInWorkflowConfigs(rootDirectory),
-    (error) => {
-      assert.match(error.message, /canonically equivalent names/);
-      assert.match(error.message, /workflow paths use Unicode NFC/);
-      assert.match(error.message, /must be unique after normalization/);
-      return true;
-    },
-  );
 });
 
 test("rejects case-only workflow filename collisions before reading either file", async (t) => {

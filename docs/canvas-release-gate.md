@@ -75,12 +75,11 @@ non-ASCII protected path declarations all fail with the same ASCII-only rule.
 Hard-link identity and deterministic ordering remain required on both hosted
 platforms.
 
-Workflow paths use Unicode Normalization Form C (NFC) for declarations,
-duplicate detection, diagnostics, and directory ordering. A decomposed path in
-the supported-location table is rejected with its composed replacement. If a
-filesystem preserves two distinct directory entries whose names normalize to
-the same NFC spelling, discovery fails explicitly rather than choosing one by
-host-dependent enumeration order.
+Supported workflow location declarations and every discovered workflow path
+segment must contain ASCII characters only. The scanner rejects composed,
+decomposed, and case-varied non-ASCII names before sorting, case comparison, or
+file traversal. This avoids assigning repository semantics to JavaScript
+Unicode case conversion or to filesystem-specific Unicode normalization.
 
 Workflow paths within a supported workflow directory also must not differ only
 by letter case. The scanner rejects such file or directory siblings before
@@ -89,14 +88,10 @@ paths. Supported workflow location and representative fixture declarations
 follow the same rule. This is intentionally an actionable rejection rather than
 host-dependent deduplication: a repository containing `canvas.yml` and
 `Canvas.yml` cannot be checked out consistently on the default macOS and Windows
-filesystems. Portable fixtures inject the same case-colliding directory entries
-in every operating system lane so Linux, macOS, and Windows assert the same
-rejection.
-
-The composed/decomposed filename fixture runs when the host filesystem
-preserves both spellings as distinct entries. Filesystems such as common macOS
-volumes may normalize them into one entry; that unsupported capability is
-reported as an explicit skipped fixture instead of silently reducing coverage.
+filesystems. Portable fixtures inject the same case-colliding and non-ASCII
+directory entries in every operating system lane so Linux, macOS, and Windows
+assert the same rejection without depending on how the host stores Unicode
+filenames.
 
 The macOS lane requires every hard-link, symlink, and mixed-alias identity
 fixture to run. A filesystem error fails the suite so a scanner regression
