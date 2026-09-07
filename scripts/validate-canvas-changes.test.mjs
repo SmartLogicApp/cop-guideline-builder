@@ -188,6 +188,59 @@ test("renaming an unprotected file to a protected path still requires the gate",
   }
 });
 
+test("Git paths with whitespace, quotes, and newlines are parsed exactly", () => {
+  const repository = mkdtempSync(join(tmpdir(), "canvas-release-unusual-"));
+  const unusualPaths = [
+    "docs/ spaced name .md",
+    'docs/"quoted".md',
+    "docs/neighbor\npackage.json",
+  ];
+
+  try {
+    initializeRepository(repository);
+
+    for (const path of unusualPaths) {
+      mkdirSync(dirname(join(repository, path)), { recursive: true });
+      writeFileSync(join(repository, path), "unrelated\n");
+    }
+
+    commitAll(repository, "add unusual paths");
+
+    assert.deepEqual(changedPathsFromGit(repository), unusualPaths);
+    assert.equal(
+      requiresCanvasRelease(changedPathsFromGit(repository)),
+      false,
+      "a newline inside an unrelated path must not create a protected path",
+    );
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("unusual neighboring paths cannot hide a protected Canvas change", () => {
+  const repository = mkdtempSync(join(tmpdir(), "canvas-release-protected-"));
+  const changedFiles = [
+    "artifacts/mockup-sandbox/src/file with spaces.tsx",
+    'docs/"neighbor\nfile".md',
+  ];
+
+  try {
+    initializeRepository(repository);
+
+    for (const path of changedFiles) {
+      mkdirSync(dirname(join(repository, path)), { recursive: true });
+      writeFileSync(join(repository, path), "changed\n");
+    }
+
+    commitAll(repository, "add protected and unusual paths");
+
+    assert.deepEqual(changedPathsFromGit(repository), changedFiles);
+    assert.equal(requiresCanvasRelease(changedPathsFromGit(repository)), true);
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+  }
+});
+
 test("merge commits include changes relative to every parent", () => {
   const repository = mkdtempSync(join(tmpdir(), "canvas-release-merge-"));
 

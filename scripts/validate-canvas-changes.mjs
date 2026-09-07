@@ -25,11 +25,15 @@ export function requiresCanvasRelease(changedPaths) {
   );
 }
 
-function parseChangedPaths(value) {
+function parseEnvironmentChangedPaths(value) {
   return value
     .split(/\r?\n/)
     .map((path) => path.trim())
     .filter(Boolean);
+}
+
+function parseNullDelimitedPaths(value) {
+  return value.split("\0").filter((path) => path.length > 0);
 }
 
 export function changedPathsFromGit(cwd = process.cwd()) {
@@ -51,10 +55,18 @@ export function changedPathsFromGit(cwd = process.cwd()) {
   }
 
   if (parents.length === 0) {
-    return parseChangedPaths(
+    return parseNullDelimitedPaths(
       execFileSync(
         "git",
-        ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", head],
+        [
+          "diff-tree",
+          "--root",
+          "--no-commit-id",
+          "--name-only",
+          "-z",
+          "-r",
+          head,
+        ],
         {
           cwd,
           encoding: "utf8",
@@ -66,10 +78,10 @@ export function changedPathsFromGit(cwd = process.cwd()) {
 
   const changedPaths = new Set();
   for (const parent of parents) {
-    const parentChanges = parseChangedPaths(
+    const parentChanges = parseNullDelimitedPaths(
       execFileSync(
         "git",
-        ["diff", "--no-renames", "--name-only", parent, head],
+        ["diff", "--no-renames", "--name-only", "-z", parent, head],
         {
           cwd,
           encoding: "utf8",
@@ -87,7 +99,9 @@ export function changedPathsFromGit(cwd = process.cwd()) {
 
 export function getChangedPaths() {
   if (process.env.CANVAS_RELEASE_CHANGED_PATHS !== undefined) {
-    return parseChangedPaths(process.env.CANVAS_RELEASE_CHANGED_PATHS);
+    return parseEnvironmentChangedPaths(
+      process.env.CANVAS_RELEASE_CHANGED_PATHS,
+    );
   }
 
   return changedPathsFromGit();
