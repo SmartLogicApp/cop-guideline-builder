@@ -1,9 +1,0 @@
-<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="200" height="200" rx="40" fill="#0D5C6B"/>
-  <!-- Shield outline -->
-  <path d="M100 24 L158 50 L158 108 C158 142 132 168 100 180 C68 168 42 142 42 108 L42 50 Z"
-        fill="none" stroke="white" stroke-width="7" stroke-linejoin="round"/>
-  <!-- Medical cross inside shield -->
-  <rect x="86" y="68" width="28" height="64" rx="5" fill="white"/>
-  <rect x="68" y="86" width="64" height="28" rx="5" fill="white"/>
-</svg>
