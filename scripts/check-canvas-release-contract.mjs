@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, posix, relative, resolve, sep, win32 } from "node:path";
 import { protectedCanvasPaths } from "./validate-canvas-changes.mjs";
 
 const expectedCommand =
@@ -47,6 +47,23 @@ export const supportedWorkflowLocations = [
   },
 ];
 
+function workflowPathFailure(value) {
+  if (
+    posix.isAbsolute(value) ||
+    win32.isAbsolute(value) ||
+    win32.parse(value).root !== ""
+  ) {
+    return "must be relative to the repository";
+  }
+
+  const normalized = posix.normalize(value.replaceAll("\\", "/"));
+  if (normalized === ".." || normalized.startsWith("../")) {
+    return "must not escape the repository with parent traversal";
+  }
+
+  return null;
+}
+
 export function workflowLocationShapeFailures(
   locations = supportedWorkflowLocations,
 ) {
@@ -67,6 +84,14 @@ export function workflowLocationShapeFailures(
       if (typeof location[field] !== "string" || location[field].trim() === "") {
         failures.push(
           `${entry} field "${field}" must be a non-empty string; received ${JSON.stringify(location[field])}`,
+        );
+        continue;
+      }
+
+      const pathFailure = workflowPathFailure(location[field]);
+      if (pathFailure) {
+        failures.push(
+          `${entry} field "${field}" ${pathFailure}; received ${JSON.stringify(location[field])}`,
         );
       }
     }

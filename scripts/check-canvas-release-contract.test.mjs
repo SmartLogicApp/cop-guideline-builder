@@ -218,6 +218,71 @@ test("rejects missing and empty workflow location paths with clear entry and fie
   );
 });
 
+test("rejects absolute workflow paths and identifies the malformed entry and field", () => {
+  const locations = [
+    { type: "file", path: "/etc/workflow.yml", fixturePath: "/etc/workflow.yml" },
+    {
+      type: "directory",
+      path: ".github/workflows",
+      fixturePath: "C:\\workflows\\canvas.yml",
+    },
+  ];
+
+  const result = failures({ workflowLocations: locations }).join("\n");
+
+  assert.match(
+    result,
+    /supported workflow location entry 1 field "path" must be relative to the repository; received "\/etc\/workflow\.yml"/,
+  );
+  assert.match(
+    result,
+    /supported workflow location entry 1 field "fixturePath" must be relative to the repository; received "\/etc\/workflow\.yml"/,
+  );
+  assert.match(
+    result,
+    /supported workflow location entry 2 field "fixturePath" must be relative to the repository; received "C:\\\\workflows\\\\canvas\.yml"/,
+  );
+});
+
+test("rejects parent traversal that escapes the repository and identifies the field", () => {
+  const locations = [
+    {
+      type: "directory",
+      path: "ci/../../outside",
+      fixturePath: "ci/workflow.yml",
+    },
+    {
+      type: "directory",
+      path: ".github/workflows",
+      fixturePath: ".github\\workflows\\..\\..\\..\\outside.yml",
+    },
+    {
+      type: "directory",
+      path: "C:..\\..\\outside",
+      fixturePath: "C:../../outside/workflow.yml",
+    },
+  ];
+
+  const result = failures({ workflowLocations: locations }).join("\n");
+
+  assert.match(
+    result,
+    /supported workflow location entry 1 field "path" must not escape the repository with parent traversal; received "ci\/\.\.\/\.\.\/outside"/,
+  );
+  assert.match(
+    result,
+    /supported workflow location entry 2 field "fixturePath" must not escape the repository with parent traversal; received "\.github\\\\workflows\\\\\.\.\\\\\.\.\\\\\.\.\\\\outside\.yml"/,
+  );
+  assert.match(
+    result,
+    /supported workflow location entry 3 field "path" must be relative to the repository; received "C:\.\.\\\\\.\.\\\\outside"/,
+  );
+  assert.match(
+    result,
+    /supported workflow location entry 3 field "fixturePath" must be relative to the repository; received "C:\.\.\/\.\.\/outside\/workflow\.yml"/,
+  );
+});
+
 test("accepts workflow producers that assign JSON arrays of paths", () => {
   const workflowConfigs = [
     {
