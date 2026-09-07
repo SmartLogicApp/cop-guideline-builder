@@ -11,6 +11,7 @@ import {
   getProvidersByCategory,
   isProviderContentAvailable,
 } from "@workspace/cms-compliance-data";
+import { getTrialAccessView, TRIAL_ACCESS_VIEW } from "./trial-access.js";
 
 // Clerk user IDs that get the admin button — covers dev and production environments.
 const ADMIN_CLERK_IDS = [
@@ -4353,13 +4354,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
     return () => { cancelled = true; };
   }, [basePath, clerkUserId]);
 
-  const trialHasEnded = subscription !== undefined && (
-    subscription === null ||
-    subscription.isActive === false ||
-    (subscription.status === "trial" && subscription.daysLeftInTrial === 0)
-  );
-
-  if (trialHasEnded) {
+  if (getTrialAccessView(subscription) === TRIAL_ACCESS_VIEW.END_STATE) {
     return <TrialEndedScreen billingUrl={`${basePath}/billing`} onSignOut={onSignOut} />;
   }
 
