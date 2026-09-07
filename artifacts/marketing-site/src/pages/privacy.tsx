@@ -10,7 +10,7 @@ const sections = [
   ['7. Cookies and tracking', 'Clerk authentication uses technical session cookies. We do not intentionally use advertising cookies, tracking pixels, or third-party advertising analytics. Replit may use technical cookies necessary to host and operate the Service.'],
   ['8. Data security', 'We use reasonable safeguards appropriate for the information the Service is designed to process. No system is perfectly secure, and the Service is not designed or authorized for PHI or ePHI.'],
   ['9. Children', 'The Service is intended for business and healthcare-compliance professionals and is not directed to children under 13.'],
-  ['10. Privacy requests', 'To request access, correction, or deletion of eligible account information, contact CMSComplianceGuardianHelp@Outlook.com. Some records may be retained where required by law or reasonably needed for security, disputes, or future billing compliance. We do not sell personal information.'],
+  ['10. Privacy requests', 'To request access, correction, or deletion of eligible account information, contact CMSComplianceGaurdian@outlook.com. Some records may be retained where required by law or reasonably needed for security, disputes, or future billing compliance. We do not sell personal information.'],
   ['11. Changes', 'We may update this policy and will identify the current publication date. Material changes may be communicated through the Service or the email associated with your account.'],
 ];
 
@@ -42,7 +42,7 @@ export default function PrivacyPage() {
           <a href="/terms" className="hover:text-slate-950">Terms of Service</a>
           <a href="/privacy" className="font-semibold text-teal-800">Privacy Policy</a>
           <a href="/terms#billing" className="hover:text-slate-950">Billing &amp; Cancellation</a>
-          <a href="mailto:CMSComplianceGuardianHelp@Outlook.com" className="hover:text-slate-950">Support</a>
+          <a href="mailto:CMSComplianceGaurdian@outlook.com" className="hover:text-slate-950">Support</a>
         </nav>
       </footer>
     </div>

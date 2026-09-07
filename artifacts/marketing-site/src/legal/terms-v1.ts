@@ -14,6 +14,8 @@ function buildTerms(): string {
     .slice(start, end)
     .replace('[EFFECTIVE DATE]', publicationDate)
     .replace('[PUBLICATION DATE]', publicationDate)
+    .replaceAll('CMSComplianceGuardian@Outlook.com', 'CMSComplianceGaurdian@outlook.com')
+    .replaceAll('CMSComplianceGuardianHelp@Outlook.com', 'CMSComplianceGaurdian@outlook.com')
     .replace(
       'By clicking "I Agree," creating an account, completing a purchase, or accessing or using the Service, you accept these Terms and our Privacy Policy.',
       'By creating an account or accessing or using the Service, you accept these Terms and acknowledge our Privacy Policy. Affirmative clickwrap acceptance will be required when paid checkout becomes available.',

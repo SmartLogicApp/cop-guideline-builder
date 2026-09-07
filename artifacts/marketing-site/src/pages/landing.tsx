@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 
 const SIGN_UP_URL = "https://cop-guideline-builder--SmartAppLogic.replit.app/sign-up";
 const SIGN_IN_URL = "https://cop-guideline-builder--SmartAppLogic.replit.app/sign-in";
-const CONTACT_URL = "mailto:HectorSamlut@outlook.com?subject=Enterprise%20Inquiry";
+const CONTACT_URL = "mailto:CMSComplianceGaurdian@outlook.com?subject=Enterprise%20Inquiry";
 
 const fadeIn = {
   initial: { opacity: 0, y: 20 },
@@ -262,7 +262,7 @@ export default function LandingPage() {
                 <a href="/terms" className="hover:text-slate-900">Terms of Service</a>
                 <a href="/terms#privacy" className="hover:text-slate-900">Privacy Policy</a>
                 <a href="/terms#billing" className="hover:text-slate-900">Billing &amp; Cancellation</a>
-                <a href="mailto:CMSComplianceGuardianHelp@Outlook.com" className="hover:text-slate-900">Support</a>
+                <a href="mailto:CMSComplianceGaurdian@outlook.com" className="hover:text-slate-900">Support</a>
               </nav>
             </div>
           </div>

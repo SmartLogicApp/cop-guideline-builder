@@ -2,7 +2,7 @@ import { Link } from 'wouter';
 import { termsV1 } from '@/legal/terms-v1';
 import type { ReactNode } from 'react';
 
-const supportEmail = 'CMSComplianceGuardianHelp@Outlook.com';
+const supportEmail = 'CMSComplianceGaurdian@outlook.com';
 
 function renderInline(text: string): ReactNode[] {
   return text.split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) =>

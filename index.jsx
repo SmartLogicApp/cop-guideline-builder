@@ -3495,7 +3495,7 @@ As used in these Terms:
 
 3.5 No Waiver by Inaction. CMS Compliance Suite's failure to enforce this Section 3 in any instance does not waive its right to enforce it in any other instance.
 
-For multi-facility or enterprise pricing inquiries, contact: HectorSamlut@outlook.com
+For multi-facility or enterprise pricing inquiries, contact: CMSComplianceGaurdian@outlook.com
 
 4. SUBSCRIPTION AND PAYMENT TERMS
 
@@ -3541,11 +3541,11 @@ The Service, including its design, prompts, and logic, is proprietary. Generated
 
 12. TERMINATION
 
-12.1 By You. You may cancel your Subscription at any time through your account settings or by contacting HectorSamlut@outlook.com. Cancellation takes effect at the end of the current billing period; no refunds are issued for any unused portion of the period.
+12.1 By You. You may cancel your Subscription at any time through your account settings or by contacting CMSComplianceGaurdian@outlook.com. Cancellation takes effect at the end of the current billing period; no refunds are issued for any unused portion of the period.
 
 12.2 By Us. CMS Compliance Suite may suspend or terminate your account immediately, without prior notice or refund, if you breach these Terms (including Section 3), provide false information at registration, or engage in conduct that CMS Compliance Suite reasonably determines to be harmful to other users, the Service, or third parties.
 
-12.3 Effect of Termination. Upon termination, your right to access the Service ceases immediately. Data stored in your browser's local storage (e.g., gap analysis history) remains accessible locally but cannot be recovered from our servers after account deletion. To request permanent deletion of your account data, contact HectorSamlut@outlook.com.
+12.3 Effect of Termination. Upon termination, your right to access the Service ceases immediately. Data stored in your browser's local storage (e.g., gap analysis history) remains accessible locally but cannot be recovered from our servers after account deletion. To request permanent deletion of your account data, contact CMSComplianceGaurdian@outlook.com.
 
 13. DISCLAIMER OF WARRANTIES
 THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. CMS COP COMPLIANCE SUITE DOES NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR SECURE.
@@ -3569,7 +3569,7 @@ Your use of the Service is also governed by our Privacy Policy, incorporated her
 We reserve the right to modify these Terms at any time. We will provide notice of material changes by updating the "Last Updated" date at the top of this document. Continued use of the Service after the effective date of any change constitutes acceptance of the revised Terms.
 
 20. CONTACT
-Questions about these Terms may be directed to: HectorSamlut@outlook.com`;
+Questions about these Terms may be directed to: CMSComplianceGaurdian@outlook.com`;
 
 const PRIVACY = `PRIVACY POLICY
 Last updated: September 6, 2026
@@ -3599,7 +3599,7 @@ Uploaded policy files are parsed in your browser. The extracted policy text, org
 The Service does not place uploaded policies, extracted policy text, organization-specific analysis, generated policy documents, or proprietary recommendations into its permanent application database or permanent file/object storage. Results must be downloaded before the temporary session ends. Older gap-analysis data created by prior releases in permanent browser local storage is removed when the updated scanner opens.
 
 5. FEEDBACK EMAILS
-If you use the "Share Feedback" button, your email client will open a pre-addressed message to HectorSamlut@outlook.com. We receive only what you choose to write. We do not use third-party email tracking.
+If you use the "Share Feedback" button, your email client will open a pre-addressed message to CMSComplianceGaurdian@outlook.com. We receive only what you choose to write. We do not use third-party email tracking.
 
 6. AI PROCESSING
 Text you submit for analysis (policy documents, compliance topics, provider type, and department/unit) is sent to Anthropic's API only to perform the analysis or generation you request. CMS Compliance Suite does not use that content to train its own models. Anthropic's handling of API data is governed by Anthropic's applicable API terms and privacy documentation. Do not submit PHI or content you are not authorized to process.
@@ -3619,13 +3619,13 @@ Account data is transmitted over HTTPS. Login events are logged for license comp
 The Service is intended for healthcare compliance professionals and is not directed at children under 13. We do not knowingly collect information from children.
 
 11. CALIFORNIA PRIVACY RIGHTS (CCPA)
-If you are a California resident, you have the following rights under the California Consumer Privacy Act (CCPA): (a) the right to know what personal information we collect, use, and disclose about you; (b) the right to request deletion of your personal information, subject to certain exceptions; and (c) the right to opt out of the sale of your personal information — we do not sell personal information. To exercise these rights, contact us at HectorSamlut@outlook.com with the subject line "CCPA Privacy Request." We will respond within 45 days. Note that certain information may be retained as required by law or to complete transactions you have requested (e.g., billing records during or after an active Subscription period). We will not discriminate against you for exercising any of your CCPA rights.
+If you are a California resident, you have the following rights under the California Consumer Privacy Act (CCPA): (a) the right to know what personal information we collect, use, and disclose about you; (b) the right to request deletion of your personal information, subject to certain exceptions; and (c) the right to opt out of the sale of your personal information — we do not sell personal information. To exercise these rights, contact us at CMSComplianceGaurdian@outlook.com with the subject line "CCPA Privacy Request." We will respond within 45 days. Note that certain information may be retained as required by law or to complete transactions you have requested (e.g., billing records during or after an active Subscription period). We will not discriminate against you for exercising any of your CCPA rights.
 
 12. CHANGES TO THIS POLICY
 We may update this Privacy Policy from time to time. The "last updated" date at the top will reflect any changes. Continued use of the Service after changes constitutes acceptance of the updated Policy.
 
 13. CONTACT
-For privacy questions or concerns, contact: HectorSamlut@outlook.com`;
+For privacy questions or concerns, contact: CMSComplianceGaurdian@outlook.com`;
 
 // ─── Legal Modal ──────────────────────────────────────────────────────────────
 
@@ -3664,7 +3664,7 @@ function Footer({ onTerms, onPrivacy }) {
       <div style={{ display: "flex", gap: "16px" }}>
         <button onClick={onTerms} style={{ background: "none", border: "none", fontSize: "12px", color: "#64748B", cursor: "pointer", textDecoration: "underline", padding: 0 }}>Terms of Service</button>
         <button onClick={onPrivacy} style={{ background: "none", border: "none", fontSize: "12px", color: "#64748B", cursor: "pointer", textDecoration: "underline", padding: 0 }}>Privacy Policy</button>
-        <a href="mailto:HectorSamlut@outlook.com" style={{ fontSize: "12px", color: "#64748B", textDecoration: "underline" }}>Contact</a>
+        <a href="mailto:CMSComplianceGaurdian@outlook.com" style={{ fontSize: "12px", color: "#64748B", textDecoration: "underline" }}>Contact</a>
       </div>
     </div>
   );
@@ -3813,7 +3813,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
                 style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "8px 14px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
                 💳 Billing
               </a>
-              <a href="mailto:HectorSamlut@outlook.com?subject=CMS Compliance Suite Feedback&body=Provider type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
+              <a href="mailto:CMSComplianceGaurdian@outlook.com?subject=CMS Compliance Suite Feedback&body=Provider type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
                 style={{ display: "inline-block", padding: "8px 14px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
                 ✉ Share Feedback
               </a>
