@@ -252,6 +252,76 @@ test("provider path filters and shell find scanners require a portability audit"
   }
 });
 
+test("provider path filters inherited through YAML anchors require a portability audit", () => {
+  const fixtures = [
+    {
+      path: ".github/workflows/canvas.yml",
+      text:
+        "path-filter: &path.filter\n  paths:\n    - artifacts/**\non:\n  push:\n    <<: *path.filter",
+    },
+    {
+      path: ".gitlab-ci.yml",
+      text:
+        ".path-rule: &path-rule\n  changes:\n    - artifacts/**/*\nrelease:\n  rules:\n    - *path-rule",
+    },
+    {
+      path: ".gitlab-ci.yml",
+      text:
+        ".path-rules:\n  - &path/rule\n    changes:\n      - artifacts/**/*\nrelease:\n  rules:\n    - *path/rule",
+    },
+    {
+      path: ".gitlab-ci.yml",
+      text:
+        ".path-rule: &path-rule { changes: [artifacts/**/*] }\nrelease:\n  rules:\n    - *path-rule",
+    },
+    {
+      path: "bitbucket-pipelines.yml",
+      text:
+        "path-condition: &path.condition/filter\n  changesets:\n    includePaths:\n      - artifacts/**\npipelines:\n  default:\n    - step:\n        condition: *path.condition/filter",
+    },
+    {
+      path: ".circleci/config.yml",
+      text:
+        "filter-job: &filter-job\n  path-filtering/filter:\n    mapping: |\n      artifacts/.* build true\nworkflows:\n  setup:\n    jobs:\n      - *filter-job",
+    },
+    {
+      path: ".buildkite/pipeline.yml",
+      text:
+        "path-plugin: &path-plugin\n  monorepo-diff#v1.5.0:\n    watch:\n      - path: artifacts/**\nsteps:\n  - plugins:\n      - *path-plugin",
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const result = releasePathScannerAuditFailures([fixture], []).join("\n");
+    assert.match(
+      result,
+      /is unaudited; add it to releasePathScannerRegistry with "ascii-only" semantics or document and register its intentional Unicode semantics/,
+      `${fixture.path} did not resolve its anchored path filter`,
+    );
+  }
+});
+
+test("anchored provider path filters pass only with declared path semantics", () => {
+  const entryPoint = {
+    path: ".github/workflows/canvas.yml",
+    text:
+      "path-filter: &path-filter\n  paths-ignore:\n    - docs/**\non:\n  pull_request: *path-filter",
+  };
+
+  assert.deepEqual(
+    releasePathScannerAuditFailures([entryPoint], [
+      { path: entryPoint.path, semantics: "documented-unicode" },
+    ]),
+    [],
+  );
+  assert.match(
+    releasePathScannerAuditFailures([entryPoint], [
+      { path: entryPoint.path },
+    ]).join("\n"),
+    /must declare "ascii-only" or "documented-unicode" semantics/,
+  );
+});
+
 test("new scanner forms pass only with declared ASCII or documented Unicode semantics", () => {
   const entryPoints = [
     {
@@ -327,6 +397,31 @@ test("ordinary provider workflow configuration is not mistaken for path filterin
     {
       path: ".buildkite/pipeline.yml",
       text: "# monorepo-diff#v1.5.0:\nsteps:\n  - command: ordinary",
+    },
+    {
+      path: ".github/workflows/canvas.yml",
+      text:
+        "shared-env: &shared-env\n  paths: ordinary-value\njobs:\n  build:\n    env: *shared-env",
+    },
+    {
+      path: ".gitlab-ci.yml",
+      text:
+        ".shared: &shared\n  changes: ordinary-value\nvariables:\n  <<: *shared",
+    },
+    {
+      path: "bitbucket-pipelines.yml",
+      text:
+        "shared: &shared\n  includePaths: ordinary-value\ndefinitions:\n  caches: *shared",
+    },
+    {
+      path: ".circleci/config.yml",
+      text:
+        "shared: &shared\n  mapping: ordinary-value\njobs:\n  build: *shared",
+    },
+    {
+      path: ".buildkite/pipeline.yml",
+      text:
+        "shared: &shared\n  paths: ordinary-value\nsteps:\n  - env: *shared",
     },
     { path: "scripts/report.sh", text: "printf 'find ./artifacts'" },
     {

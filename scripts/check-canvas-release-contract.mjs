@@ -195,6 +195,100 @@ function flowYamlKeyContexts(source, initialAncestors = []) {
   return contexts;
 }
 
+function resolveYamlBlockAliases(text) {
+  const lines = text.split(/\r?\n/u);
+  const anchors = new Map();
+
+  for (const [index, line] of lines.entries()) {
+    const mappingAnchor = line.match(
+      /^(\s*)(?:-\s*)?(?:"[^"]+"|'[^']+'|[A-Za-z0-9_./#@-]+)\s*:\s*&([^\s[\]{},]+)(?:\s+(.+?))?\s*$/u,
+    );
+    const sequenceAnchor = line.match(
+      /^(\s*)-\s*&([^\s[\]{},]+)(?:\s+(.+?))?\s*$/u,
+    );
+    const anchor = mappingAnchor ?? sequenceAnchor;
+    if (!anchor) continue;
+
+    const rootIndent = anchor[1].length;
+    const inline = anchor[3]?.replace(/\s+#.*$/u, "").trim() || null;
+    const children = [];
+    if (!inline) {
+      for (const descendant of lines.slice(index + 1)) {
+        if (/^\s*(?:#|$)/u.test(descendant)) {
+          children.push(descendant);
+          continue;
+        }
+        const indent = descendant.match(/^\s*/u)[0].length;
+        if (indent <= rootIndent) break;
+        children.push(descendant);
+      }
+    }
+    anchors.set(anchor[2], { rootIndent, children, inline });
+  }
+
+  function reindent(children, rootIndent, targetIndent) {
+    return children.map((line) => {
+      if (/^\s*(?:#|$)/u.test(line)) return line;
+      return `${" ".repeat(targetIndent)}${line.slice(rootIndent + 2)}`;
+    });
+  }
+
+  const resolved = [];
+  for (const line of lines) {
+    const mappingAlias = line.match(
+      /^(\s*)((?:"[^"]+"|'[^']+'|[A-Za-z0-9_./#@-]+)\s*:)\s*\*([^\s[\]{},]+)\s*(?:#.*)?$/u,
+    );
+    const mergeAlias = line.match(
+      /^(\s*)<<\s*:\s*\*([^\s[\]{},]+)\s*(?:#.*)?$/u,
+    );
+    const sequenceAlias = line.match(
+      /^(\s*)-\s*\*([^\s[\]{},]+)\s*(?:#.*)?$/u,
+    );
+
+    if (mappingAlias && anchors.has(mappingAlias[3])) {
+      const { rootIndent, children, inline } = anchors.get(mappingAlias[3]);
+      if (inline) {
+        resolved.push(`${mappingAlias[1]}${mappingAlias[2]} ${inline}`);
+      } else {
+        resolved.push(`${mappingAlias[1]}${mappingAlias[2]}`);
+        resolved.push(
+          ...reindent(children, rootIndent, mappingAlias[1].length + 2),
+        );
+      }
+    } else if (mergeAlias && anchors.has(mergeAlias[2])) {
+      const { rootIndent, children, inline } = anchors.get(mergeAlias[2]);
+      resolved.push(
+        ...(inline
+          ? [`${mergeAlias[1]}${inline}`]
+          : reindent(children, rootIndent, mergeAlias[1].length)),
+      );
+    } else if (sequenceAlias && anchors.has(sequenceAlias[2])) {
+      const { rootIndent, children, inline } = anchors.get(sequenceAlias[2]);
+      if (inline) {
+        resolved.push(`${sequenceAlias[1]}- ${inline}`);
+        continue;
+      }
+      const expanded = reindent(
+        children,
+        rootIndent,
+        sequenceAlias[1].length + 2,
+      );
+      const firstContent = expanded.findIndex(
+        (expandedLine) => !/^\s*(?:#|$)/u.test(expandedLine),
+      );
+      if (firstContent >= 0) {
+        expanded[firstContent] =
+          `${sequenceAlias[1]}- ${expanded[firstContent].trimStart()}`;
+      }
+      resolved.push(...expanded);
+    } else {
+      resolved.push(line);
+    }
+  }
+
+  return resolved.join("\n");
+}
+
 function yamlKeyContexts(text) {
   const contexts = [];
   const ancestors = [];
@@ -252,7 +346,8 @@ function yamlKeyContexts(text) {
 }
 
 function hasWorkflowPathFilter(path, text) {
-  const keys = yamlKeyContexts(text);
+  const resolvedText = resolveYamlBlockAliases(text);
+  const keys = yamlKeyContexts(resolvedText);
   if (path.startsWith(".github/workflows/")) {
     const events = new Set([
       "push",
@@ -306,7 +401,7 @@ function hasWorkflowPathFilter(path, text) {
   if (
     path.startsWith(".circleci/") &&
     (keys.some(({ key }) => key === "path-filtering/filter") ||
-      /circleci\/path-filtering@/u.test(text))
+      /circleci\/path-filtering@/u.test(resolvedText))
   ) {
     return true;
   }
