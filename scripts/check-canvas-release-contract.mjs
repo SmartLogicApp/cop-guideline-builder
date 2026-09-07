@@ -278,6 +278,24 @@ function externalWorkflowLocationError(rootDirectory, path) {
   );
 }
 
+// Supported runtimes/filesystems must expose a stable, non-zero inode together
+// with its device ID through Node's bigint Stats API. This is the portable
+// identity Node provides for hard links on supported Unix and Windows filesystems.
+// Failing explicitly is safer than silently emitting duplicate diagnostics.
+export function workflowFileIdentity(file, path = "workflow file") {
+  if (
+    typeof file?.dev !== "bigint" ||
+    typeof file?.ino !== "bigint" ||
+    file.dev < 0n ||
+    file.ino <= 0n
+  ) {
+    throw new Error(
+      `cannot determine stable file identity for "${path}": this runtime/filesystem must provide non-negative bigint stat.dev and positive bigint stat.ino values`,
+    );
+  }
+  return `${file.dev}:${file.ino}`;
+}
+
 async function filesBelow(
   directory,
   rootDirectory,
@@ -400,7 +418,10 @@ export async function readCheckedInWorkflowConfigs(
       if (seenResolvedPaths.has(resolvedPath)) continue;
       seenResolvedPaths.add(resolvedPath);
       const file = await stat(resolvedPath, { bigint: true });
-      const fileIdentity = `${file.dev}:${file.ino}`;
+      const fileIdentity = workflowFileIdentity(
+        file,
+        relative(rootDirectory, path),
+      );
       if (seenFileIdentities.has(fileIdentity)) continue;
       seenFileIdentities.add(fileIdentity);
       configs.push({

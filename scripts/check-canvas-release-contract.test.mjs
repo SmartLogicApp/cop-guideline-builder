@@ -17,6 +17,7 @@ import {
   checkCanvasReleaseContract,
   readCheckedInWorkflowConfigs,
   supportedWorkflowLocations,
+  workflowFileIdentity,
 } from "./check-canvas-release-contract.mjs";
 import {
   parseEnvironmentChangedPaths,
@@ -621,6 +622,52 @@ test("scans hard-linked workflows across supported locations once and keeps the 
   assert.match(result, /\.gitlab-ci\.yml:1/);
   assert.doesNotMatch(result, /\.github\/workflows\/canvas\.yml/);
   assert.doesNotMatch(result, /\.circleci\/config\.yml/);
+});
+
+test("requires the runtime to expose stable bigint device and inode identities", () => {
+  assert.equal(
+    workflowFileIdentity({ dev: 12n, ino: 34n }, ".gitlab-ci.yml"),
+    "12:34",
+  );
+
+  for (const file of [
+    { dev: 12, ino: 34 },
+    { dev: 12n, ino: 34 },
+    { dev: -1n, ino: 34n },
+    { dev: 12n, ino: 0n },
+  ]) {
+    assert.throws(
+      () => workflowFileIdentity(file, ".gitlab-ci.yml"),
+      /cannot determine stable file identity for "\.gitlab-ci\.yml".*non-negative bigint stat\.dev and positive bigint stat\.ino/,
+    );
+  }
+});
+
+test("deduplicates mixed symlink and hard-link aliases in deterministic supported-location order", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  await mkdir(join(rootDirectory, "ci"), { recursive: true });
+  await mkdir(join(rootDirectory, ".github", "workflows"), { recursive: true });
+  const sourcePath = join(rootDirectory, "ci", "canvas.yml");
+  await writeFile(sourcePath, "CANVAS_RELEASE_CHANGED_PATHS: unsafe");
+  await symlink("ci/canvas.yml", join(rootDirectory, ".gitlab-ci.yml"));
+  await link(
+    sourcePath,
+    join(rootDirectory, ".github", "workflows", "canvas.yml"),
+  );
+
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
+
+  assert.deepEqual(workflowConfigs, [
+    {
+      path: ".gitlab-ci.yml",
+      text: "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+    },
+  ]);
+  const result = failures({ workflowConfigs }).join("\n");
+  assert.match(result, /\.gitlab-ci\.yml:1/);
+  assert.doesNotMatch(result, /\.github\/workflows\/canvas\.yml/);
 });
 
 test("scans converging directory aliases once and keeps the first sorted checked-in location for diagnostics", async (t) => {
