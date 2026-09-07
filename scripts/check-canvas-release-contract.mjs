@@ -23,7 +23,7 @@ const rootWorkflowFiles = [
   "bitbucket-pipelines.yml",
   "Jenkinsfile",
 ];
-const workflowDirectories = [".github/workflows", ".circleci"];
+const workflowDirectories = [".github/workflows", ".circleci", ".buildkite"];
 
 function isJsonArrayProducer(line) {
   const assignment = line.match(

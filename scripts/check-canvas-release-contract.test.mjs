@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { checkCanvasReleaseContract } from "./check-canvas-release-contract.mjs";
+import {
+  checkCanvasReleaseContract,
+  readCheckedInWorkflowConfigs,
+} from "./check-canvas-release-contract.mjs";
 import {
   parseEnvironmentChangedPaths,
   protectedCanvasPaths,
@@ -58,6 +63,54 @@ test("accepts workflow producers that assign JSON arrays of paths", () => {
       text: 'CANVAS_RELEASE_CHANGED_PATHS=["README.md","path with spaces"]',
     },
   ];
+  assert.deepEqual(failures({ workflowConfigs }), []);
+});
+
+test("discovers and rejects unsafe Buildkite changed-path producers", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+  await mkdir(join(rootDirectory, ".buildkite"), { recursive: true });
+  await writeFile(
+    join(rootDirectory, ".buildkite", "pipeline.yml"),
+    [
+      "steps:",
+      '  - command: "pnpm run validate:canvas:changed"',
+      "    env:",
+      '      CANVAS_RELEASE_CHANGED_PATHS: "$BUILDKITE_CHANGED_FILES"',
+    ].join("\n"),
+  );
+
+  const workflowConfigs =
+    await readCheckedInWorkflowConfigs(rootDirectory);
+  const result = failures({ workflowConfigs }).join("\n");
+
+  assert.match(result, /\.buildkite\/pipeline\.yml:4/);
+  assert.match(result, /must be a provable JSON array of path strings/);
+});
+
+test("discovers and accepts safe Buildkite JSON-array producers", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+  await mkdir(join(rootDirectory, ".buildkite", "pipelines"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(rootDirectory, ".buildkite", "pipelines", "canvas.yml"),
+    [
+      "steps:",
+      '  - command: "pnpm run validate:canvas:changed"',
+      "    env:",
+      "      CANVAS_RELEASE_CHANGED_PATHS: '[\"README.md\",\"path with spaces\"]'",
+    ].join("\n"),
+  );
+
+  const workflowConfigs =
+    await readCheckedInWorkflowConfigs(rootDirectory);
+
+  assert.deepEqual(
+    workflowConfigs.map(({ path }) => path),
+    [".buildkite/pipelines/canvas.yml"],
+  );
   assert.deepEqual(failures({ workflowConfigs }), []);
 });
 
