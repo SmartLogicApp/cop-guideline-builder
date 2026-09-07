@@ -94,6 +94,50 @@ test("rejects duplicate representative fixture paths and identifies the conflict
   );
 });
 
+test("rejects unsupported workflow location types and identifies the entry and field", () => {
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "glob",
+      path: ".woodpecker",
+      fixturePath: ".woodpecker/canvas.yml",
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    /supported workflow location entry 8 field "type" must be "file" or "directory"; received "glob"/,
+  );
+});
+
+test("rejects missing and empty workflow location paths with clear entry and field names", () => {
+  const malformedLocations = [
+    { type: "file", fixturePath: "missing-path.yml" },
+    { type: "file", path: "empty-fixture.yml", fixturePath: "" },
+    { type: "directory", path: "   ", fixturePath: "blank-path/config.yml" },
+    { type: "directory", path: "missing-fixture", fixturePath: undefined },
+  ];
+
+  const result = failures({ workflowLocations: malformedLocations }).join("\n");
+
+  assert.match(
+    result,
+    /supported workflow location entry 1 field "path" must be a non-empty string; received undefined/,
+  );
+  assert.match(
+    result,
+    /supported workflow location entry 2 field "fixturePath" must be a non-empty string; received ""/,
+  );
+  assert.match(
+    result,
+    /supported workflow location entry 3 field "path" must be a non-empty string; received "   "/,
+  );
+  assert.match(
+    result,
+    /supported workflow location entry 4 field "fixturePath" must be a non-empty string; received undefined/,
+  );
+});
+
 test("accepts workflow producers that assign JSON arrays of paths", () => {
   const workflowConfigs = [
     {

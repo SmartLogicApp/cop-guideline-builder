@@ -47,6 +47,33 @@ export const supportedWorkflowLocations = [
   },
 ];
 
+export function workflowLocationShapeFailures(
+  locations = supportedWorkflowLocations,
+) {
+  const failures = [];
+  for (const [index, location] of locations.entries()) {
+    const entry = `supported workflow location entry ${index + 1}`;
+    if (!location || typeof location !== "object" || Array.isArray(location)) {
+      failures.push(`${entry} must be an object`);
+      continue;
+    }
+
+    if (location.type !== "file" && location.type !== "directory") {
+      failures.push(
+        `${entry} field "type" must be "file" or "directory"; received ${JSON.stringify(location.type)}`,
+      );
+    }
+    for (const field of ["path", "fixturePath"]) {
+      if (typeof location[field] !== "string" || location[field].trim() === "") {
+        failures.push(
+          `${entry} field "${field}" must be a non-empty string; received ${JSON.stringify(location[field])}`,
+        );
+      }
+    }
+  }
+  return failures;
+}
+
 export function duplicateWorkflowLocationFailures(
   locations = supportedWorkflowLocations,
 ) {
@@ -54,7 +81,8 @@ export function duplicateWorkflowLocationFailures(
   for (const key of ["path", "fixturePath"]) {
     const seen = new Set();
     for (const location of locations) {
-      const value = location[key];
+      const value = location?.[key];
+      if (typeof value !== "string" || value.trim() === "") continue;
       if (seen.has(value)) {
         failures.push(
           `duplicate supported workflow ${key} entry "${value}"`,
@@ -177,7 +205,10 @@ export function checkCanvasReleaseContract(
   workflowConfigs = [],
   workflowLocations = supportedWorkflowLocations,
 ) {
-  const failures = duplicateWorkflowLocationFailures(workflowLocations);
+  const failures = [
+    ...workflowLocationShapeFailures(workflowLocations),
+    ...duplicateWorkflowLocationFailures(workflowLocations),
+  ];
   const unsafeProducers = unsafeChangedPathProducers(workflowConfigs);
   if (unsafeProducers.length > 0) {
     failures.push(
@@ -292,6 +323,7 @@ export function checkCanvasReleaseContract(
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const rootDirectory = resolve(new URL("..", import.meta.url).pathname);
+  const workflowLocationFailures = workflowLocationShapeFailures();
   const [
     replitConfig,
     packageJsonText,
@@ -304,7 +336,9 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
       readFile(new URL("../package.json", import.meta.url), "utf8"),
       readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
       readFile(new URL("../docs/canvas-release-gate.md", import.meta.url), "utf8"),
-      readCheckedInWorkflowConfigs(rootDirectory),
+      workflowLocationFailures.length === 0
+        ? readCheckedInWorkflowConfigs(rootDirectory)
+        : Promise.resolve([]),
     ]);
   const failures = checkCanvasReleaseContract(
     replitConfig,
@@ -314,6 +348,9 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
     protectedCanvasPaths,
     workflowConfigs,
   );
+  failures.push(...workflowLocationFailures.filter(
+    (failure) => !failures.includes(failure),
+  ));
 
   if (failures.length > 0) {
     for (const failure of failures) {
