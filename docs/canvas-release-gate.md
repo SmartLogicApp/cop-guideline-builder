@@ -53,14 +53,20 @@ peers share pnpm resolution context with Canvas.
 Other documentation, API, mobile, marketing, slide, and video changes exit
 successfully without installing dependencies or building Canvas.
 
-## Windows portability check
+## Filesystem portability checks
 
 The focused `test:canvas-release-contract` suite also runs on
-`windows-latest` with Node 24. Hard-link identity and deterministic ordering
-remain required there. Symlink cases run when the hosted runner permits
-symbolic-link creation; if Windows denies that capability with a filesystem
+`windows-latest` and `macos-latest` with Node 24. Hard-link identity and
+deterministic ordering remain required on both platforms.
+
+The macOS lane requires every hard-link, symlink, and mixed-alias identity
+fixture to run. A filesystem error fails the suite so a scanner regression
+cannot be hidden as a host-policy exception.
+
+Symlink cases also run on Windows when the hosted runner permits symbolic-link
+creation. If Windows denies that capability with a recognized filesystem
 permission error, only those fixtures are reported as skipped with an explicit
-platform-policy reason.
+platform-policy reason; hard-link and ordering coverage still runs.
 
 The guard can be checked deterministically by setting
 `CANVAS_RELEASE_CHANGED_PATHS` to a JSON array of path strings, such as

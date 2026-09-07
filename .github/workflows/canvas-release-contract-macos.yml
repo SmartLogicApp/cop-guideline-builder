@@ -1,0 +1,23 @@
+name: Canvas release contract (macOS)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  canvas-release-contract:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Test Canvas release contract
+        run: pnpm run test:canvas-release-contract

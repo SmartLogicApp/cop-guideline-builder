@@ -1159,3 +1159,23 @@ test("keeps the focused Canvas release contract suite on a supported Windows CI 
     /^\s+run: pnpm run test:canvas-release-contract$/m,
   );
 });
+
+test("keeps the focused Canvas release contract suite on a supported macOS CI runner", async () => {
+  const macosWorkflow = await readFile(
+    new URL(
+      "../.github/workflows/canvas-release-contract-macos.yml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(macosWorkflow, /^name: Canvas release contract \(macOS\)$/m);
+  assert.match(macosWorkflow, /^\s+runs-on: macos-latest$/m);
+  assert.match(macosWorkflow, /^\s+node-version: 24$/m);
+  assert.match(
+    macosWorkflow,
+    /^\s+run: pnpm run test:canvas-release-contract$/m,
+  );
+  assert.doesNotMatch(macosWorkflow, /^\s+continue-on-error:/m);
+  assert.doesNotMatch(macosWorkflow, /^\s+if:/m);
+});
