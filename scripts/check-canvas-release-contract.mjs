@@ -11,7 +11,11 @@ function workflow(config, name) {
     );
 }
 
-export function checkCanvasReleaseContract(replitConfig, packageJsonText) {
+export function checkCanvasReleaseContract(
+  replitConfig,
+  packageJsonText,
+  changedPathGuardText,
+) {
   const failures = [];
   const canvasWorkflow = workflow(replitConfig, "canvas-release");
 
@@ -25,9 +29,13 @@ export function checkCanvasReleaseContract(replitConfig, packageJsonText) {
         'the "canvas-release" workflow is not registered as a validation',
       );
     }
-    if (!/^args\s*=\s*"pnpm run validate:canvas"\s*$/m.test(canvasWorkflow)) {
+    if (
+      !/^args\s*=\s*"pnpm run validate:canvas:changed"\s*$/m.test(
+        canvasWorkflow,
+      )
+    ) {
       failures.push(
-        'the "canvas-release" validation does not run "pnpm run validate:canvas"',
+        'the "canvas-release" validation does not run "pnpm run validate:canvas:changed"',
       );
     }
   }
@@ -45,7 +53,29 @@ export function checkCanvasReleaseContract(replitConfig, packageJsonText) {
     );
   }
 
-  const command = JSON.parse(packageJsonText).scripts?.["validate:canvas"];
+  const scripts = JSON.parse(packageJsonText).scripts;
+  const guardedCommand = scripts?.["validate:canvas:changed"];
+  if (guardedCommand !== "node scripts/validate-canvas-changes.mjs") {
+    failures.push(
+      'the "validate:canvas:changed" package command does not run the path guard',
+    );
+  }
+
+  if (
+    typeof changedPathGuardText !== "string" ||
+    !/spawnSync\("pnpm", \["run", "validate:canvas"\]/.test(
+      changedPathGuardText,
+    ) ||
+    !/process\.exitCode\s*=\s*result\.status\s*\?\?\s*1/.test(
+      changedPathGuardText,
+    )
+  ) {
+    failures.push(
+      "the Canvas path guard does not run the canonical validation and propagate failures",
+    );
+  }
+
+  const command = scripts?.["validate:canvas"];
   if (typeof command !== "string") {
     failures.push('missing the "validate:canvas" package command');
   } else if (command !== expectedCommand) {
@@ -75,11 +105,17 @@ export function checkCanvasReleaseContract(replitConfig, packageJsonText) {
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  const [replitConfig, packageJsonText] = await Promise.all([
+  const [replitConfig, packageJsonText, changedPathGuardText] =
+    await Promise.all([
     readFile(new URL("../.replit", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
-  ]);
-  const failures = checkCanvasReleaseContract(replitConfig, packageJsonText);
+      readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
+    ]);
+  const failures = checkCanvasReleaseContract(
+    replitConfig,
+    packageJsonText,
+    changedPathGuardText,
+  );
 
   if (failures.length > 0) {
     for (const failure of failures) {

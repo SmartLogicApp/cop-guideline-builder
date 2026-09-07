@@ -46,7 +46,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm run validate:canvas"
+args = "pnpm run validate:canvas:changed"
 
 [workflows.workflow.metadata]
 isValidation = true

@@ -34,6 +34,6 @@
     "tsx": "catalog:",
     "vite": "catalog:",
     "wouter": "catalog:",
-    "yaml": "2.8.3"
+    "yaml": "2.9.0"
   }
 }

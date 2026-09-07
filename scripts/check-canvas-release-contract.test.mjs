@@ -4,17 +4,30 @@ import test from "node:test";
 
 import { checkCanvasReleaseContract } from "./check-canvas-release-contract.mjs";
 
-const [replitConfig, packageJsonText] = await Promise.all([
+const [replitConfig, packageJsonText, changedPathGuardText] = await Promise.all([
   readFile(new URL("../.replit", import.meta.url), "utf8"),
   readFile(new URL("../package.json", import.meta.url), "utf8"),
+  readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
 ]);
 
-function failures({ replit = replitConfig, command } = {}) {
+function failures({
+  replit = replitConfig,
+  command,
+  guardedCommand,
+  guard = changedPathGuardText,
+} = {}) {
   const packageJson = JSON.parse(packageJsonText);
   if (command !== undefined) {
     packageJson.scripts["validate:canvas"] = command;
   }
-  return checkCanvasReleaseContract(replit, JSON.stringify(packageJson));
+  if (guardedCommand !== undefined) {
+    packageJson.scripts["validate:canvas:changed"] = guardedCommand;
+  }
+  return checkCanvasReleaseContract(
+    replit,
+    JSON.stringify(packageJson),
+    guard,
+  );
 }
 
 test("accepts the protected Canvas release configuration", () => {
@@ -56,12 +69,12 @@ test("rejects removing frozen install, typecheck, or production build", () => {
 
 test("rejects altered workflow args and swallowed failures", () => {
   const alteredWorkflow = replitConfig.replace(
-    'args = "pnpm run validate:canvas"',
+    'args = "pnpm run validate:canvas:changed"',
     'args = "pnpm run build"',
   );
   assert.match(
     failures({ replit: alteredWorkflow }).join("\n"),
-    /does not run "pnpm run validate:canvas"/,
+    /does not run "pnpm run validate:canvas:changed"/,
   );
 
   const removedCheckerInvocation = replitConfig.replace(
@@ -80,4 +93,18 @@ test("rejects altered workflow args and swallowed failures", () => {
       /canonical ordered && command/,
     );
   }
+
+  assert.match(
+    failures({ guardedCommand: "node scripts/disabled-guard.mjs" }).join("\n"),
+    /does not run the path guard/,
+  );
+  assert.match(
+    failures({
+      guard: changedPathGuardText.replace(
+        "process.exitCode = result.status ?? 1",
+        "process.exitCode = 0",
+      ),
+    }).join("\n"),
+    /propagate failures/,
+  );
 });
