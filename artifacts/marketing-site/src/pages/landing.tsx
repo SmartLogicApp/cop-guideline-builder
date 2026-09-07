@@ -60,7 +60,7 @@ export default function LandingPage() {
                 Navigate healthcare compliance with absolute confidence.
               </motion.h1>
               <motion.p variants={fadeIn} className="mt-6 text-lg leading-8 text-slate-600 max-w-2xl mx-auto text-balance">
-                AI-powered tools that help compliance leaders across 30 CMS provider types prepare for surveys, strengthen policies, and identify gaps.
+                AI-powered tools for hospitals, SNFs, HHAs, ASCs, IRFs, hospices, and 11 more CMS institution types to prepare for surveys, strengthen policies, and identify gaps.
               </motion.p>
               <motion.div variants={fadeIn} className="mt-10 flex items-center justify-center gap-x-6">
                 <Button size="lg" className="h-12 px-8 text-base shadow-lg" asChild>
@@ -79,7 +79,7 @@ export default function LandingPage() {
         {/* TRUST SIGNALS */}
         <section className="border-y bg-white py-12">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <p className="text-sm font-semibold text-muted-foreground mb-8 uppercase tracking-wider">Built for compliance across 30 CMS provider types</p>
+            <p className="text-sm font-semibold text-muted-foreground mb-8 uppercase tracking-wider">Built for compliance across all 17 supported CMS institution types</p>
             <div className="flex flex-wrap justify-center gap-8 md:gap-16 items-center opacity-70 grayscale">
               <div className="flex items-center gap-2 font-bold text-xl text-slate-800"><Shield className="h-6 w-6"/> CMS CoPs</div>
               <div className="flex items-center gap-2 font-bold text-xl text-slate-800"><ClipboardCheck className="h-6 w-6"/> Joint Commission</div>
@@ -109,7 +109,7 @@ export default function LandingPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-slate-600">
-                    Access the live eCFR regulatory text for all CMS Conditions of Participation. Always current, highly searchable, and instantly available.
+                    Access live eCFR requirements across all 17 supported institution types. Always current, highly searchable, and instantly available.
                   </p>
                 </CardContent>
               </Card>
@@ -123,7 +123,7 @@ export default function LandingPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-slate-600">
-                    Generate ready-to-use policy documents that are perfectly tailored to your specific institution type.
+                    Generate ready-to-use policy documents tailored to the requirements of your hospital, SNF, HHA, ASC, IRF, hospice, or other supported institution.
                   </p>
                 </CardContent>
               </Card>
@@ -137,7 +137,7 @@ export default function LandingPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-slate-600">
-                    Run surveyor-style self-assessment checklists. Identify potential deficiencies before the surveyors walk through the door.
+                    Run institution-specific, surveyor-style self-assessment checklists and identify potential deficiencies before surveyors walk through the door.
                   </p>
                 </CardContent>
               </Card>
@@ -151,7 +151,7 @@ export default function LandingPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-slate-600">
-                    Compare your actual policies against current regulations. Our AI analysis instantly surfaces gaps and risks in your documentation.
+                    Compare your policies against the current regulations for your selected institution type. AI analysis instantly surfaces gaps and documentation risks.
                   </p>
                 </CardContent>
               </Card>
