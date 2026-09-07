@@ -27,8 +27,12 @@ protected path changed.
 
 Protected paths are listed below. A path ending in `/` matches that directory
 and everything below it by prefix. A path without a trailing slash matches one
-file exactly. The release contract check compares this ordered block with the
-guard's executable list, so keep the markers and one-path-per-line format.
+file exactly. Both forms are matched case-insensitively, so a case-only rename
+of a protected file or any segment of a protected directory path always runs
+the gate. This conservative rule is identical on case-sensitive and
+case-insensitive filesystems. The release contract check compares this ordered
+block with the guard's executable list, so keep the markers and
+one-path-per-line format.
 
 <!-- canvas-protected-paths:start -->
 
@@ -55,9 +59,12 @@ successfully without installing dependencies or building Canvas.
 
 ## Filesystem portability checks
 
-The focused `test:canvas-release-contract` suite also runs on
-`windows-latest` and `macos-latest` with Node 24. Hard-link identity and
-deterministic ordering remain required on both platforms.
+The focused `test:canvas-release-contract` suite includes the changed-path
+fixtures and runs on Linux through the Replit validation workflow and on
+`windows-latest` and `macos-latest` with Node 24. All three lanes therefore
+assert that case-only protected file and directory-prefix changes require the
+gate. Hard-link identity and deterministic ordering remain required on both
+hosted platforms.
 
 Workflow paths use Unicode Normalization Form C (NFC) for declarations,
 duplicate detection, diagnostics, and directory ordering. A decomposed path in

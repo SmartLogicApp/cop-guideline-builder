@@ -74,6 +74,30 @@ test("matches path prefixes on directory boundaries", () => {
   );
 });
 
+test("case-only protected file paths require the gate portably", () => {
+  for (const path of [
+    "PACKAGE.JSON",
+    "Artifacts/API-Server/SRC/Routes/Billing.ts",
+    "scripts/Validate-Canvas-Changes.MJS",
+  ]) {
+    assert.equal(requiresCanvasRelease([path]), true, path);
+  }
+});
+
+test("case-only protected directory prefixes require the gate portably", () => {
+  for (const path of [
+    "ARTIFACTS/MOCKUP-SANDBOX/src/App.tsx",
+    "artifacts/Mockup-Sandbox/SRC/App.tsx",
+  ]) {
+    assert.equal(requiresCanvasRelease([path]), true, path);
+  }
+
+  assert.equal(
+    requiresCanvasRelease(["ARTIFACTS/MOCKUP-SANDBOX-COPY/src/App.tsx"]),
+    false,
+  );
+});
+
 test("deleted files in every protected category still require the gate", () => {
   const repository = mkdtempSync(join(tmpdir(), "canvas-release-paths-"));
   const deletedProtectedPaths = [

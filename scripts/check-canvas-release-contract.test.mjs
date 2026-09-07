@@ -57,6 +57,7 @@ async function createSymlinkOrSkip(t, target, path) {
 function failures({
   replit = replitConfig,
   command,
+  contractCommand,
   guardedCommand,
   guard = changedPathGuardText,
   documentation = documentationText,
@@ -67,6 +68,9 @@ function failures({
   const packageJson = JSON.parse(packageJsonText);
   if (command !== undefined) {
     packageJson.scripts["validate:canvas"] = command;
+  }
+  if (contractCommand !== undefined) {
+    packageJson.scripts["test:canvas-release-contract"] = contractCommand;
   }
   if (guardedCommand !== undefined) {
     packageJson.scripts["validate:canvas:changed"] = guardedCommand;
@@ -1306,6 +1310,16 @@ test("rejects altered workflow args and swallowed failures", () => {
       ),
     }).join("\n"),
     /propagate failures/,
+  );
+});
+
+test("keeps changed-path fixtures in the cross-platform contract command", () => {
+  assert.match(
+    failures({
+      contractCommand:
+        "node --test scripts/check-canvas-release-contract.test.mjs && pnpm run check:canvas-release-contract",
+    }).join("\n"),
+    /must run both the release contract and changed-path fixtures/,
   );
 });
 

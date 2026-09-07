@@ -16,13 +16,19 @@ export const protectedCanvasPaths = [
 ];
 
 export function requiresCanvasRelease(changedPaths) {
-  return changedPaths.some((changedPath) =>
-    protectedCanvasPaths.some((protectedPath) =>
-      protectedPath.endsWith("/")
-        ? changedPath.startsWith(protectedPath)
-        : changedPath === protectedPath,
-    ),
-  );
+  return changedPaths.some((changedPath) => {
+    const portableChangedPath = changedPath.toLowerCase();
+
+    return protectedCanvasPaths.some((protectedPath) => {
+      const portableProtectedPath = protectedPath.toLowerCase();
+
+      return (
+        protectedPath.endsWith("/")
+          ? portableChangedPath.startsWith(portableProtectedPath)
+          : portableChangedPath === portableProtectedPath
+      );
+    });
+  });
 }
 
 export function formatCanvasPathForDisplay(path) {

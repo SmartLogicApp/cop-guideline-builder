@@ -576,6 +576,17 @@ export function checkCanvasReleaseContract(
   }
 
   const scripts = JSON.parse(packageJsonText).scripts;
+  const contractCommand = scripts?.["test:canvas-release-contract"];
+  if (
+    typeof contractCommand !== "string" ||
+    !contractCommand.includes("scripts/check-canvas-release-contract.test.mjs") ||
+    !contractCommand.includes("scripts/validate-canvas-changes.test.mjs")
+  ) {
+    failures.push(
+      'the "test:canvas-release-contract" package command must run both the release contract and changed-path fixtures',
+    );
+  }
+
   const guardedCommand = scripts?.["validate:canvas:changed"];
   if (guardedCommand !== "node scripts/validate-canvas-changes.mjs") {
     failures.push(
