@@ -1702,8 +1702,8 @@ const S = {
   headerTitle: { margin: 0, fontSize: "22px", fontWeight: 700, letterSpacing: "-0.3px" },
   headerSub: { margin: "4px 0 0", fontSize: "13px", opacity: 0.75 },
   disclaimer: { background: "#FEF3C7", border: "1px solid #F59E0B", borderRadius: "6px", padding: "10px 14px", marginTop: "14px", fontSize: "11.5px", color: "#78350F", lineHeight: 1.5 },
-  container: { maxWidth: "960px", margin: "0 auto", padding: "24px 24px 48px" },
-  card: { background: "#fff", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "20px", marginBottom: "16px" },
+  container: { maxWidth: "960px", margin: "0 auto", padding: "clamp(14px, 3vw, 24px) clamp(12px, 3vw, 24px) 48px", boxSizing: "border-box" },
+  card: { background: "#fff", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "clamp(14px, 3vw, 20px)", marginBottom: "16px", boxSizing: "border-box" },
   label: { display: "block", fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" },
   select: { width: "100%", padding: "9px 12px", fontSize: "13px", border: "1px solid #CBD5E1", borderRadius: "6px", background: "#fff", boxSizing: "border-box", color: "#1A2332" },
   input: { width: "100%", padding: "9px 12px", fontSize: "13px", border: "1px solid #CBD5E1", borderRadius: "6px", boxSizing: "border-box", color: "#1A2332" },
@@ -1713,7 +1713,7 @@ const S = {
   btnSm: { padding: "6px 12px", fontSize: "12px", fontWeight: 600, border: "1px solid #CBD5E1", borderRadius: "5px", background: "#fff", cursor: "pointer", color: "#475569" },
   btnSmGreen: { padding: "6px 12px", fontSize: "12px", fontWeight: 600, border: "1px solid #A7F3D0", borderRadius: "5px", background: "#ECFDF5", cursor: "pointer", color: "#065F46" },
   error: { color: "#DC2626", fontSize: "13px", marginTop: "10px", padding: "10px 12px", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "6px" },
-  tabs: { display: "flex", gap: "4px", marginBottom: "20px", overflowX: "auto", paddingBottom: "4px" },
+  tabs: { display: "flex", flexWrap: "nowrap", gap: "4px", marginBottom: "20px", overflowX: "auto", paddingBottom: "6px", WebkitOverflowScrolling: "touch", scrollbarWidth: "thin" },
   tag: (color, bg) => ({ display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, color, background: bg }),
   riskBadge: (level) => ({
     display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700,
@@ -1736,7 +1736,7 @@ function Tab({ label, active, onClick }) {
     <button onClick={onClick} style={{
       padding: "9px 18px", fontSize: "13px", fontWeight: 600, border: "none", borderRadius: "7px", cursor: "pointer",
       background: active ? "#0D5C6B" : "#E2E8F0", color: active ? "#fff" : "#475569",
-      transition: "all 0.15s",
+      transition: "all 0.15s", flex: "0 0 auto", whiteSpace: "nowrap",
     }}>{label}</button>
   );
 }
@@ -2978,7 +2978,7 @@ function GapScannerTab({ institution, historyOwnerId }) {
   const [fileError, setFileError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…");
-  const [sideBySide, setSideBySide] = useState(() => typeof window !== "undefined" && window.innerWidth >= 960);
+  const [sideBySide, setSideBySide] = useState(() => typeof window !== "undefined" && window.innerWidth >= 900);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(() => hasRestoredSession ? (initialSession.result ?? null) : null);
   const [resultMeta, setResultMeta] = useState(() => hasRestoredSession ? (initialSession.resultMeta ?? null) : null); // { institution, topic, timestamp }
@@ -4419,7 +4419,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
                   <div style={{ fontSize: "11px", fontWeight: 800, letterSpacing: "0.7px", textTransform: "uppercase", color: "#0D5C6B", marginBottom: "7px" }}>
                     {category.label}
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(200px, 100%), 1fr))", gap: "8px" }}>
                     {providers.map((provider) => (
                       <button key={provider.id} onClick={() => setInstitution(provider.id)} style={{
                         padding: "10px 12px", fontSize: "12px", fontWeight: 600, textAlign: "left",
