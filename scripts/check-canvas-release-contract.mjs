@@ -154,13 +154,20 @@ export function duplicateWorkflowLocationFailures(
       const value = location?.[key];
       if (typeof value !== "string" || value.trim() === "") continue;
       const normalizedValue = normalizedWorkflowPath(value);
-      const originalValue = seen.get(normalizedValue);
+      const portableValue = normalizedValue.toLowerCase();
+      const originalValue = seen.get(portableValue);
       if (originalValue !== undefined) {
-        failures.push(
-          `duplicate supported workflow ${key} entries ${JSON.stringify(originalValue)} and ${JSON.stringify(value)} normalize to ${JSON.stringify(normalizedValue)}`,
-        );
+        if (normalizedWorkflowPath(originalValue) === normalizedValue) {
+          failures.push(
+            `duplicate supported workflow ${key} entries ${JSON.stringify(originalValue)} and ${JSON.stringify(value)} normalize to ${JSON.stringify(normalizedValue)}`,
+          );
+        } else {
+          failures.push(
+            `case-colliding supported workflow ${key} entries ${JSON.stringify(originalValue)} and ${JSON.stringify(value)} are not portable; use one canonical spelling`,
+          );
+        }
       } else {
-        seen.set(normalizedValue, value);
+        seen.set(portableValue, value);
       }
     }
   }
@@ -283,6 +290,30 @@ function externalWorkflowLocationError(rootDirectory, path) {
   );
 }
 
+function assertNoCaseCollidingWorkflowEntries(
+  entries,
+  directory,
+  rootDirectory,
+) {
+  const seen = new Map();
+  for (const entry of entries) {
+    const foldedName = entry.name.toLowerCase();
+    const originalName = seen.get(foldedName);
+    if (originalName !== undefined && originalName !== entry.name) {
+      const firstPath = normalizedWorkflowPath(
+        relative(rootDirectory, resolve(directory, originalName)),
+      );
+      const secondPath = normalizedWorkflowPath(
+        relative(rootDirectory, resolve(directory, entry.name)),
+      );
+      throw new Error(
+        `case-colliding workflow paths "${firstPath}" and "${secondPath}" are unsupported; rename one so workflow discovery is identical on case-sensitive and case-insensitive filesystems`,
+      );
+    }
+    seen.set(foldedName, entry.name);
+  }
+}
+
 // Supported runtimes/filesystems must expose a stable, non-zero inode together
 // with its device ID through Node's bigint Stats API. This is the portable
 // identity Node provides for hard links on supported Unix and Windows filesystems.
@@ -336,6 +367,14 @@ async function filesBelow(
     if (error.code === "ENOENT") return [];
     throw error;
   }
+  entries.sort((first, second) => {
+    const firstName = first.name.normalize("NFC");
+    const secondName = second.name.normalize("NFC");
+    if (firstName !== secondName) {
+      return firstName < secondName ? -1 : 1;
+    }
+    return first.name < second.name ? -1 : first.name > second.name ? 1 : 0;
+  });
   const entriesByNormalizedName = new Map();
   for (const entry of entries) {
     const normalizedName = entry.name.normalize("NFC");
@@ -347,11 +386,7 @@ async function filesBelow(
     }
     entriesByNormalizedName.set(normalizedName, entry.name);
   }
-  entries.sort((first, second) => {
-    const firstName = first.name.normalize("NFC");
-    const secondName = second.name.normalize("NFC");
-    return firstName < secondName ? -1 : firstName > secondName ? 1 : 0;
-  });
+  assertNoCaseCollidingWorkflowEntries(entries, directory, rootDirectory);
 
   const nestedAncestors = new Set(ancestorDirectories).add(resolvedDirectory);
   const files = [];

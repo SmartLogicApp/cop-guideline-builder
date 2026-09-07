@@ -66,6 +66,17 @@ filesystem preserves two distinct directory entries whose names normalize to
 the same NFC spelling, discovery fails explicitly rather than choosing one by
 host-dependent enumeration order.
 
+Workflow paths within a supported workflow directory also must not differ only
+by letter case. The scanner rejects such file or directory siblings before
+reading or traversing either one and names both conflicting repository-relative
+paths. Supported workflow location and representative fixture declarations
+follow the same rule. This is intentionally an actionable rejection rather than
+host-dependent deduplication: a repository containing `canvas.yml` and
+`Canvas.yml` cannot be checked out consistently on the default macOS and Windows
+filesystems. Portable fixtures inject the same case-colliding directory entries
+in every operating system lane so Linux, macOS, and Windows assert the same
+rejection.
+
 The composed/decomposed filename fixture runs when the host filesystem
 preserves both spellings as distinct entries. Filesystems such as common macOS
 volumes may normalize them into one entry; that unsupported capability is

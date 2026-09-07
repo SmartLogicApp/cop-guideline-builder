@@ -145,6 +145,31 @@ test("rejects dot-segment workflow path aliases and names both declarations", ()
   );
 });
 
+test("rejects case-only supported workflow location declarations", () => {
+  const locations = [
+    {
+      type: "directory",
+      path: ".github/workflows",
+      fixturePath: ".github/workflows/canvas.yml",
+    },
+    {
+      type: "directory",
+      path: ".github/Workflows",
+      fixturePath: ".github/Workflows/canvas.yml",
+    },
+  ];
+
+  const result = failures({ workflowLocations: locations }).join("\n");
+  assert.match(
+    result,
+    /case-colliding supported workflow path entries "\.github\/workflows" and "\.github\/Workflows" are not portable; use one canonical spelling/,
+  );
+  assert.match(
+    result,
+    /case-colliding supported workflow fixturePath entries "\.github\/workflows\/canvas\.yml" and "\.github\/Workflows\/canvas\.yml" are not portable; use one canonical spelling/,
+  );
+});
+
 test("rejects a unique leading-dot workflow path and shows its canonical replacement", () => {
   const declaredPath = "./.woodpecker";
   const canonicalPath = ".woodpecker";
@@ -642,6 +667,71 @@ test("rejects canonically equivalent workflow filenames when the host preserves 
       assert.match(error.message, /must be unique after normalization/);
       return true;
     },
+  );
+});
+
+test("rejects case-only workflow filename collisions before reading either file", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+  const workflowDirectory = join(rootDirectory, ".github", "workflows");
+  await mkdir(workflowDirectory, { recursive: true });
+  await writeFile(
+    join(workflowDirectory, "canvas.yml"),
+    'CANVAS_RELEASE_CHANGED_PATHS=["README.md"]',
+  );
+
+  const expectedCollision =
+    /case-colliding workflow paths "\.github\/workflows\/Canvas\.yml" and "\.github\/workflows\/canvas\.yml" are unsupported; rename one so workflow discovery is identical on case-sensitive and case-insensitive filesystems/;
+  for (const reverseEntries of [false, true]) {
+    await assert.rejects(
+      readCheckedInWorkflowConfigs(rootDirectory, {
+        readDirectory: async (directory, options) => {
+          const entries = await readdir(directory, options);
+          if (directory !== workflowDirectory) return entries;
+          const canvas = entries.find((entry) => entry.name === "canvas.yml");
+          const collidingEntries = [
+            canvas,
+            {
+              ...canvas,
+              name: "Canvas.yml",
+              isDirectory: () => canvas.isDirectory(),
+              isFile: () => canvas.isFile(),
+              isSymbolicLink: () => canvas.isSymbolicLink(),
+            },
+          ];
+          return reverseEntries ? collidingEntries.reverse() : collidingEntries;
+        },
+      }),
+      expectedCollision,
+    );
+  }
+});
+
+test("rejects case-only workflow directory collisions before traversing either tree", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+  const workflowDirectory = join(rootDirectory, ".github", "workflows");
+  await mkdir(join(workflowDirectory, "release"), { recursive: true });
+
+  await assert.rejects(
+    readCheckedInWorkflowConfigs(rootDirectory, {
+      readDirectory: async (directory, options) => {
+        const entries = await readdir(directory, options);
+        if (directory !== workflowDirectory) return entries;
+        const release = entries.find((entry) => entry.name === "release");
+        return [
+          release,
+          {
+            ...release,
+            name: "Release",
+            isDirectory: () => release.isDirectory(),
+            isFile: () => release.isFile(),
+            isSymbolicLink: () => release.isSymbolicLink(),
+          },
+        ];
+      },
+    }),
+    /case-colliding workflow paths "\.github\/workflows\/Release" and "\.github\/workflows\/release" are unsupported; rename one so workflow discovery is identical on case-sensitive and case-insensitive filesystems/,
   );
 });
 
