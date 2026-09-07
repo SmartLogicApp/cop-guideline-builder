@@ -33,13 +33,52 @@ function parseChangedPaths(value) {
 }
 
 export function changedPathsFromGit(cwd = process.cwd()) {
-  return parseChangedPaths(
-    execFileSync("git", ["diff", "--name-only", "HEAD^", "HEAD"], {
+  const revision = execFileSync(
+    "git",
+    ["rev-list", "--parents", "-n", "1", "HEAD"],
+    {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "inherit"],
-    }),
-  );
+    },
+  )
+    .trim()
+    .split(/\s+/);
+  const [head, ...parents] = revision;
+
+  if (!head) {
+    throw new Error("Git did not return a HEAD revision.");
+  }
+
+  if (parents.length === 0) {
+    return parseChangedPaths(
+      execFileSync(
+        "git",
+        ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", head],
+        {
+          cwd,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "inherit"],
+        },
+      ),
+    );
+  }
+
+  const changedPaths = new Set();
+  for (const parent of parents) {
+    const parentChanges = parseChangedPaths(
+      execFileSync("git", ["diff", "--name-only", parent, head], {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "inherit"],
+      }),
+    );
+    for (const path of parentChanges) {
+      changedPaths.add(path);
+    }
+  }
+
+  return [...changedPaths].sort();
 }
 
 export function getChangedPaths() {

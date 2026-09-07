@@ -11,8 +11,16 @@ ignoring it could either run this expensive gate for every merge or, worse,
 skip required checks.
 
 The `canvas-release` validation workflow calls `pnpm run validate:canvas:changed`.
-The guard compares the current commit with its first parent and only runs the
-full Canvas release validation when at least one protected path changed.
+The guard uses an explicit strategy for each Git history shape:
+
+- A first (root) commit treats every path introduced by that commit as changed.
+- A commit with one parent compares the current commit with that parent.
+- A merge commit compares the current commit with every parent and uses the
+  union of those changed paths. This prevents a protected change from being
+  hidden merely because it is already present in one side of the merge.
+
+The full Canvas release validation only runs when at least one resulting
+protected path changed.
 
 Protected paths are listed below. A path ending in `/` matches that directory
 and everything below it by prefix. A path without a trailing slash matches one
@@ -42,8 +50,8 @@ successfully without installing dependencies or building Canvas.
 
 The guard can be checked deterministically by setting
 `CANVAS_RELEASE_CHANGED_PATHS` to a newline-separated list. If neither that
-input nor the Git comparison is available, the guard runs the full validation
-rather than risk skipping a required check.
+input nor all required Git comparisons are available, the guard runs the full
+validation rather than risk skipping a required check.
 
 When Replit documents a native validation path filter, configure it with the
 protected paths above and keep the deterministic path-matching tests as its
