@@ -468,6 +468,61 @@ test("accepts workflow symlinks that resolve inside the repository", async (t) =
   assert.deepEqual(failures({ workflowConfigs }), []);
 });
 
+test("discovers nested workflow symlinks that resolve inside the repository", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  await mkdir(join(rootDirectory, ".github", "workflows", "nested"), {
+    recursive: true,
+  });
+  await mkdir(join(rootDirectory, "ci"), { recursive: true });
+  await writeFile(
+    join(rootDirectory, "ci", "canvas.yml"),
+    "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+  );
+  await symlink(
+    "../../../ci/canvas.yml",
+    join(rootDirectory, ".github", "workflows", "nested", "canvas.yml"),
+  );
+
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
+
+  assert.deepEqual(workflowConfigs, [
+    {
+      path: ".github/workflows/nested/canvas.yml",
+      text: "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+    },
+  ]);
+  assert.match(
+    failures({ workflowConfigs }).join("\n"),
+    /\.github\/workflows\/nested\/canvas\.yml:1/,
+  );
+});
+
+test("rejects nested workflow symlinks that resolve outside the repository without reading them", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  const externalDirectory = await mkdtemp(
+    join(tmpdir(), "canvas-contract-external-"),
+  );
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+  t.after(() => rm(externalDirectory, { recursive: true, force: true }));
+
+  await mkdir(join(rootDirectory, ".buildkite", "nested"), {
+    recursive: true,
+  });
+  const externalWorkflow = join(externalDirectory, "canvas.yml");
+  await writeFile(externalWorkflow, "CANVAS_RELEASE_CHANGED_PATHS: unsafe");
+  await symlink(
+    externalWorkflow,
+    join(rootDirectory, ".buildkite", "nested", "canvas.yml"),
+  );
+
+  await assert.rejects(
+    readCheckedInWorkflowConfigs(rootDirectory),
+    /supported workflow location "\.buildkite\/nested\/canvas\.yml" resolves outside the repository/,
+  );
+});
+
 test("discovers unsafe producers in every supported workflow location only", async (t) => {
   const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
   t.after(() => rm(rootDirectory, { recursive: true, force: true }));

@@ -1,4 +1,4 @@
-import { readdir, readFile, realpath } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, posix, relative, resolve, sep, win32 } from "node:path";
 import { protectedCanvasPaths } from "./validate-canvas-changes.mjs";
 
@@ -272,20 +272,76 @@ export function unsafeChangedPathProducers(workflowConfigs) {
   return unsafe;
 }
 
-async function filesBelow(directory) {
+function externalWorkflowLocationError(rootDirectory, path) {
+  return new Error(
+    `supported workflow location "${relative(rootDirectory, path)}" resolves outside the repository`,
+  );
+}
+
+async function filesBelow(
+  directory,
+  rootDirectory,
+  resolvedRootDirectory,
+  ancestorDirectories = new Set(),
+) {
+  let resolvedDirectory;
+  try {
+    resolvedDirectory = await realpath(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  if (!isPathContainedBy(resolvedRootDirectory, resolvedDirectory)) {
+    throw externalWorkflowLocationError(rootDirectory, directory);
+  }
+  if (ancestorDirectories.has(resolvedDirectory)) {
+    throw new Error(
+      `supported workflow location "${relative(rootDirectory, directory)}" resolves to a recursive directory symlink, which is intentionally unsupported`,
+    );
+  }
+
   let entries;
   try {
-    entries = await readdir(directory, { withFileTypes: true });
+    entries = await readdir(resolvedDirectory, { withFileTypes: true });
   } catch (error) {
     if (error.code === "ENOENT") return [];
     throw error;
   }
 
+  const nestedAncestors = new Set(ancestorDirectories).add(resolvedDirectory);
   const files = [];
   for (const entry of entries) {
     const path = resolve(directory, entry.name);
-    if (entry.isDirectory()) files.push(...(await filesBelow(path)));
-    else if (entry.isFile()) files.push(path);
+    if (entry.isDirectory()) {
+      files.push(
+        ...(await filesBelow(
+          path,
+          rootDirectory,
+          resolvedRootDirectory,
+          nestedAncestors,
+        )),
+      );
+    } else if (entry.isFile()) {
+      files.push(path);
+    } else if (entry.isSymbolicLink()) {
+      const resolvedPath = await realpath(path);
+      if (!isPathContainedBy(resolvedRootDirectory, resolvedPath)) {
+        throw externalWorkflowLocationError(rootDirectory, path);
+      }
+      const target = await stat(resolvedPath);
+      if (target.isDirectory()) {
+        files.push(
+          ...(await filesBelow(
+            path,
+            rootDirectory,
+            resolvedRootDirectory,
+            nestedAncestors,
+          )),
+        );
+      } else if (target.isFile()) {
+        files.push(path);
+      }
+    }
   }
   return files;
 }
@@ -298,7 +354,13 @@ export async function readCheckedInWorkflowConfigs(rootDirectory) {
     if (location.type === "file") {
       candidates.push(absolutePath);
     } else {
-      candidates.push(...(await filesBelow(absolutePath)));
+      candidates.push(
+        ...(await filesBelow(
+          absolutePath,
+          rootDirectory,
+          resolvedRootDirectory,
+        )),
+      );
     }
   }
 
@@ -307,9 +369,7 @@ export async function readCheckedInWorkflowConfigs(rootDirectory) {
     try {
       const resolvedPath = await realpath(path);
       if (!isPathContainedBy(resolvedRootDirectory, resolvedPath)) {
-        throw new Error(
-          `supported workflow location "${relative(rootDirectory, path)}" resolves outside the repository`,
-        );
+        throw externalWorkflowLocationError(rootDirectory, path);
       }
       configs.push({
         path: relative(rootDirectory, path),
