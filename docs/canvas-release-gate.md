@@ -52,7 +52,11 @@ Other documentation, API, mobile, marketing, slide, and video changes exit
 successfully without installing dependencies or building Canvas.
 
 The guard can be checked deterministically by setting
-`CANVAS_RELEASE_CHANGED_PATHS` to a newline-separated list. If neither that
+`CANVAS_RELEASE_CHANGED_PATHS` to a JSON array of path strings, such as
+`["README.md","artifacts/mockup-sandbox/src/App.tsx"]`. JSON preserves spaces,
+quotes, embedded newlines, and control characters in every valid Git filename.
+For compatibility, a single ordinary path may still be supplied directly;
+multiline newline-separated values are rejected as ambiguous. If neither that
 input nor all required Git comparisons are available, the guard runs the full
 validation rather than risk skipping a required check.
 

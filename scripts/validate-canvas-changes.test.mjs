@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   changedPathsFromGit,
   formatCanvasPathForDisplay,
+  parseEnvironmentChangedPaths,
   requiresCanvasRelease,
 } from "./validate-canvas-changes.mjs";
 
@@ -294,6 +295,52 @@ test("quotes and control characters are escaped in displayed paths", () => {
       "displayed paths must not contain raw control characters",
     );
   }
+});
+
+test("JSON override preserves unusual Git paths exactly", () => {
+  const paths = [
+    "docs/file with spaces.md",
+    'docs/"quoted".md',
+    "docs/embedded\nnewline.md",
+    "docs/tab\tand\u0001control.md",
+    "docs/del\u007fcontrol.md",
+  ];
+
+  assert.deepEqual(
+    parseEnvironmentChangedPaths(`  ${JSON.stringify(paths)}`),
+    paths,
+  );
+});
+
+test("ordinary single-path newline override remains compatible", () => {
+  assert.deepEqual(
+    parseEnvironmentChangedPaths(
+      "  artifacts/mockup-sandbox/src/App.tsx  \n",
+    ),
+    ["artifacts/mockup-sandbox/src/App.tsx"],
+  );
+});
+
+test("ambiguous multiline override gives JSON migration guidance", () => {
+  assert.throws(
+    () => parseEnvironmentChangedPaths("README.md\npackage.json"),
+    /Multiline CANVAS_RELEASE_CHANGED_PATHS is ambiguous.*Use a JSON array/s,
+  );
+});
+
+test("invalid JSON override fails clearly", () => {
+  assert.throws(
+    () => parseEnvironmentChangedPaths('["README.md",]'),
+    /must be a valid JSON array of path strings/,
+  );
+  assert.throws(
+    () => parseEnvironmentChangedPaths('["README.md",42]'),
+    /must be a JSON array of Git path strings without NUL bytes/,
+  );
+  assert.throws(
+    () => parseEnvironmentChangedPaths('["bad\\u0000path"]'),
+    /must be a JSON array of Git path strings without NUL bytes/,
+  );
 });
 
 test("merge commits include changes relative to every parent", () => {

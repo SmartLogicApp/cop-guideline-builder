@@ -37,11 +37,43 @@ export function formatCanvasPathForDisplay(path) {
   );
 }
 
-function parseEnvironmentChangedPaths(value) {
-  return value
+export function parseEnvironmentChangedPaths(value) {
+  if (value.trimStart().startsWith("[")) {
+    let paths;
+    try {
+      paths = JSON.parse(value);
+    } catch (error) {
+      throw new Error(
+        "CANVAS_RELEASE_CHANGED_PATHS must be a valid JSON array of path strings.",
+        { cause: error },
+      );
+    }
+
+    if (
+      !Array.isArray(paths) ||
+      paths.some((path) => typeof path !== "string" || path.includes("\0"))
+    ) {
+      throw new Error(
+        "CANVAS_RELEASE_CHANGED_PATHS must be a JSON array of Git path strings without NUL bytes.",
+      );
+    }
+
+    return paths;
+  }
+
+  const paths = value
     .split(/\r?\n/)
     .map((path) => path.trim())
     .filter(Boolean);
+
+  if (paths.length > 1) {
+    throw new Error(
+      "Multiline CANVAS_RELEASE_CHANGED_PATHS is ambiguous for Git filenames containing newlines. " +
+        'Use a JSON array instead, for example: ["README.md","artifacts/mockup-sandbox/src/App.tsx"].',
+    );
+  }
+
+  return paths;
 }
 
 function parseNullDelimitedPaths(value) {
@@ -124,10 +156,13 @@ function main() {
 
   try {
     changedPaths = getChangedPaths();
-  } catch {
+  } catch (error) {
     console.warn(
       "Canvas release guard could not determine changed paths; running the full validation.",
     );
+    if (error instanceof Error) {
+      console.warn(error.message);
+    }
     changedPaths = null;
   }
 
