@@ -23,6 +23,14 @@ const ADMIN_CLERK_IDS = [
 
 const INSTITUTION_TYPES = LEGACY_INSTITUTION_TYPES;
 const TOPICS = DEFAULT_COMPLIANCE_TOPICS;
+const INSTITUTION_TOPICS = Object.fromEntries(
+  INSTITUTION_TYPES.map(({ value }) => [value, getProviderTopics(value)]),
+);
+
+function getInstitutionTopics(institution) {
+  if (!institution) return ["All Topics"];
+  return INSTITUTION_TOPICS[institution] ?? TOPICS;
+}
 
 // Generic fallback departments (used only if an institution type is not in INSTITUTION_UNITS)
 const DEPARTMENTS = [
@@ -1820,7 +1828,7 @@ function OnboardingBanner() {
 
 function GuidelinesTab({ institution }) {
   const instUnits = INSTITUTION_UNITS[institution] || null;
-  const topics = getProviderTopics(institution);
+  const topics = getInstitutionTopics(institution);
   const verifiedRequirements = getRequirementsForProvider(institution);
   const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
   const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
@@ -1836,7 +1844,7 @@ function GuidelinesTab({ institution }) {
   useEffect(() => {
     const iu = INSTITUTION_UNITS[institution] || null;
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
-    setTopic(getProviderTopics(institution)[0] ?? TOPICS[0]);
+    setTopic(getInstitutionTopics(institution)[0]);
     setCustomTopic("");
     setResult(null);
     setDataSource(null);
@@ -2119,7 +2127,7 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
 
 function PolicyTab({ institution }) {
   const instUnits = INSTITUTION_UNITS[institution] || null;
-  const topics = getProviderTopics(institution);
+  const topics = getInstitutionTopics(institution);
   const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
   const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
@@ -2131,7 +2139,7 @@ function PolicyTab({ institution }) {
   useEffect(() => {
     const iu = INSTITUTION_UNITS[institution] || null;
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
-    setTopic(getProviderTopics(institution)[0] ?? TOPICS[0]);
+    setTopic(getInstitutionTopics(institution)[0]);
     setCustomTopic("");
     setError(null);
     setResult(null);
@@ -2965,7 +2973,7 @@ function GapComparisonView({ entryA, entryB, onClose }) {
 
 function GapScannerTab({ institution, historyOwnerId }) {
   const instUnits = INSTITUTION_UNITS[institution] || null;
-  const topics = getProviderTopics(institution);
+  const topics = getInstitutionTopics(institution);
   const [initialSession] = useState(() => loadGapSession());
   const hasRestoredSession = initialSession.institution === institution;
   const skipInitialProviderReset = useRef(hasRestoredSession);
@@ -3024,7 +3032,7 @@ function GapScannerTab({ institution, historyOwnerId }) {
     }
     const iu = INSTITUTION_UNITS[institution] || null;
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
-    setTopic(getProviderTopics(institution)[0] ?? TOPICS[0]);
+    setTopic(getInstitutionTopics(institution)[0]);
     setCustomTopic("");
     setPolicyText("");
     setFileName(null);
