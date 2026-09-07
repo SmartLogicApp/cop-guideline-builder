@@ -49,6 +49,10 @@ export interface CmsRequirement {
   verificationStatus: ContentVerificationStatus;
   lastVerifiedAt?: string;
   nextReviewAt?: string;
+  parentRequirementId?: string;
+  requirementLevel?: "condition" | "standard" | "paragraph";
+  surveyTags?: readonly string[];
+  officialSourceUrls?: readonly string[];
 }
 
 export interface CompliancePolicyRecord {
@@ -256,6 +260,11 @@ const HOSPITAL_REQUIREMENT_IDS = HOSPITAL_REQUIREMENT_SEEDS.map(
   ({ section }) => `hospital-cfr-${section.replace(".", "-")}`,
 );
 
+type HospitalParagraphSeed = readonly [
+  paragraph: string,
+  requirement: string,
+  surveyTags?: readonly string[],
+];
 const CAH_REQUIREMENT_SEEDS = [
   { section: "485.601", category: "Program Foundation", title: "Basis and scope." },
   { section: "485.603", category: "Network Requirements", title: "Rural health network." },
@@ -963,7 +972,13 @@ export const CMS_REQUIREMENTS: readonly CmsRequirement[] = [
     verificationStatus: "verified" as const,
     lastVerifiedAt: "2026-09-06",
     nextReviewAt: "2026-12-06",
+    requirementLevel: "condition",
+    officialSourceUrls: [
+      `https://www.ecfr.gov/current/title-42/section-${section}`,
+      "https://www.cms.gov/regulations-and-guidance/guidance/manuals/downloads/som107ap_a_hospitals.pdf",
+    ],
   })),
+  ...buildHospitalDetailedRequirements(),
   ...CAH_REQUIREMENT_SEEDS.map(({ section, category, title }): CmsRequirement => ({
     id: `cah-cfr-${section.replace(".", "-")}`,
     providerTypeId: "cah",
@@ -1909,10 +1924,48 @@ export const REGULATORY_SOURCES: readonly RegulatorySource[] = [
     nextReviewAt: "2026-12-06",
   },
 ];
-export const COMPLIANCE_POLICIES: readonly CompliancePolicyRecord[] = [];
-export const EVIDENCE_REQUIREMENTS: readonly EvidenceRequirement[] = [];
-export const COMPLIANCE_GAPS: readonly ComplianceGap[] = [];
-export const CORRECTIVE_ACTIONS: readonly CorrectiveAction[] = [];
+export const COMPLIANCE_POLICIES: readonly CompliancePolicyRecord[] =
+  buildHospitalDetailedRequirements().map((requirement) => ({
+    id: `${requirement.id}-policy`,
+    providerTypeId: "hospital",
+    requirementIds: [requirement.id],
+    evidenceRequirementIds: [`${requirement.id}-evidence`],
+    title: `Policy coverage for ${requirement.cfrReference}`,
+    owner: requirement.responsibleDepartments[2],
+    status: "needs-review",
+  }));
+export const EVIDENCE_REQUIREMENTS: readonly EvidenceRequirement[] =
+  buildHospitalDetailedRequirements().map((requirement) => ({
+    id: `${requirement.id}-evidence`,
+    providerTypeId: "hospital",
+    requirementIds: [requirement.id],
+    label: `Implementation evidence for ${requirement.cfrReference}`,
+    description: "Current approved policy plus records, logs, audits, training, or other objective evidence demonstrating implementation.",
+    evidenceType: "other",
+  }));
+export const COMPLIANCE_GAPS: readonly ComplianceGap[] =
+  buildHospitalDetailedRequirements().map((requirement) => ({
+    id: `${requirement.id}-gap`,
+    providerTypeId: "hospital",
+    requirementId: requirement.id,
+    policyIds: [`${requirement.id}-policy`],
+    evidenceRequirementIds: [`${requirement.id}-evidence`],
+    description: `Assessment pending for ${requirement.cfrReference}.`,
+    status: "needs-review",
+    priority: "medium",
+    correctiveActionIds: [`${requirement.id}-corrective-action`],
+  }));
+export const CORRECTIVE_ACTIONS: readonly CorrectiveAction[] =
+  buildHospitalDetailedRequirements().map((requirement) => ({
+    id: `${requirement.id}-corrective-action`,
+    providerTypeId: "hospital",
+    requirementId: requirement.id,
+    gapId: `${requirement.id}-gap`,
+    evidenceRequirementIds: [`${requirement.id}-evidence`],
+    action: `If assessment identifies a gap, document remediation and validate implementation against ${requirement.cfrReference}.`,
+    owner: requirement.responsibleDepartments[2],
+    status: "open",
+  }));
 
 const PROFILE_BY_ID = new Map(PROVIDER_PROFILES.map((provider) => [provider.id, provider]));
 
@@ -2000,3 +2053,194 @@ export const LEGACY_INSTITUTION_TYPES = PROVIDER_PROFILES.map((provider) => ({
   contentStatus: provider.contentStatus,
   ccnLookupStatus: provider.ccnLookupStatus,
 }));
+
+function hospitalCategoryForSection(section: string): string {
+  return HOSPITAL_REQUIREMENT_SEEDS.find((seed) => seed.section === section)?.category
+    ?? "Hospital Conditions of Participation";
+}
+
+function hospitalParagraphId(section: string, paragraph: string): string {
+  return `hospital-cfr-${section.replace(".", "-")}-${paragraph}`;
+}
+
+function getHospitalParagraphSeeds(): Readonly<Record<string, readonly HospitalParagraphSeed[]>> {
+  return {
+  "482.11": [
+    ["a", "The hospital must be in compliance with applicable Federal laws related to the health and safety of patients.", ["A-0021"]],
+    ["b", "The hospital must be licensed or approved as meeting standards for licensing established by the agency of the State or locality responsible for licensing hospitals.", ["A-0022"]],
+    ["c", "The hospital must assure that personnel are licensed or meet other applicable standards that are required by State or local laws.", ["A-0023"]],
+  ],
+  "482.12": [
+    ["a", "Standard: Medical staff.", ["A-0044"]],
+    ["b", "Standard: Chief executive officer.", ["A-0057"]],
+    ["c", "Standard: Care of patients.", ["A-0063"]],
+    ["d", "Standard: Institutional plan and budget.", ["A-0073"]],
+    ["e", "Standard: Contracted services.", ["A-0083"]],
+    ["f", "Standard: Emergency services.", ["A-0091"]],
+  ],
+  "482.13": [
+    ["a", "Standard: Notice of rights.", ["A-0116"]],
+    ["b", "Standard: Exercise of rights.", ["A-0129"]],
+    ["c", "Standard: Privacy and safety.", ["A-0142"]],
+    ["d", "Standard: Confidentiality of patient records.", ["A-0146"]],
+    ["e", "Standard: Restraint or seclusion.", ["A-0154", "A-0159"]],
+    ["f", "Standard: Restraint or seclusion: Staff training requirements.", ["A-0194"]],
+    ["g", "Standard: Death reporting requirements.", ["A-0213", "A-0214"]],
+    ["h", "Standard: Patient visitation rights.", ["A-0215", "A-0216", "A-0217"]],
+  ],
+  "482.15": [
+    ["a", "Emergency plan."],
+    ["b", "Policies and procedures."],
+    ["c", "Communication plan."],
+    ["d", "Training and testing."],
+    ["e", "Emergency and standby power systems."],
+    ["f", "Integrated healthcare systems."],
+    ["g", "Transplant hospitals."],
+    ["h", "Standards incorporated by reference."],
+  ],
+  "482.21": [
+    ["a", "Standard: Program scope.", ["A-0273"]],
+    ["b", "Standard: Program data."],
+    ["c", "Standard: Program activities."],
+    ["d", "Standard: Performance improvement projects.", ["A-0297"]],
+    ["e", "Standard: Maternal health QAPI activities.", ["A-0309", "A-0315"]],
+    ["f", "Standard: Executive responsibilities.", ["A-0320"]],
+    ["g", "Standard: Unified and integrated QAPI program for multi-hospital systems."],
+  ],
+  "482.22": [
+    ["a", "Standard: Eligibility and process for appointment to medical staff.", ["A-0339"]],
+    ["b", "Standard: Medical staff organization and accountability.", ["A-0347"]],
+    ["c", "Standard: Medical staff bylaws."],
+  ],
+  "482.23": [
+    ["a", "Standard: Organization."],
+    ["b", "Standard: Staffing and delivery of care."],
+    ["c", "Standard: Preparation and administration of drugs."],
+  ],
+  "482.24": [
+    ["a", "Standard: Organization and staffing."],
+    ["b", "Standard: Form and retention of record."],
+    ["c", "Standard: Content of record."],
+    ["d", "Standard: Electronic notifications."],
+  ],
+  "482.25": [
+    ["a", "Standard: Pharmacy management and administration."],
+    ["b", "Standard: Delivery of services."],
+  ],
+  "482.26": [
+    ["a", "Standard: Radiologic services."],
+    ["b", "Standard: Safety for patients and personnel."],
+    ["c", "Standard: Personnel."],
+    ["d", "Standard: Records."],
+  ],
+  "482.27": [
+    ["a", "Standard: Adequacy of laboratory services."],
+    ["b", "Standard: Potentially infectious blood and blood components."],
+  ],
+  "482.28": [
+    ["a", "Standard: Organization."],
+    ["b", "Standard: Diets."],
+  ],
+  "482.30": [
+    ["b", "Standard: Composition of utilization review committee."],
+    ["c", "Standard: Scope and frequency of review."],
+    ["d", "Standard: Determination regarding admissions or continued stays."],
+    ["e", "Standard: Extended stay review."],
+    ["f", "Standard: Review of professional services."],
+  ],
+  "482.41": [
+    ["a", "Standard: Buildings."],
+    ["b", "Standard: Life safety from fire."],
+    ["c", "Standard: Building safety."],
+    ["d", "Standard: Facilities."],
+  ],
+  "482.42": [
+    ["a", "Standard: Infection prevention and control program organization and policies."],
+    ["b", "Standard: Antibiotic stewardship program organization and policies."],
+    ["c", "Standard: Leadership responsibilities."],
+    ["d", "Standard: Unified and integrated infection prevention and control and antibiotic stewardship programs for multi-hospital systems."],
+  ],
+  "482.43": [
+    ["a", "Standard: Discharge planning process."],
+    ["b", "Standard: Discharge of the patient and provision and transmission of the patient's necessary medical information."],
+    ["c", "Standard: Transfer protocols."],
+    ["d", "Standard: Requirements related to post-acute care services."],
+  ],
+  "482.45": [
+    ["a", "Standard: Organ procurement responsibilities."],
+    ["b", "Standard: Organ transplantation responsibilities."],
+  ],
+  "482.51": [
+    ["a", "Standard: Organization and staffing."],
+    ["b", "Standard: Delivery of service."],
+  ],
+  "482.52": [
+    ["a", "Standard: Organization and staffing."],
+    ["b", "Standard: Delivery of services."],
+    ["c", "Standard: State exemption."],
+  ],
+  "482.53": [
+    ["a", "Standard: Organization and staffing."],
+    ["b", "Standard: Delivery of service."],
+    ["c", "Standard: Facilities."],
+    ["d", "Standard: Records."],
+  ],
+  "482.54": [
+    ["a", "Standard: Organization."],
+    ["b", "Standard: Personnel."],
+    ["c", "Standard: Orders for outpatient services."],
+  ],
+  "482.55": [
+    ["a", "Standard: Organization and direction."],
+    ["b", "Standard: Personnel."],
+    ["c", "Standard: Emergency services readiness."],
+  ],
+  "482.56": [
+    ["a", "Standard: Organization and staffing."],
+    ["b", "Standard: Delivery of services."],
+  ],
+  "482.57": [
+    ["a", "Standard: Organization and staffing."],
+    ["b", "Standard: Delivery of services."],
+  ],
+  "482.58": [
+    ["a", "Eligibility."],
+    ["b", "Skilled nursing facility services."],
+  ],
+  };
+}
+
+function buildHospitalDetailedRequirements(): readonly CmsRequirement[] {
+  return Object.entries(getHospitalParagraphSeeds()).flatMap(([section, paragraphs]) =>
+    paragraphs.map(([paragraph, requirement, surveyTags = []]) => {
+      const id = hospitalParagraphId(section, paragraph);
+      const category = hospitalCategoryForSection(section);
+      const eCfrUrl = `https://www.ecfr.gov/current/title-42/section-${section}#p-${section}(${paragraph})`;
+      return {
+        id,
+        providerTypeId: "hospital",
+        framework: "CoP",
+        conditionCategory: category,
+        cfrReference: `42 CFR § ${section}(${paragraph})`,
+        requirement,
+        responsibleDepartments: ["Compliance", "Quality", category],
+        relatedPolicyIds: [`${id}-policy`],
+        evidenceRequirementIds: [`${id}-evidence`],
+        staffInterviewConsiderations: [`Confirm staff can explain how the hospital implements ${section}(${paragraph}) in their assigned role.`],
+        gapAssessmentQuestionIds: [`${id}-assessment`],
+        correctiveActionRecommendationIds: [`${id}-corrective-action`],
+        sourceIds: [`ecfr-42-cfr-${section}`, "cms-som-appendix-a-hospitals"],
+        verificationStatus: "verified",
+        lastVerifiedAt: "2026-09-07",
+        nextReviewAt: "2026-12-07",
+        parentRequirementId: `hospital-cfr-${section.replace(".", "-")}`,
+        requirementLevel: paragraph.length === 1 ? "standard" : "paragraph",
+        surveyTags,
+        officialSourceUrls: [
+          eCfrUrl,
+          "https://www.cms.gov/regulations-and-guidance/guidance/manuals/downloads/som107ap_a_hospitals.pdf",
+        ],
+      };
+    }),
+  );
+}

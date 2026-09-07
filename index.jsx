@@ -1831,6 +1831,14 @@ function GuidelinesTab({ institution }) {
   const instUnits = INSTITUTION_UNITS[institution] || null;
   const topics = getInstitutionTopics(institution);
   const verifiedRequirements = getRequirementsForProvider(institution);
+  const conditionRequirements = verifiedRequirements.filter((requirement) => !requirement.parentRequirementId);
+  const requirementsByCondition = verifiedRequirements.reduce((groups, requirement) => {
+    if (!requirement.parentRequirementId) return groups;
+    const children = groups.get(requirement.parentRequirementId) ?? [];
+    children.push(requirement);
+    groups.set(requirement.parentRequirementId, children);
+    return groups;
+  }, new Map());
   const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
   const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
@@ -1965,33 +1973,63 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
       {verifiedRequirements.length > 0 && (
         <details style={{ ...S.card, borderLeft: "4px solid #0D5C6B" }}>
           <summary style={{ cursor: "pointer", fontWeight: 800, color: "#0D5C6B", fontSize: "15px" }}>
-            Verified {inst.label} CMS Citation Library ({verifiedRequirements.length})
+            Verified {inst.label} CMS Citation Library ({conditionRequirements.length} conditions · {verifiedRequirements.length - conditionRequirements.length} detailed requirements)
           </summary>
           <p style={{ fontSize: "12px", color: "#64748B", lineHeight: 1.6, margin: "10px 0 14px" }}>
-            Section-level index from {inst.cfr}. Open the official eCFR link to review all standards and sub-requirements before relying on a citation.
+            Verified condition and paragraph-level index from {inst.cfr}. CMS Appendix A survey tags appear only where confirmed in current official guidance.
           </p>
           <div style={{ display: "grid", gap: "8px" }}>
-            {verifiedRequirements.map((requirement) => {
+            {conditionRequirements.map((requirement) => {
               const source = getRegulatorySource(requirement.sourceIds[0]);
+              const children = requirementsByCondition.get(requirement.id) ?? [];
               return (
-                <div key={requirement.id} style={{ border: "1px solid #D8E4E8", borderRadius: "8px", padding: "10px 12px", background: "#F8FBFC" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
-                    <div>
-                      <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 700 }}>{requirement.conditionCategory}</div>
-                      <div style={{ fontSize: "13px", color: "#1E293B", fontWeight: 600, marginTop: "2px" }}>{requirement.requirement}</div>
+                <details key={requirement.id} style={{ border: "1px solid #D8E4E8", borderRadius: "8px", padding: "10px 12px", background: "#F8FBFC" }}>
+                  <summary style={{ cursor: "pointer" }}>
+                    <div style={{ display: "inline-flex", justifyContent: "space-between", gap: "12px", width: "calc(100% - 18px)", alignItems: "flex-start", flexWrap: "wrap", verticalAlign: "top" }}>
+                      <div>
+                        <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 700 }}>{requirement.conditionCategory}</div>
+                        <div style={{ fontSize: "13px", color: "#1E293B", fontWeight: 600, marginTop: "2px" }}>{requirement.requirement}</div>
+                        {children.length > 0 && <div style={{ fontSize: "11px", color: "#0D5C6B", marginTop: "4px", fontWeight: 700 }}>{children.length} detailed requirements</div>}
+                      </div>
+                      {source?.url && (
+                        <a href={source.url} onClick={(event) => event.stopPropagation()} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#0D5C6B", fontWeight: 800, whiteSpace: "nowrap" }}>
+                          {requirement.cfrReference} ↗
+                        </a>
+                      )}
                     </div>
-                    {source?.url && (
-                      <a href={source.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", color: "#0D5C6B", fontWeight: 800, whiteSpace: "nowrap" }}>
-                        {requirement.cfrReference} ↗
-                      </a>
-                    )}
-                  </div>
-                </div>
+                  </summary>
+                  {children.length > 0 && (
+                    <div style={{ display: "grid", gap: "7px", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #D8E4E8" }}>
+                      {children.map((child) => (
+                        <div key={child.id} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "7px", padding: "9px 10px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start", flexWrap: "wrap" }}>
+                            <div style={{ flex: "1 1 360px" }}>
+                              <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", marginBottom: "4px" }}>
+                                <a href={child.officialSourceUrls?.[0]} target="_blank" rel="noopener noreferrer" style={{ fontSize: "11px", color: "#0D5C6B", fontWeight: 800 }}>
+                                  {child.cfrReference} ↗
+                                </a>
+                                {child.surveyTags?.map((tag) => (
+                                  <span key={tag} title="Confirmed CMS Appendix A survey tag" style={{ fontSize: "10px", color: "#7C2D12", background: "#FFEDD5", border: "1px solid #FED7AA", borderRadius: "999px", padding: "2px 6px", fontWeight: 800 }}>
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                              <div style={{ fontSize: "12px", color: "#334155", lineHeight: 1.5 }}>{child.requirement}</div>
+                            </div>
+                            <div style={{ fontSize: "10px", color: "#64748B", whiteSpace: "nowrap" }}>
+                              Verified {child.lastVerifiedAt} · Review {child.nextReviewAt}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </details>
               );
             })}
           </div>
           <div style={{ fontSize: "11px", color: "#64748B", marginTop: "12px" }}>
-            Verified September 6, 2026 · Scheduled review December 6, 2026
+            Condition index verified September 6, 2026 · Detailed requirements verified September 7, 2026 · Scheduled review December 7, 2026
             {getRegulatorySource(verifiedRequirements[0]?.sourceIds[1])?.url && (
               <> · Survey guidance:{" "}
                 <a href={getRegulatorySource(verifiedRequirements[0].sourceIds[1]).url} target="_blank" rel="noopener noreferrer" style={{ color: "#0D5C6B", fontWeight: 700 }}>
