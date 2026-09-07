@@ -61,6 +61,286 @@ export const releasePathScannerRegistry = [
 const unicodeCaseConversion =
   /\.(?:toLowerCase|toLocaleLowerCase|toUpperCase|toLocaleUpperCase)\s*\(/u;
 
+function flowYamlKeyContexts(source, initialAncestors = []) {
+  const contexts = [];
+  let index = 0;
+
+  function skipWhitespaceAndComments() {
+    while (index < source.length) {
+      if (/\s/u.test(source[index])) {
+        index += 1;
+      } else if (source[index] === "#") {
+        while (index < source.length && source[index] !== "\n") index += 1;
+      } else {
+        break;
+      }
+    }
+  }
+
+  function readQuotedScalar() {
+    const quote = source[index];
+    index += 1;
+    let value = "";
+    while (index < source.length) {
+      const character = source[index];
+      if (character === quote) {
+        if (quote === "'" && source[index + 1] === "'") {
+          value += "'";
+          index += 2;
+          continue;
+        }
+        index += 1;
+        return value;
+      }
+      if (quote === '"' && character === "\\" && index + 1 < source.length) {
+        value += source[index + 1];
+        index += 2;
+      } else {
+        value += character;
+        index += 1;
+      }
+    }
+    return value;
+  }
+
+  function readMappingKey() {
+    skipWhitespaceAndComments();
+    if (source[index] === '"' || source[index] === "'") {
+      return readQuotedScalar();
+    }
+    const start = index;
+    while (
+      index < source.length &&
+      ![":", ",", "{", "}", "[", "]"].includes(source[index])
+    ) {
+      index += 1;
+    }
+    return source.slice(start, index).trim();
+  }
+
+  function skipPlainScalar() {
+    while (
+      index < source.length &&
+      ![",", "}", "]"].includes(source[index])
+    ) {
+      if (source[index] === '"' || source[index] === "'") {
+        readQuotedScalar();
+      } else if (source[index] === "#") {
+        while (index < source.length && source[index] !== "\n") index += 1;
+      } else {
+        index += 1;
+      }
+    }
+  }
+
+  function parseValue(ancestors) {
+    skipWhitespaceAndComments();
+    if (source[index] === "{") {
+      parseMapping(ancestors);
+    } else if (source[index] === "[") {
+      parseSequence(ancestors);
+    } else {
+      skipPlainScalar();
+    }
+  }
+
+  function parseMapping(ancestors) {
+    index += 1;
+    while (index < source.length) {
+      skipWhitespaceAndComments();
+      if (source[index] === "}") {
+        index += 1;
+        return;
+      }
+
+      const key = readMappingKey();
+      skipWhitespaceAndComments();
+      if (!key || source[index] !== ":") {
+        while (
+          index < source.length &&
+          source[index] !== "," &&
+          source[index] !== "}"
+        ) {
+          index += 1;
+        }
+      } else {
+        index += 1;
+        contexts.push({ key, ancestors });
+        parseValue([...ancestors, key]);
+      }
+
+      skipWhitespaceAndComments();
+      if (source[index] === ",") index += 1;
+    }
+  }
+
+  function parseSequence(ancestors) {
+    index += 1;
+    while (index < source.length) {
+      skipWhitespaceAndComments();
+      if (source[index] === "]") {
+        index += 1;
+        return;
+      }
+      parseValue(ancestors);
+      skipWhitespaceAndComments();
+      if (source[index] === ",") index += 1;
+    }
+  }
+
+  skipWhitespaceAndComments();
+  if (source[index] === "{" || source[index] === "[") {
+    parseValue(initialAncestors);
+  }
+  return contexts;
+}
+
+function yamlKeyContexts(text) {
+  const contexts = [];
+  const ancestors = [];
+
+  for (const lineMatch of text.matchAll(/([^\r\n]*)(?:\r\n|\n|$)/gu)) {
+    const line = lineMatch[1];
+    const sourceOffset = lineMatch.index;
+    if (lineMatch[0] === "") continue;
+    if (/^\s*(?:#|$)/u.test(line)) {
+      continue;
+    }
+    const indent = line.match(/^\s*/u)[0].length;
+    while (
+      ancestors.length > 0 &&
+      ancestors[ancestors.length - 1].indent >= indent
+    ) {
+      ancestors.pop();
+    }
+    const match = line.match(
+      /^(\s*)(?:-\s*)?(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_./#@-]+))\s*:/u,
+    );
+    if (!match) {
+      const flowStart = line.search(/^\s*(?:-\s*)?[\[{]/u);
+      if (flowStart >= 0) {
+        const collectionStart = line.search(/[\[{]/u);
+        contexts.push(
+          ...flowYamlKeyContexts(
+            text.slice(sourceOffset + collectionStart),
+            ancestors.map((ancestor) => ancestor.key),
+          ),
+        );
+      }
+      continue;
+    }
+
+    const key = match[2] ?? match[3] ?? match[4];
+    const parentKeys = ancestors.map((ancestor) => ancestor.key);
+    contexts.push({
+      key,
+      ancestors: parentKeys,
+    });
+    ancestors.push({ indent, key });
+
+    const valueText = line.slice(match[0].length).trimStart();
+    if (valueText.startsWith("{") || valueText.startsWith("[")) {
+      const valueOffset =
+        sourceOffset + match[0].length + line.slice(match[0].length).search(/\S/u);
+      contexts.push(
+        ...flowYamlKeyContexts(text.slice(valueOffset), [...parentKeys, key]),
+      );
+    }
+  }
+
+  return contexts;
+}
+
+function hasWorkflowPathFilter(path, text) {
+  const keys = yamlKeyContexts(text);
+  if (path.startsWith(".github/workflows/")) {
+    const events = new Set([
+      "push",
+      "pull_request",
+      "pull_request_target",
+      "merge_group",
+    ]);
+    if (
+      keys.some(
+        ({ key, ancestors }) =>
+          (key === "paths" || key === "paths-ignore") &&
+          ancestors[0] === "on" &&
+          ancestors.some((ancestor) => events.has(ancestor)),
+      )
+    ) {
+      return true;
+    }
+  }
+  if (path === ".gitlab-ci.yml") {
+    if (
+      keys.some(
+        ({ key, ancestors }) =>
+          key === "changes" &&
+          ancestors.some((ancestor) =>
+            ["rules", "only", "except"].includes(ancestor),
+          ),
+      )
+    ) {
+      return true;
+    }
+  }
+  if (path === "bitbucket-pipelines.yml") {
+    if (
+      keys.some(
+        ({ key, ancestors }) =>
+          (key === "includePaths" || key === "excludePaths") &&
+          ancestors.includes("changesets"),
+      )
+    ) {
+      return true;
+    }
+  }
+  if (
+    path === "Jenkinsfile" &&
+    /(?:^|\{)\s*changeset\b\s*(?:\(\s*)?(?:["']|\b(?:glob|pattern)\s*:)/mu.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  if (
+    path.startsWith(".circleci/") &&
+    (keys.some(({ key }) => key === "path-filtering/filter") ||
+      /circleci\/path-filtering@/u.test(text))
+  ) {
+    return true;
+  }
+  if (
+    path.startsWith(".buildkite/") &&
+    keys.some(
+      ({ key }) =>
+        key.startsWith("monorepo-diff#") ||
+        key.startsWith("changed-files#") ||
+        key === "monorepo-diff" ||
+        key === "changed-files",
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function hasFindPathScanner(text) {
+  return (
+    /(?:^|[;&|]\s*|\$\()\s*(?:-\s*)?(?:command\s+)?find(?:\s|$)/mu.test(
+      text,
+    ) ||
+    /^\s*(?:-\s*)?(?:run|script|command|commands)\s*:\s*(?:[>|][-+]?\s*)?(?:command\s+)?find(?:\s|$)/mu.test(
+      text,
+    ) ||
+    /\b(?:execFileSync|spawnSync)\s*\(\s*["']find["']/u.test(text)
+  );
+}
+
+// Buildkite has no provider-native changed-path condition. Its common
+// monorepo-diff and changed-files plugins are classified above; arbitrary
+// third-party plugins cannot be inferred safely from ordinary YAML keys.
 function looksLikeReleasePathScanner({ path, text }) {
   if (path.startsWith("scripts/") && /\.test\.[cm]?[jt]s$/u.test(path)) {
     return false;
@@ -68,7 +348,9 @@ function looksLikeReleasePathScanner({ path, text }) {
 
   return (
     /(?:--name-only|CANVAS_RELEASE_CHANGED_PATHS)/u.test(text) ||
-    (/\breaddir\b/u.test(text) && /\brelative\b/u.test(text))
+    (/\breaddir\b/u.test(text) && /\brelative\b/u.test(text)) ||
+    hasFindPathScanner(text) ||
+    hasWorkflowPathFilter(path, text)
   );
 }
 

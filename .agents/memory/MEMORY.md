@@ -7,3 +7,4 @@
 - [Clean checks after semantic merges](clean-checks-after-semantic-merges.md) — incremental TypeScript caches can hide merge corruption; completion checks after rebases must disable incremental mode.
 - [Vite optional peer alignment](vite-optional-peer-alignment.md) — unpeered Vite plugins must resolve the same optional-peer context as the consuming artifact to keep plugin types compatible.
 - [CI serialization contracts](ci-serialization-contracts.md) — static guards must prove the produced value's shape; serializer names alone are not evidence of safe output.
+- [CI path-filter parsing](ci-path-filter-parsing.md) — scanner discovery must understand quoted keys plus block and flow YAML without treating ordinary provider config as a filter.

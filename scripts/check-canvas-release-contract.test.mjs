@@ -142,6 +142,202 @@ test("adding an unaudited release path scanner fails with registry guidance", ()
   assert.match(result, /"ascii-only" semantics or document and register its intentional Unicode semantics/);
 });
 
+test("provider path filters and shell find scanners require a portability audit", () => {
+  const fixtures = [
+    {
+      path: ".github/workflows/canvas.yml",
+      text: "on:\n  push:\n    paths:\n      - 'artifacts/**'",
+    },
+    {
+      path: ".github/workflows/canvas.yml",
+      text: "on:\n  pull_request:\n    paths-ignore:\n      - 'docs/**'",
+    },
+    {
+      path: ".github/workflows/canvas.yml",
+      text: '"on":\n  "push":\n    "paths":\n      - \'artifacts/**\'',
+    },
+    {
+      path: ".github/workflows/canvas.yml",
+      text:
+        "'on':\n  'pull_request':\n    'paths-ignore':\n      - 'docs/**'",
+    },
+    {
+      path: ".github/workflows/canvas.yml",
+      text: 'on: { push: { paths: ["artifacts/**"] } }',
+    },
+    {
+      path: ".gitlab-ci.yml",
+      text: "rules:\n  - changes:\n      - artifacts/**/*",
+    },
+    {
+      path: ".gitlab-ci.yml",
+      text: "only:\n  changes:\n    - artifacts/**/*",
+    },
+    {
+      path: ".gitlab-ci.yml",
+      text: "except:\n  'changes':\n    - docs/**/*",
+    },
+    {
+      path: ".gitlab-ci.yml",
+      text: "release: { rules: [{ changes: [artifacts/**/*] }] }",
+    },
+    {
+      path: "bitbucket-pipelines.yml",
+      text: "condition:\n  changesets:\n    includePaths:\n      - artifacts/**",
+    },
+    {
+      path: "bitbucket-pipelines.yml",
+      text: "condition:\n  changesets:\n    excludePaths:\n      - docs/**",
+    },
+    {
+      path: "bitbucket-pipelines.yml",
+      text:
+        "pipelines: { default: [{ step: { condition: { changesets: { includePaths: [artifacts/**] } } } }] }",
+    },
+    {
+      path: "Jenkinsfile",
+      text: "when { changeset glob: 'artifacts/**', comparator: 'GLOB' }",
+    },
+    {
+      path: "Jenkinsfile",
+      text:
+        "when { changeset pattern: 'artifacts/**', comparator: 'GLOB' }",
+    },
+    {
+      path: "Jenkinsfile",
+      text: "when { changeset(pattern: 'artifacts/**') }",
+    },
+    {
+      path: ".circleci/config.yml",
+      text: "workflows:\n  setup:\n    jobs:\n      - path-filtering/filter:\n          mapping: |",
+    },
+    {
+      path: ".circleci/config.yml",
+      text:
+        "orbs:\n  paths: circleci/path-filtering@1.2.0\nworkflows:\n  setup:\n    jobs:\n      - paths/filter:",
+    },
+    {
+      path: ".buildkite/pipeline.yml",
+      text: "plugins:\n  - monorepo-diff#v1.5.0:\n      watch:",
+    },
+    {
+      path: ".buildkite/pipeline.yml",
+      text: "plugins:\n  - changed-files#v2.0.0:",
+    },
+    {
+      path: "scripts/changed-paths.sh",
+      text: "find ./artifacts -type f -path '*/src/*'",
+    },
+    {
+      path: "scripts/changed-paths.sh",
+      text: "find -L artifacts -type f",
+    },
+    {
+      path: ".github/workflows/canvas.yml",
+      text: "steps:\n  - run: find artifacts -type f",
+    },
+    {
+      path: "scripts/changed-paths.mjs",
+      text: 'execFileSync("find", ["artifacts", "-type", "f"]);',
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const result = releasePathScannerAuditFailures([fixture], []).join("\n");
+    assert.match(
+      result,
+      /is unaudited; add it to releasePathScannerRegistry with "ascii-only" semantics or document and register its intentional Unicode semantics/,
+      `${fixture.path} was not classified as a scanner`,
+    );
+  }
+});
+
+test("new scanner forms pass only with declared ASCII or documented Unicode semantics", () => {
+  const entryPoints = [
+    {
+      path: ".github/workflows/canvas.yml",
+      text: "on:\n  push:\n    paths:\n      - 'artifacts/**'",
+    },
+    {
+      path: "scripts/changed-paths.sh",
+      text: "find . -type f -path './artifacts/*'",
+    },
+  ];
+
+  assert.deepEqual(
+    releasePathScannerAuditFailures(entryPoints, [
+      { path: entryPoints[0].path, semantics: "ascii-only" },
+      { path: entryPoints[1].path, semantics: "documented-unicode" },
+    ]),
+    [],
+  );
+  assert.match(
+    releasePathScannerAuditFailures(entryPoints, [
+      { path: entryPoints[0].path },
+      { path: entryPoints[1].path, semantics: "locale-dependent" },
+    ]).join("\n"),
+    /must declare "ascii-only" or "documented-unicode" semantics/,
+  );
+});
+
+test("ordinary provider workflow configuration is not mistaken for path filtering", () => {
+  const ordinaryConfigs = [
+    { path: ".github/workflows/canvas.yml", text: "env:\n  paths: output" },
+    {
+      path: ".github/workflows/canvas.yml",
+      text:
+        "on:\n  push:\njobs:\n  build:\n    env:\n      paths: ordinary-value",
+    },
+    {
+      path: ".github/workflows/canvas.yml",
+      text: 'jobs: { build: { env: { paths: "ordinary-value" } } }',
+    },
+    { path: ".gitlab-ci.yml", text: "variables:\n  changes: none" },
+    {
+      path: ".gitlab-ci.yml",
+      text: "rules:\n  - if: $CI_COMMIT_BRANCH\nvariables:\n  changes: none",
+    },
+    {
+      path: ".gitlab-ci.yml",
+      text: "variables: { rules: ordinary, changes: none }",
+    },
+    {
+      path: "bitbucket-pipelines.yml",
+      text: "definitions:\n  caches:\n    include-paths: node_modules",
+    },
+    {
+      path: "bitbucket-pipelines.yml",
+      text:
+        "definitions:\n  changesets: ordinary-value\npipelines:\n  custom:\n    includePaths: ordinary-value",
+    },
+    {
+      path: "bitbucket-pipelines.yml",
+      text: "definitions: { changesets: ordinary, includePaths: ordinary }",
+    },
+    {
+      path: "Jenkinsfile",
+      text: "echo 'changeset pattern: ordinary configuration text'",
+    },
+    { path: ".circleci/config.yml", text: "parameters:\n  mapping: string" },
+    {
+      path: ".circleci/config.yml",
+      text: "# path-filtering/filter:\njobs:\n  filter: ordinary",
+    },
+    { path: ".buildkite/pipeline.yml", text: "env:\n  paths: artifacts" },
+    {
+      path: ".buildkite/pipeline.yml",
+      text: "# monorepo-diff#v1.5.0:\nsteps:\n  - command: ordinary",
+    },
+    { path: "scripts/report.sh", text: "printf 'find ./artifacts'" },
+    {
+      path: ".github/workflows/canvas.yml",
+      text: "description: find artifacts changed in this release",
+    },
+  ];
+
+  assert.deepEqual(releasePathScannerAuditFailures(ordinaryConfigs, []), []);
+});
+
 test("unaudited scanners in every supported workflow location fail with actionable registry guidance", async (t) => {
   const scannerSource =
     'execFileSync("git", ["diff", "--name-only", "HEAD^", "HEAD"]);';
