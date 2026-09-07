@@ -1,0 +1,396 @@
+# IMPLEMENTATION NOTE FOR REPLIT AGENT (DO NOT DISPLAY TO USERS)
+
+1. Publish the Terms below at `/terms`. Add footer links to Terms of Service, Privacy Policy, Billing & Cancellation, and Support on every page.
+2. Store this exact text as Terms **Version 1.0** with the effective date filled in. Never overwrite a published version; create a new version record for any change.
+3. Every item in **[BRACKETS]** is a fact you must verify by inspecting the code, configuration, and provider settings. Replace it with the true value or remove the sentence. Do NOT guess. If the application does not actually behave as a bracketed sentence describes, STOP and report the mismatch.
+4. Do not add any statement that the Terms were reviewed by an attorney, that the Service is HIPAA compliant, SOC 2, HITRUST, ISO, CMS-approved, or "100% secure."
+5. Remove the "ATTORNEY REVIEW NOTES" appendix at the end before publication. Keep it in the repository at `/legal/attorney-review-notes.md`.
+6. Acceptance must be affirmative clickwrap (unchecked checkbox) at account creation and at checkout, with the version, timestamp, user ID, organization ID, IP/user-agent metadata, and order ID recorded.
+
+---
+
+# CMS COMPLIANCE SUITE — TERMS OF SERVICE
+
+**Version:** 1.0
+**Effective Date:** [EFFECTIVE DATE]
+**Last Updated:** [PUBLICATION DATE]
+
+**Provided by:** CMS Compliance Guardian LLC, a Florida limited liability company
+550 Biltmore Way, Suite 200, Miami, FL 33134
+General: CMSComplianceGuardian@Outlook.com · Support: CMSComplianceGuardianHelp@Outlook.com
+
+---
+
+## PLEASE READ BEFORE USING THE SERVICE
+
+These Terms of Service ("Terms") are a binding legal agreement between CMS Compliance Guardian LLC ("Company," "we," "us," or "our") and the business or organization that creates an account or uses the Service ("Customer," "you," or "your"). By clicking "I Agree," creating an account, completing a purchase, or accessing or using the Service, you accept these Terms and our Privacy Policy.
+
+**Key points, explained in full below:**
+
+- **We are not CMS.** CMS Compliance Guardian LLC and CMS Compliance Suite are not affiliated with, endorsed by, sponsored by, or authorized by the Centers for Medicare & Medicaid Services or any government agency. (Section 3)
+- **This is software, not advice.** The Service is not legal, regulatory, clinical, or professional advice and does not guarantee compliance, accreditation, or survey outcomes. (Section 5)
+- **AI can be wrong.** Outputs are generated with artificial intelligence, may contain errors or omissions, and must be reviewed by a qualified human before use. (Section 6)
+- **Do not submit Protected Health Information.** The Service is not designed or authorized for PHI or ePHI, and we do not offer a Business Associate Agreement. (Section 8)
+- **Download what you want to keep.** Substantive content you upload or generate is not stored as a persistent repository and is deleted at Session End. (Section 10)
+- **Subscriptions renew automatically** until you cancel. Token usage is billed separately in arrears. You can cancel any time from your account settings. (Sections 13–14)
+- **Our liability is limited** and you agree to indemnify us for claims arising from your content and conduct. (Sections 23–24)
+
+---
+
+## 1. Acceptance, Parties, Authority, and Eligibility
+
+**1.1 Business use only.** The Service is offered solely to businesses, healthcare organizations, and other entities for commercial and professional purposes. It is not offered to, and may not be used by, individuals acting as consumers for personal, family, or household purposes.
+
+**1.2 Authority to bind.** The individual accepting these Terms represents and warrants that (a) they are at least 18 years old, (b) they are an employee, officer, contractor, or agent of the Customer, and (c) they have full legal authority to bind the Customer to these Terms. If you do not have that authority, do not accept these Terms or use the Service.
+
+**1.3 Agreement documents.** These Terms incorporate by reference (a) our Privacy Policy, (b) the pricing, billing period, and plan details displayed at checkout and in your account ("Order Details"), and (c) any written addendum signed by both parties. If there is a conflict, the order of precedence is: signed addendum, then Order Details, then these Terms, then the Privacy Policy.
+
+**1.4 Government entities.** If Customer is a federal, state, county, municipal, or other public entity, see Section 26.
+
+## 2. Definitions
+
+- **"Service"** means CMS Compliance Suite, including its web application, features, tools, templates, AI-assisted functionality, documentation, and any related support.
+- **"Customer Content"** means all information, documents, policies, procedures, prompts, text, files, uploads, pasted material, and other content that Customer or its Authorized Users submit to or through the Service.
+- **"Output"** means guidelines, policies, gap analyses, reports, summaries, drafts, and other material generated by the Service in response to Customer Content or Customer instructions.
+- **"Authorized User"** means an individual employee, contractor, or agent of Customer whom Customer permits to access the Service under Customer's account.
+- **"PHI"** means protected health information as defined under the Health Insurance Portability and Accountability Act of 1996 and its implementing regulations (collectively, "HIPAA"), and **"ePHI"** means PHI in electronic form.
+- **"Session End"** has the meaning given in Section 10.3.
+- **"Covered Parties"** means Company and its members, managers, officers, directors, employees, contractors, agents, licensors, successors, and assigns.
+- **"Token Usage"** means the metered consumption of AI processing capacity by Customer, as measured and displayed by the Service.
+
+## 3. No Affiliation with CMS or Any Government Agency
+
+**3.1** CMS Compliance Guardian LLC and CMS Compliance Suite are **not affiliated with, endorsed by, sponsored by, certified by, or approved by** the Centers for Medicare & Medicaid Services ("CMS"), the U.S. Department of Health and Human Services, any state survey agency, any accreditation organization, or any other governmental or quasi-governmental body. We are not agents or representatives of CMS. We do not speak for CMS. The Service is not an official CMS product.
+
+**3.2** References in the Service to CMS, Medicare, Medicaid, the Code of Federal Regulations, State Operations Manual, accreditation organizations (such as The Joint Commission or DNV), standards bodies, or any other organization are for informational and identification purposes only and do not imply any affiliation, endorsement, or sponsorship.
+
+**3.3** Nothing in the Service guarantees CMS compliance, a successful survey, or any particular regulatory outcome.
+
+## 4. Description of the Service; Changes
+
+**4.1** The Service is a software tool that assists organizations with compliance-related workflows, such as drafting policies and procedures informed by CMS Conditions of Participation and Conditions for Coverage, identifying potential gaps, preparing for surveys, organizing corrective-action planning, reviewing compliance documents, and supporting regulatory research.
+
+**4.2** We may add, modify, suspend, or discontinue any feature at any time. We will use reasonable efforts to give notice of material reductions in core functionality during a paid term.
+
+**4.3 Regulatory source data.** Some features retrieve or reference regulatory text from public sources such as the Electronic Code of Federal Regulations (eCFR). eCFR is an editorial compilation maintained by the U.S. Government and is **not the official legal edition** of the Code of Federal Regulations; it may lag behind published amendments or contain errors. Retrieval may fail or be incomplete. You are responsible for confirming current regulatory text from official sources.
+
+## 5. Not Professional Advice; No Guarantee of Compliance
+
+**5.1 Not a professional.** The Service and Company are not, and do not act as: a law firm or lawyer; legal, regulatory, or compliance counsel; CMS or any government agency or representative; an accreditation organization; a clinical decision-support or medical device system; a medical, nursing, or clinical advisor; an accountant or tax advisor; or a substitute for any licensed professional.
+
+**5.2 Customer retains all responsibility.** You are solely responsible for: reviewing and verifying all Output; determining which laws, regulations, manuals, interpretive guidance, and standards apply to you; obtaining advice from qualified professionals; approving, adopting, implementing, training on, and monitoring any policy or procedure; responding to surveyors, regulators, and accreditation bodies; and all decisions made or actions taken in reliance on the Service.
+
+**5.3 No guarantee.** To the maximum extent permitted by law, Company makes no representation, warranty, or guarantee of: CMS or other regulatory compliance; accreditation, certification, or licensure; successful surveys; zero deficiencies or citations; avoidance of penalties, sanctions, corrective action plans, or termination from federal programs; reimbursement or payment; favorable government action; patient, clinical, or business outcomes; or the accuracy, completeness, currency, or applicability of any regulatory reference.
+
+**5.4 Law changes.** Regulations, interpretive manuals, enforcement priorities, and guidance change frequently. Information displayed or generated may be outdated at the time you view it. You must independently confirm current requirements before relying on any Output.
+
+**5.5 No reliance.** You acknowledge that you are not relying on any statement by Company or the Service as legal, regulatory, or professional advice.
+
+## 6. AI-Assisted Features
+
+**6.1 AI disclosure.** The Service uses artificial intelligence models provided by third-party AI providers to generate Output. [VERIFY AND NAME THE ACTUAL AI PROVIDER(S) USED, e.g., "Anthropic, PBC." Do not list a provider that is not actually used.] Customer Content you submit for processing is transmitted to such provider(s) to generate Output, as described in our Privacy Policy.
+
+**6.2 Limitations of AI.** AI-generated Output may contain errors; be incomplete; be outdated; misunderstand your input; omit applicable requirements; produce inaccurate, inappropriate, or misleading language; cite regulations incorrectly; or produce results that appear plausible but are wrong. AI Output is not verified by Company.
+
+**6.3 Human review required.** All Output must be reviewed, edited as needed, and approved by a qualified human with appropriate expertise before it is relied upon, adopted, implemented, distributed, submitted to any regulator or accreditation body, or used for any purpose. [DO NOT STATE THAT COMPANY PERFORMS HUMAN REVIEW UNLESS THE SERVICE ACTUALLY DOES.]
+
+**6.4 Non-exclusive Output.** Because Output is generated by AI in response to inputs, the Service may generate identical or substantially similar Output for other customers. Company does not warrant that Output is unique.
+
+## 7. Accounts, Authorized Users, and Security
+
+**7.1** You must provide accurate, current, and complete registration information and keep it updated.
+
+**7.2** You are responsible for all activity under your account and by your Authorized Users, whether or not authorized by you, for maintaining the confidentiality of credentials, for the security of your own systems and networks, and for promptly notifying us at CMSComplianceGuardianHelp@Outlook.com of any suspected unauthorized access.
+
+**7.3** You must ensure that every Authorized User complies with these Terms. Accounts and credentials may not be shared with, or transferred to, anyone outside your organization. [STATE THE ACTUAL NUMBER OF AUTHORIZED USERS INCLUDED IN EACH PLAN IF THE APPLICATION ENFORCES A LIMIT.]
+
+## 8. Protected Health Information Prohibited; No Business Associate Agreement
+
+**8.1 The Service is not designed for PHI.** The Service is not designed, intended, or authorized for the submission, upload, storage, maintenance, transmission, or processing of PHI or ePHI. Company does not offer, and will not enter into, a HIPAA Business Associate Agreement for the Service.
+
+**8.2 Prohibited submissions.** You must not submit, upload, paste, or otherwise transmit to the Service any: PHI or ePHI; patient-identifiable health information; patient medical records; patient names in combination with any health information; medical record numbers; health-plan, insurance, or member identifiers; Social Security numbers; dates of birth associated with health information; patient-specific diagnoses, treatments, clinical narratives, incident reports, or complaints; or any other individually identifiable health information. Policy templates, procedures, and regulatory text that do not identify any patient are permitted.
+
+**8.3 Technical safeguards are not a substitute.** The Service may display warnings or attempt to detect patterns that resemble PHI and may block or flag such submissions. These safeguards are imperfect, may miss PHI, and may produce false positives. They do not shift responsibility to Company. You remain solely responsible for ensuring that no PHI or ePHI is submitted.
+
+**8.4 Consequences.** If Company becomes aware that PHI or ePHI has been submitted, Company may, without liability, delete the content, suspend or terminate the affected account, and take other steps it reasonably deems appropriate. Any PHI or ePHI submitted in violation of this Section is submitted at Customer's sole risk and is subject to Customer's indemnification obligations in Section 24.
+
+## 9. Customer Content and Output; Ownership and License
+
+**9.1 You own your Customer Content.** As between you and Company, you retain all right, title, and interest in your Customer Content. Company acquires no ownership of Customer Content by virtue of your use of the Service.
+
+**9.2 License to Company.** You grant Company a limited, non-exclusive, worldwide, royalty-free license to access, use, process, transmit, reproduce, and store Customer Content solely as necessary to: provide the Service and perform processing you request; transmit Customer Content to the AI provider(s) and other subprocessors identified in the Privacy Policy for that purpose; maintain security and prevent abuse; operate, maintain, and troubleshoot the Service; comply with applicable law and legal process; and enforce these Terms. This license ends when the relevant Customer Content is deleted under Section 10, except for limited records described in Section 10.5.
+
+**9.3 Output.** Subject to your compliance with these Terms and payment of applicable fees, Company assigns to you all of its right, title, and interest, if any, in Output generated for you. Company makes no warranty regarding Output (see Sections 5, 6, and 22). To the extent Output incorporates Company's templates, structures, or non-customer-specific materials, Company retains ownership of those underlying materials and grants you a non-exclusive license to use them as embedded in your Output.
+
+**9.4 No training on Customer Content.** Company does not use your Customer Content or Output to train its own AI models. [VERIFY THE AI PROVIDER'S COMMERCIAL API TERMS ON TRAINING AND RETENTION AND STATE THE ACTUAL POSITION IN THE PRIVACY POLICY. DO NOT ASSERT THAT THE PROVIDER DOES NOT TRAIN OR RETAIN UNLESS CONFIRMED.]
+
+**9.5 Responsibility for Customer Content.** You are solely responsible for the accuracy, legality, and appropriateness of Customer Content and for obtaining all rights and consents necessary to submit it to the Service.
+
+## 10. Content Lifecycle; Session End; Download Responsibility; Limited Records
+
+**10.1 Not a policy repository.** The Service is intentionally designed as an ephemeral, session-based tool. **We do not maintain your substantive policies, procedures, uploaded compliance documents, or generated Output as a persistent policy repository.** We may, however, retain limited account, billing, tax, security, legal-acceptance, fraud-prevention, and legally required records as described in Section 10.5 and the Privacy Policy.
+
+**10.2 Session-based workflow.** During a session you may upload or enter Customer Content, have the Service process it, review Output, and download Output. At Session End, substantive Customer Content and Output are deleted from the Service's active systems according to the deletion process described in the Privacy Policy.
+
+**10.3 Session End.** "Session End" occurs upon the earliest of: (a) your explicit logout; (b) server-side session expiration; (c) inactivity for [ACTUAL INACTIVITY TIMEOUT, e.g., 60 minutes]; (d) completion or termination of the relevant processing job; or (e) any other server-defined termination of the session. [CONFIRM THAT THESE ARE THE ACTUAL TECHNICAL TRIGGERS. Closing a browser tab does not by itself constitute Session End unless the architecture actually deletes content on that event.]
+
+**10.4 You must download what you want to keep.** If you wish to retain any policy, report, gap analysis, or other Output, **you must download and save it before Session End.** Company does not promise that any Output or Customer Content can be retrieved after Session End, and Company has no obligation to recover, reconstruct, or regenerate it.
+
+**10.5 Limited records we may retain.** Independent of substantive Customer Content, Company may retain: account and organization identifiers and contact details; billing, invoicing, payment, and tax records; Token Usage and metering data; security, access, and fraud-prevention logs consisting of operational metadata; Terms acceptance and version records; records needed for dispute resolution, enforcement of these Terms, or compliance with legal obligations; and other information described in the Privacy Policy. These records do not include the substantive text of your policies or uploads. [VERIFY THAT LOGS DO NOT CAPTURE DOCUMENT CONTENTS.]
+
+**10.6 Backups and third parties.** [STATE ACTUAL BACKUP BEHAVIOR. If substantive Customer Content can appear in backups, state the retention period, e.g., "Encrypted backups may contain residual Customer Content for up to [N] days before automatic expiration." If Customer Content is never written to backups, say so only if verified.] Third-party providers that process Customer Content on our behalf retain and delete data under their own terms, as described in the Privacy Policy.
+
+**10.7 Deletion on request.** You may request deletion of your account and associated limited records by contacting Support. We will comply except where retention is required by law, needed for billing or dispute resolution, or otherwise permitted under the Privacy Policy.
+
+## 11. Acceptable Use
+
+You must not, and must not permit any Authorized User or third party to:
+
+(a) use the Service for any unlawful, fraudulent, or deceptive purpose, including to deceive any regulator, surveyor, accreditation body, or payer;
+(b) create, backdate, falsify, or fabricate compliance records, survey evidence, attestations, or documentation;
+(c) submit PHI, ePHI, or other content prohibited by Section 8;
+(d) submit content that infringes, misappropriates, or violates any third party's intellectual-property, privacy, or other rights;
+(e) upload or transmit malware, malicious code, or harmful data;
+(f) access or attempt to access any account, data, or system without authorization, or probe, scan, or test the vulnerability of the Service without our written consent;
+(g) scrape, crawl, harvest, or bulk-extract content, prompts, templates, or Output from the Service by automated means;
+(h) reverse engineer, decompile, disassemble, or attempt to derive source code, models, prompts, or underlying components of the Service, except to the extent applicable law expressly prohibits this restriction;
+(i) copy, resell, sublicense, rent, lease, time-share, white-label, or otherwise commercially exploit the Service or Output as a standalone product, except as expressly authorized in a written agreement with Company;
+(j) interfere with or disrupt the integrity, performance, or availability of the Service;
+(k) use the Service to build, train, or improve a competing product or AI model;
+(l) remove or obscure proprietary notices;
+(m) use the Service in violation of any applicable law, regulation, or professional obligation; or
+(n) harass, threaten, or abuse Company personnel.
+
+## 12. Customer Representations and Warranties
+
+You represent, warrant, and covenant that: (a) you have full authority to enter into and perform these Terms; (b) you own or have all rights, licenses, and consents necessary to submit Customer Content; (c) Customer Content does not violate any law or third-party right; (d) you will not submit PHI or ePHI; (e) you and your Authorized Users will comply with all applicable federal, state, local, and industry-specific laws, rules, and standards in using the Service and any Output; (f) your use of the Service is for lawful business purposes; (g) all registration and payment information is accurate and you are authorized to use the payment method provided; and (h) you will independently verify all Output before use.
+
+## 13. Fees, Billing, Proration, Token Usage, and Payment
+
+**13.1 Plans and pricing.** Current pricing is displayed at checkout and in your account. As of the Effective Date:
+
+| Plan | Price | Billing |
+|---|---|---|
+| Monthly Maintenance | $299 per calendar month | Billed on the 1st of each month for that month |
+| Annual Maintenance | $3,588 (12 × $299; **no annual discount**) | Prepaid for a 12-month term |
+| Token Usage | At the per-token rate displayed in the Service [DO NOT INVENT A RATE] | Billed monthly in arrears on the 1st |
+
+**13.2 Subscription Start Date.** Your Subscription Start Date is the date on which all of the following have occurred: (a) signup is complete; (b) you have affirmatively accepted these Terms and acknowledged the Privacy Policy; (c) payment has been successfully authorized and processed; and (d) the Service has been activated. No paid subscription is activated until payment successfully processes. The Subscription Start Date is displayed in your account.
+
+**13.3 Prorated first month (Monthly plan).** If your Subscription Start Date falls after the first day of a calendar month, your initial maintenance charge is prorated for the remainder of that month using this formula:
+
+> **Initial Prorated Charge = $299 × (Billable Days Remaining ÷ Total Calendar Days in That Month)**
+
+"Billable Days Remaining" **includes** the Subscription Start Date and every remaining calendar day through the last day of that month. The result is rounded to the nearest cent. The same formula is used in checkout, invoices, the billing system, and your account dashboard. Example: activation on September 15 = $299 × (16 ÷ 30) = $159.47 for September 15–30; beginning October 1, $299 is charged on the first of each month.
+
+**13.4 Recurring monthly billing.** After the initial period, monthly maintenance of $299 is charged on the first day of each calendar month for that month, and the subscription automatically renews each month until cancelled. Your account displays the current period start and end dates, the amount charged, and the next charge date.
+
+**13.5 Annual plan.** The Annual plan is prepaid at $3,588 for a twelve-month term beginning on the Subscription Start Date. There is no discount for annual prepayment. At the end of the term the Annual plan automatically renews for a further twelve-month term at the then-current annual price unless cancelled before the renewal date. We will send a renewal reminder to your account email at least [30] days [VERIFY: not less than 15 and not more than 45 days] before each annual renewal. Token Usage under the Annual plan remains billed separately, monthly in arrears, unless the checkout page for your order expressly states otherwise.
+
+**13.6 Token Usage billing.** Token Usage is metered by the Service, is separate from maintenance fees, and is billed monthly in arrears on the first day of the following month at the per-token rate displayed in the Service at the time of use. Example: January Token Usage is billed February 1. Your account displays cumulative usage and, where feasible, estimated charges for the current period. You are responsible for all Token Usage incurred before the effective date of any cancellation or termination, and cancellation does not erase accrued Token Usage charges. You must notify us in writing of any good-faith dispute regarding a Token Usage invoice within thirty (30) days of the invoice date; undisputed amounts remain due.
+
+**13.7 Authorization for recurring charges.** By providing a payment method and completing checkout, you expressly authorize Company and its payment processor to charge that payment method, on a recurring basis and without further authorization, for all maintenance fees, Token Usage charges, applicable taxes, and other amounts due under these Terms until you cancel. You agree to keep your payment information current.
+
+**13.8 Taxes.** Fees are exclusive of all sales, use, excise, value-added, withholding, and similar taxes, which you are responsible for paying, other than taxes on Company's net income. If you claim tax exemption, you must provide a valid exemption certificate.
+
+**13.9 Payment failures and late payment.** If a payment method is declined, expired, or fails, or an ACH or processor error occurs, we may retry the charge, notify you, and, if the amount remains unpaid [7] days after notice, suspend access until payment is received. Amounts not paid when due may accrue interest at the lesser of 1.5% per month or the maximum rate permitted by law, and you are responsible for reasonable costs of collection, including attorneys' fees. Suspension does not relieve you of payment obligations.
+
+**13.10 Chargebacks.** If you believe a charge is incorrect, contact Support before initiating a chargeback so we can resolve the matter. Nothing in these Terms waives any chargeback right that cannot lawfully be waived. If an authorized and valid charge is reversed through a chargeback, we may suspend the account and pursue the unpaid balance, together with any processor fees, to the extent permitted by law.
+
+**13.11 Payment processor.** Payments are processed by a third-party payment processor [NAME THE ACTUAL PROCESSOR, e.g., "Stripe"]. Your use of the processor is subject to its terms and privacy policy. Company does not store full payment card numbers.
+
+**13.12 Price changes.** We may change prices or introduce new fees on at least thirty (30) days' notice to your account email. Price changes take effect at the start of your next billing period following the notice period. For Annual plans, price changes take effect at the next renewal. If you do not agree to a price change, you may cancel before it takes effect.
+
+## 14. Automatic Renewal and Cancellation
+
+**14.1 Automatic renewal disclosure.** **Your subscription renews automatically** — monthly for the Monthly plan and every twelve months for the Annual plan — and your payment method will be charged at the applicable rate on each renewal date **until you cancel.** This disclosure is repeated at checkout, in your order confirmation email, and in your account.
+
+**14.2 How to cancel.** You may cancel at any time, without calling us, from **Account → Billing → Cancel Subscription** in the Service. [VERIFY THE ACTUAL PATH.] You may also request cancellation by emailing CMSComplianceGuardianHelp@Outlook.com from your account email; email cancellations are effective when we confirm receipt.
+
+**14.3 What the cancellation screen shows.** Before you confirm cancellation, the Service displays your current plan, your paid-through date, the cancellation effective date, the next scheduled renewal date that will be avoided, any outstanding Token Usage, any outstanding balance, and a summary of the effect of cancellation.
+
+**14.4 Effect of cancellation.** Upon cancellation: (a) no further maintenance renewal charges will occur; (b) you retain access to the Service through the end of the period you have already paid for; (c) Token Usage continues to accrue and be billed for any use through the end of that period; (d) accrued Token Usage and any other amounts already due remain payable; and (e) no refund is issued for the remainder of a prepaid period except as provided in Section 15. We will send a cancellation confirmation to your account email.
+
+**14.5 Order confirmation.** After each purchase or renewal we send an email confirmation that includes the plan, price, billing period, renewal terms, and instructions for cancellation.
+
+## 15. Refunds
+
+**15.1** Maintenance fees (monthly or annual) are non-refundable solely because you cancel or stop using the Service before the end of a paid period.
+
+**15.2** We will refund or credit: duplicate charges; charges resulting from our billing error; charges you demonstrate were unauthorized; amounts required to be refunded by applicable law; and any other refund we approve in writing in our discretion.
+
+**15.3** Nothing in this Section limits any refund or cancellation right that cannot be waived under applicable law.
+
+## 16. Confidentiality
+
+**16.1** "Confidential Information" means non-public information disclosed by one party to the other in connection with the Service that is marked confidential or would reasonably be understood to be confidential, including Customer Content and Company's non-public technology, pricing, and business information. Confidential Information excludes information that is or becomes public through no fault of the recipient, was already known to the recipient without restriction, is independently developed, or is rightfully received from a third party without restriction.
+
+**16.2** Each party will use the other's Confidential Information only to perform under these Terms, protect it with at least reasonable care, and disclose it only to personnel and service providers who need to know it and are bound by confidentiality obligations no less protective. A party may disclose Confidential Information to the extent required by law or legal process, giving the other party prompt notice where legally permitted.
+
+**16.3** Company's obligations regarding Customer Content are further defined by Sections 8–10 and the Privacy Policy; ephemeral deletion at Session End satisfies Company's return-or-destroy obligations.
+
+## 17. Intellectual Property; Feedback
+
+**17.1 Company IP.** Company and its licensors own all right, title, and interest in the Service, including all software, source code, application code, user interface, design, workflows, prompts, model configurations, templates, taxonomies, documentation, trademarks, logos, service marks, and all non-customer-specific materials, and all improvements and derivative works of the foregoing. Except for the limited rights expressly granted in these Terms, no rights are granted to you, by implication, estoppel, or otherwise.
+
+**17.2 License to Customer.** Subject to these Terms and payment of fees, Company grants you a limited, non-exclusive, non-transferable, non-sublicensable, revocable license during your subscription to access and use the Service for your internal business purposes.
+
+**17.3 Feedback.** If you or your Authorized Users provide suggestions, ideas, or feedback about the Service ("Feedback"), you grant Company a perpetual, irrevocable, worldwide, royalty-free license to use and exploit the Feedback for any purpose without obligation to you. Feedback does not include Customer Content.
+
+**17.4 Trademarks.** "CMS Compliance Guardian," "CMS Compliance Suite," and related logos are trademarks of Company. You may not use them without prior written consent.
+
+## 18. Third-Party Services and Subprocessors
+
+**18.1** The Service relies on third-party providers, which may include: AI model providers; cloud hosting; payment processing; authentication; email delivery; document processing; analytics; and monitoring or error tracking. The categories and, where applicable, identities of providers that process Customer Content are listed in the Privacy Policy. [LIST ONLY PROVIDERS ACTUALLY IN USE AFTER INSPECTING THE APPLICATION.]
+
+**18.2** Third-party services are governed by their own terms and privacy policies. Company is not responsible for the acts, omissions, availability, or data practices of third parties, except as expressly stated in the Privacy Policy.
+
+**18.3** Any links or references to third-party websites, regulations, or resources are provided for convenience only and do not constitute endorsement.
+
+## 19. Security; Incident Notification
+
+**19.1** Company maintains reasonable administrative, technical, and organizational safeguards designed to protect the Service and Customer data, appropriate to the nature of the Service and the limited data it is designed to handle. Company does not represent that its safeguards are appropriate for PHI, ePHI, or other regulated data that the Service is not designed to process.
+
+**19.2** No system is perfectly secure. Company does not warrant that the Service will be free from unauthorized access, breaches, viruses, or other harmful components, or that data transmissions will be completely secure or confidential.
+
+**19.3** If Company confirms a security incident that results in unauthorized access to or acquisition of your account data in Company's possession, Company will notify you without undue delay, consistent with applicable law and the needs of any law-enforcement investigation, and will provide information reasonably available to help you meet your own legal obligations.
+
+**19.4** Company does not claim any security certification (such as SOC 2, HITRUST, or ISO 27001) unless expressly stated in writing by Company after verification.
+
+## 20. Availability, Support, and No Service Level
+
+**20.1** The Service may be unavailable or degraded due to scheduled or emergency maintenance, outages, third-party failures, network or internet interruptions, cyber events, or feature changes. Company does not guarantee uninterrupted, timely, secure, or error-free operation.
+
+**20.2** Company provides support by email at CMSComplianceGuardianHelp@Outlook.com during Company's normal business hours. Company does not commit to any response time, resolution time, uptime percentage, or service-level credit.
+
+## 21. Suspension and Termination
+
+**21.1 Term.** These Terms apply from your first acceptance and continue until your subscription ends and your account is closed.
+
+**21.2 Suspension or termination by Company.** Company may suspend or terminate your access, in whole or in part, if: (a) you materially breach these Terms; (b) any amount is materially overdue; (c) your use presents a security risk to the Service or others; (d) we reasonably suspect fraud, abuse, unlawful activity, or submission of PHI or ePHI; (e) we are required to do so by law or legal process; or (f) your conduct threatens the Service, other users, or Company personnel. Where practicable, Company will give notice and a reasonable opportunity to cure before termination for breach, except that Company may suspend immediately where reasonably necessary to protect the Service, users, security, or to comply with law.
+
+**21.3 Termination by Customer.** You may terminate by cancelling under Section 14 and closing your account.
+
+**21.4 Effect of termination.** Upon any termination: (a) all licenses granted to you end; (b) future maintenance renewals stop; (c) all accrued fees, Token Usage charges, and other amounts owed remain due and become immediately payable; (d) Company has no obligation to retain, retrieve, or return ephemeral Customer Content or Output, which is deleted according to Section 10; and (e) Company may retain the limited records described in Section 10.5.
+
+**21.5 Survival.** Sections 3, 5, 6, 8, 9.3–9.5, 10.5–10.6, 12, 13 (as to amounts accrued), 15, 16, 17, 21.4–21.5, 22, 23, 24, 25, 26, 27, 28, 30, 31, 32, and any other provision that by its nature should survive, will survive termination or expiration.
+
+## 22. Disclaimer of Warranties
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SERVICE, ALL OUTPUT, AND ALL RELATED MATERIALS ARE PROVIDED "AS IS" AND "AS AVAILABLE," WITH ALL FAULTS, AND WITHOUT WARRANTY OF ANY KIND. THE COVERED PARTIES EXPRESSLY DISCLAIM ALL WARRANTIES, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, ACCURACY, COMPLETENESS, QUIET ENJOYMENT, AND ANY WARRANTIES ARISING FROM COURSE OF DEALING, USAGE, OR TRADE. WITHOUT LIMITING THE FOREGOING, THE COVERED PARTIES MAKE NO WARRANTY THAT THE SERVICE OR OUTPUT WILL MEET YOUR REQUIREMENTS; WILL BE ACCURATE, COMPLETE, CURRENT, RELIABLE, OR ERROR-FREE; WILL RESULT IN COMPLIANCE WITH ANY LAW, REGULATION, CONDITION OF PARTICIPATION, CONDITION FOR COVERAGE, OR ACCREDITATION STANDARD; OR WILL RESULT IN ANY PARTICULAR SURVEY, ENFORCEMENT, REIMBURSEMENT, CLINICAL, OR BUSINESS OUTCOME. SOME JURISDICTIONS DO NOT ALLOW THE EXCLUSION OF CERTAIN WARRANTIES; IN THAT CASE THE ABOVE EXCLUSIONS APPLY TO THE FULLEST EXTENT PERMITTED.
+
+## 23. Limitation of Liability
+
+**23.1 Exclusion of certain damages.** TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT WILL ANY COVERED PARTY BE LIABLE TO YOU OR ANY THIRD PARTY FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR ANY LOST PROFITS, LOST REVENUE, LOST BUSINESS OPPORTUNITIES, LOSS OF GOODWILL, BUSINESS INTERRUPTION, LOSS OF ANTICIPATED SAVINGS, LOSS OF OR DAMAGE TO DATA, OR COST OF SUBSTITUTE SERVICES, ARISING OUT OF OR RELATING TO THESE TERMS, THE SERVICE, OR ANY OUTPUT, HOWEVER CAUSED AND UNDER ANY THEORY OF LIABILITY (CONTRACT, TORT, NEGLIGENCE, STRICT LIABILITY, STATUTE, OR OTHERWISE), EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+**23.2 Aggregate cap.** TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE TOTAL AGGREGATE LIABILITY OF THE COVERED PARTIES, COLLECTIVELY, ARISING OUT OF OR RELATING TO THESE TERMS, THE SERVICE, OR ANY OUTPUT WILL NOT EXCEED THE TOTAL FEES ACTUALLY PAID BY YOU TO COMPANY FOR THE SERVICE DURING THE TWELVE (12) MONTHS IMMEDIATELY PRECEDING THE EVENT GIVING RISE TO THE CLAIM. MULTIPLE CLAIMS WILL NOT ENLARGE THIS LIMIT.
+
+**23.3 Specific exclusions.** Without limiting Sections 23.1 and 23.2, the Covered Parties are not liable for any loss, damage, penalty, sanction, or cost arising from or relating to: reliance on any Output or other information provided by the Service; changes in law, regulation, guidance, or enforcement practice; your failure to verify information or obtain professional advice; your policy, implementation, or operational decisions; survey, accreditation, licensure, certification, or government outcomes; government or accreditation-body action or inaction; your misuse of the Service; Customer Content, including any PHI or ePHI submitted in violation of these Terms; your security failures or those of your systems, networks, or Authorized Users; third-party services; or events described in Section 31.2.
+
+**23.4 Basis of the bargain.** You acknowledge that the fees reflect the allocation of risk in this Section and that the Covered Parties would not provide the Service without these limitations. These limitations apply even if any remedy fails of its essential purpose.
+
+**23.5 No personal liability.** No member, manager, officer, director, employee, or agent of Company has any personal liability to you under these Terms or in connection with the Service; any claim must be brought solely against CMS Compliance Guardian LLC and is subject to this Section 23.
+
+**23.6 Non-waivable rights.** Nothing in this Section excludes or limits liability that cannot be excluded or limited under applicable law. In such jurisdictions, liability is limited to the greatest extent the law permits.
+
+## 24. Indemnification
+
+**24.1 By Customer.** You will defend, indemnify, and hold harmless the Covered Parties from and against any and all claims, demands, suits, proceedings, losses, damages, liabilities, judgments, settlements, fines, penalties, costs, and expenses (including reasonable attorneys' fees and costs) arising out of or relating to: (a) Customer Content, including any PHI or ePHI submitted in violation of Section 8; (b) your or your Authorized Users' breach of these Terms; (c) your or your Authorized Users' violation of any applicable law, regulation, or professional obligation; (d) any actual or alleged infringement or misappropriation of a third party's rights by Customer Content or by your use of Output; (e) unauthorized use of the Service through your account or credentials; (f) any fraudulent, deceptive, or unlawful activity; (g) your use, adoption, implementation, distribution, or submission of any Output, including to any regulator, surveyor, accreditation body, or payer; (h) your failure to obtain necessary rights, consents, or permissions; (i) any dispute between you and your patients, employees, contractors, regulators, or other third parties relating to your use of the Service; and (j) your misuse of the Service.
+
+**24.2 Procedure.** Company will give you prompt written notice of any claim for which it seeks indemnification (provided that delay does not relieve you of your obligations except to the extent you are materially prejudiced), reasonable cooperation at your expense, and, subject to Section 24.3, control of the defense.
+
+**24.3 Control and settlement.** You may control the defense with counsel reasonably acceptable to Company. Company may participate with its own counsel at its own expense. You may not settle any claim in a manner that admits fault on behalf of any Covered Party, imposes any non-monetary obligation on a Covered Party, or fails to fully release the Covered Parties, without Company's prior written consent. If you fail to assume the defense diligently, Company may assume it at your expense.
+
+## 25. Publicity
+
+Neither party will use the other's name, logo, or trademarks in marketing, press releases, or customer lists without prior written consent, except that Company may identify you as a customer in a non-public context (such as a private reference at your request).
+
+## 26. Government Entity Customers
+
+If you are a federal, state, county, municipal, tribal, or other public entity, and applicable law prohibits you from agreeing to any provision of these Terms (including indemnification, governing law, venue, or limitation of liability), that provision will apply to you only to the extent permitted by applicable law, the remaining Terms will apply in full, and Company may require a separate written agreement before providing the Service. The Service is commercial computer software and commercial computer software documentation as those terms are used in applicable federal acquisition regulations, and is provided to the U.S. Government with only those rights set forth in these Terms.
+
+## 27. Export Controls and Sanctions
+
+You represent that you are not, and are not owned or controlled by, any person or entity on any U.S. Government restricted-party list and that you are not located in a country subject to comprehensive U.S. sanctions. You will comply with all applicable export-control and sanctions laws in connection with the Service.
+
+## 28. Governing Law; Venue; Dispute Resolution
+
+**28.1 Governing law.** These Terms and any dispute arising out of or relating to them or the Service are governed by the laws of the State of Florida and applicable federal law of the United States, without regard to conflict-of-laws principles that would require application of another jurisdiction's law.
+
+**28.2 Venue.** Subject to Section 28.5, any action arising out of or relating to these Terms or the Service will be brought exclusively in the state or federal courts located in Miami-Dade County, Florida, and each party consents to the personal jurisdiction of and venue in those courts.
+
+**28.3 Nationwide savings clause.** Nothing in these Terms is intended to, or will be construed to, waive, limit, or deny any right, remedy, or protection that cannot lawfully be waived under the applicable law of the jurisdiction in which you are located or organized, including mandatory consumer-protection, business-protection, privacy, automatic-renewal, and electronic-contracting laws. To the extent such a law applies and conflicts with these Terms, that law controls as to that matter only, and the remainder of these Terms continues in effect.
+
+**28.4 Informal resolution first.** Before filing any lawsuit, the complaining party will send written notice describing the dispute to the other party (for Company, at the General email above), and the parties will attempt in good faith to resolve the dispute for at least thirty (30) days.
+
+**28.5 Equitable relief.** Notwithstanding Sections 28.2 and 28.4, either party may seek injunctive or other equitable relief in any court of competent jurisdiction to protect its intellectual property, Confidential Information, or the security of the Service.
+
+**28.6 Attorneys' fees.** In any action to enforce these Terms, the prevailing party is entitled to recover its reasonable attorneys' fees and costs, to the extent permitted by law.
+
+**28.7 Time limit.** To the extent permitted by applicable law, any claim against a Covered Party arising out of or relating to these Terms or the Service must be filed within one (1) year after the claim accrues or is permanently barred.
+
+**28.8 No arbitration, class waiver, or jury waiver.** These Terms do not require arbitration and do not contain a class-action waiver or jury-trial waiver.
+
+## 29. Changes to These Terms; Versioning
+
+**29.1** Each version of these Terms has a version number, effective date, and publication date. Prior versions are archived and not overwritten. Your acceptance record identifies the exact version you accepted.
+
+**29.2** We may update these Terms from time to time. For material changes, we will give at least thirty (30) days' notice to your account email and/or by prominent notice in the Service before the new version takes effect, and we will require renewed affirmative acceptance at your next login where appropriate. Non-material changes (such as clarifications or corrections) may take effect on publication.
+
+**29.3** If you do not agree to a change, you must cancel before the new version's effective date. Continued use after the effective date constitutes acceptance of the new version, except where applicable law requires affirmative consent, in which case we will obtain it.
+
+## 30. Notices; Electronic Communications
+
+**30.1** Notices to Company must be sent to CMS Compliance Guardian LLC, 550 Biltmore Way, Suite 200, Miami, FL 33134, with a copy to CMSComplianceGuardian@Outlook.com. Notices to you may be sent to the email address associated with your account or posted in the Service, and are effective when sent or posted.
+
+**30.2** You consent to receive all communications, disclosures, notices, invoices, and agreements electronically, and you agree that electronic acceptance, signatures, and records satisfy any legal requirement that they be in writing. You may request a paper copy of these Terms at the General email.
+
+**30.3** By providing contact information, you consent to receive transactional and account-related emails. Marketing emails will include an unsubscribe mechanism.
+
+## 31. Assignment; Force Majeure
+
+**31.1 Assignment.** You may not assign or transfer these Terms or any rights under them, by operation of law or otherwise, without Company's prior written consent, except where applicable law provides otherwise. Company may assign these Terms without consent in connection with a merger, acquisition, corporate reorganization, sale of all or substantially all of its assets or of the Service, or to an affiliate. Any prohibited assignment is void.
+
+**31.2 Force majeure.** Neither party is liable for any failure or delay in performance (other than payment obligations) caused by events beyond its reasonable control, including natural disasters, epidemics, governmental action or orders, war, terrorism, civil unrest, labor disputes, telecommunications or internet failures, power failures, cloud-provider or AI-provider outages, and cyber events not caused by the affected party's failure to use reasonable safeguards.
+
+## 32. General Provisions
+
+**32.1 Entire agreement.** These Terms, together with the documents incorporated in Section 1.3, constitute the entire agreement between the parties regarding the Service and supersede all prior or contemporaneous agreements, proposals, and communications, whether oral or written. Terms contained in any Customer purchase order, vendor registration form, or similar document are rejected and have no effect.
+
+**32.2 Severability.** If any provision is held invalid or unenforceable, it will be enforced to the maximum extent permissible and the remaining provisions remain in full force.
+
+**32.3 Waiver.** No waiver is effective unless in writing. Failure or delay in exercising any right is not a waiver.
+
+**32.4 No third-party beneficiaries.** Except that each Covered Party is an intended third-party beneficiary of Sections 22, 23, and 24 and may enforce them directly, there are no third-party beneficiaries of these Terms.
+
+**32.5 Independent contractors; no agency.** The parties are independent contractors. Nothing creates a partnership, joint venture, agency, franchise, or fiduciary relationship. No reseller, referral partner, consultant, or other third party has authority to bind Company, modify these Terms, or make representations or warranties on Company's behalf, and Company is not bound by any such statement.
+
+**32.6 Interpretation.** Headings are for convenience only. "Including" means "including without limitation." No rule of construction against the drafter applies.
+
+**32.7 Counterparts and records.** Company's electronic records of acceptance, versions, and transactions are admissible evidence of the agreement and its terms.
+
+## 33. Contact
+
+CMS Compliance Guardian LLC
+550 Biltmore Way, Suite 200
+Miami, FL 33134
+General inquiries: CMSComplianceGuardian@Outlook.com
+Support and cancellation assistance: CMSComplianceGuardianHelp@Outlook.com
+
+---
+---
+
+# ATTORNEY REVIEW NOTES (INTERNAL — REMOVE BEFORE PUBLICATION)
+
+This draft was prepared as a starting point and has **not** been reviewed by an attorney. Florida counsel review is requested on the following before publication:
+
+1. **Liability and indemnity (Sections 23–24):** 12-month-fees cap; consequential-damage exclusions; indemnification scope and procedure; whether any carve-outs are required or advisable for gross negligence, willful misconduct, IP infringement, confidentiality breach, data/security incidents, or non-waivable statutory rights; enforceability of the "no personal liability" clause for LLC members/officers; and the one-year limitations period in Section 28.7.
+2. **Nationwide enforceability (Section 28):** Florida governing law and Miami-Dade venue against out-of-state B2B customers; state business-protection statutes; state automatic-renewal laws (including California, New York, Illinois, District of Columbia, and others) and their disclosure, consent, acknowledgment, and renewal-reminder requirements, particularly for the 12-month Annual plan; ROSCA; electronic-contracting (ESIGN/UETA) sufficiency of clickwrap flow; prevailing-party fee clause.
+3. **PHI/HIPAA (Section 8):** Adequacy of the no-PHI / no-BAA position given HHS guidance that a cloud provider receiving, maintaining, or transmitting ePHI may be a business associate regardless of encryption; whether the technical controls (warnings, pattern detection, ephemeral storage, no-content logging, AI-provider configuration) consistently support that position; exposure if a customer submits PHI anyway.
+4. **AI provider terms (Sections 6, 9.4, 18):** Flow-down obligations from the AI provider's commercial terms and usage policy; accuracy of retention/training statements; Output ownership assignment language.
+5. **Privacy (Privacy Policy, separate document):** CCPA/CPRA applicability to business-contact data; Washington My Health My Data Act and similar state health-data laws even in a no-PHI model; state breach-notification obligations; subprocessor disclosure.
+6. **Billing (Sections 13–15):** Proration methodology; interest and collection-cost provisions against state usury limits; refund exceptions; chargeback language; sales-tax nexus and SaaS taxability by state.
+7. **Government customers (Section 26):** Sufficiency of the carve-out; whether a separate public-entity addendum should be prepared.
+8. **Confidentiality (Section 16):** Whether mutual confidentiality is commercially appropriate or should be one-way.
+9. **Future vendor/referral program:** A separate reseller or referral agreement will be needed; Section 32.5 preserves Company's position that such parties cannot bind Company.
+10. **Consider for later, after counsel review only:** mandatory arbitration, class-action waiver, and jury-trial waiver, which are intentionally omitted from this version.
