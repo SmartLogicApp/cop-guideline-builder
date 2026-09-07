@@ -94,6 +94,46 @@ test("rejects duplicate representative fixture paths and identifies the conflict
   );
 });
 
+test("rejects nested workflow directories and identifies both conflicting locations", () => {
+  const parentPath = ".github";
+  const nestedPath = ".github/workflows";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: parentPath,
+      fixturePath: ".github/actions/canvas.yml",
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `overlapping supported workflow locations: directory "${nestedPath}" is already covered by directory "${parentPath}"`,
+    ),
+  );
+});
+
+test("rejects workflow files covered by a declared directory and identifies both locations", () => {
+  const directoryPath = ".github/workflows";
+  const filePath = ".github/workflows/canvas.yml";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "file",
+      path: filePath,
+      fixturePath: filePath,
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `overlapping supported workflow locations: file "${filePath}" is already covered by directory "${directoryPath}"`,
+    ),
+  );
+});
+
 test("rejects unsupported workflow location types and identifies the entry and field", () => {
   const locations = [
     ...supportedWorkflowLocations,

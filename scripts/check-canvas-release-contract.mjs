@@ -123,6 +123,60 @@ export function duplicateWorkflowLocationFailures(
   return failures;
 }
 
+function isPathNestedUnder(parentPath, childPath) {
+  const nestedPath = relative(parentPath, childPath);
+  return (
+    nestedPath !== "" &&
+    nestedPath !== ".." &&
+    !nestedPath.startsWith(`..${sep}`) &&
+    !isAbsolute(nestedPath)
+  );
+}
+
+export function overlappingWorkflowLocationFailures(
+  locations = supportedWorkflowLocations,
+) {
+  const validLocations = locations.filter(
+    (location) =>
+      location &&
+      typeof location === "object" &&
+      !Array.isArray(location) &&
+      (location.type === "file" || location.type === "directory") &&
+      typeof location.path === "string" &&
+      location.path.trim() !== "",
+  );
+  const failures = [];
+
+  for (const [index, first] of validLocations.entries()) {
+    for (const second of validLocations.slice(index + 1)) {
+      let directory;
+      let covered;
+
+      if (
+        first.type === "directory" &&
+        isPathNestedUnder(first.path, second.path)
+      ) {
+        directory = first;
+        covered = second;
+      } else if (
+        second.type === "directory" &&
+        isPathNestedUnder(second.path, first.path)
+      ) {
+        directory = second;
+        covered = first;
+      } else {
+        continue;
+      }
+
+      failures.push(
+        `overlapping supported workflow locations: ${covered.type} "${covered.path}" is already covered by directory "${directory.path}"`,
+      );
+    }
+  }
+
+  return failures;
+}
+
 function isJsonArrayProducer(line) {
   const assignment = line.match(
     /CANVAS_RELEASE_CHANGED_PATHS\s*(?::|=)\s*(.*)$/,
@@ -236,6 +290,7 @@ export function checkCanvasReleaseContract(
   const failures = [
     ...workflowLocationShapeFailures(workflowLocations),
     ...duplicateWorkflowLocationFailures(workflowLocations),
+    ...overlappingWorkflowLocationFailures(workflowLocations),
   ];
   const unsafeProducers = unsafeChangedPathProducers(workflowConfigs);
   if (unsafeProducers.length > 0) {
