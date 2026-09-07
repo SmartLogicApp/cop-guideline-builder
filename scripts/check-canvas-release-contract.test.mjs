@@ -124,6 +124,46 @@ test("rejects dot-segment workflow path aliases and names both declarations", ()
   );
 });
 
+test("rejects a unique leading-dot workflow path and shows its canonical replacement", () => {
+  const declaredPath = "./.woodpecker";
+  const canonicalPath = ".woodpecker";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: declaredPath,
+      fixturePath: ".woodpecker/canvas.yml",
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `supported workflow location entry 8 field "path" uses non-canonical workflow path "\\./\\.woodpecker"; use "\\.woodpecker" instead`,
+    ),
+  );
+});
+
+test("rejects a unique trailing-slash fixture path and shows its canonical replacement", () => {
+  const declaredFixturePath = ".teamcity/canvas.yml/";
+  const canonicalFixturePath = ".teamcity/canvas.yml";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: ".teamcity",
+      fixturePath: declaredFixturePath,
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `supported workflow location entry 8 field "fixturePath" uses non-canonical workflow path "\\.teamcity/canvas\\.yml/"; use "\\.teamcity/canvas\\.yml" instead`,
+    ),
+  );
+});
+
 test("rejects duplicate representative fixture paths and identifies the conflict", () => {
   const duplicateFixturePath = ".circleci/nested/config.yml";
   const locations = [

@@ -97,6 +97,14 @@ export function workflowLocationShapeFailures(
         failures.push(
           `${entry} field "${field}" ${pathFailure}; received ${JSON.stringify(location[field])}`,
         );
+        continue;
+      }
+
+      const canonicalPath = normalizedWorkflowPath(location[field]);
+      if (location[field] !== canonicalPath) {
+        failures.push(
+          `${entry} field "${field}" uses non-canonical workflow path ${JSON.stringify(location[field])}; use ${JSON.stringify(canonicalPath)} instead`,
+        );
       }
     }
 
