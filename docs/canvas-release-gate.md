@@ -59,6 +59,18 @@ The focused `test:canvas-release-contract` suite also runs on
 `windows-latest` and `macos-latest` with Node 24. Hard-link identity and
 deterministic ordering remain required on both platforms.
 
+Workflow paths use Unicode Normalization Form C (NFC) for declarations,
+duplicate detection, diagnostics, and directory ordering. A decomposed path in
+the supported-location table is rejected with its composed replacement. If a
+filesystem preserves two distinct directory entries whose names normalize to
+the same NFC spelling, discovery fails explicitly rather than choosing one by
+host-dependent enumeration order.
+
+The composed/decomposed filename fixture runs when the host filesystem
+preserves both spellings as distinct entries. Filesystems such as common macOS
+volumes may normalize them into one entry; that unsupported capability is
+reported as an explicit skipped fixture instead of silently reducing coverage.
+
 The macOS lane requires every hard-link, symlink, and mixed-alias identity
 fixture to run. A filesystem error fails the suite so a scanner regression
 cannot be hidden as a host-policy exception.

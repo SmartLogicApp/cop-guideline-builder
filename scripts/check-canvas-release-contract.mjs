@@ -65,7 +65,12 @@ function workflowPathFailure(value) {
 }
 
 function normalizedWorkflowPath(value) {
-  return posix.normalize(value.replaceAll("\\", "/")).replace(/\/+$/, "") || "/";
+  return (
+    posix
+      .normalize(value.replaceAll("\\", "/"))
+      .replace(/\/+$/, "")
+      .normalize("NFC") || "/"
+  );
 }
 
 export function workflowLocationShapeFailures(
@@ -331,9 +336,22 @@ async function filesBelow(
     if (error.code === "ENOENT") return [];
     throw error;
   }
-  entries.sort((first, second) =>
-    first.name < second.name ? -1 : first.name > second.name ? 1 : 0,
-  );
+  const entriesByNormalizedName = new Map();
+  for (const entry of entries) {
+    const normalizedName = entry.name.normalize("NFC");
+    const existingName = entriesByNormalizedName.get(normalizedName);
+    if (existingName !== undefined && existingName !== entry.name) {
+      throw new Error(
+        `supported workflow location "${relative(rootDirectory, directory)}" contains canonically equivalent names ${JSON.stringify(existingName)} and ${JSON.stringify(entry.name)}; workflow paths use Unicode NFC and must be unique after normalization`,
+      );
+    }
+    entriesByNormalizedName.set(normalizedName, entry.name);
+  }
+  entries.sort((first, second) => {
+    const firstName = first.name.normalize("NFC");
+    const secondName = second.name.normalize("NFC");
+    return firstName < secondName ? -1 : firstName > secondName ? 1 : 0;
+  });
 
   const nestedAncestors = new Set(ancestorDirectories).add(resolvedDirectory);
   const files = [];
@@ -425,7 +443,7 @@ export async function readCheckedInWorkflowConfigs(
       if (seenFileIdentities.has(fileIdentity)) continue;
       seenFileIdentities.add(fileIdentity);
       configs.push({
-        path: relative(rootDirectory, path),
+        path: normalizedWorkflowPath(relative(rootDirectory, path)),
         text: await readFile(resolvedPath, "utf8"),
       });
     } catch (error) {
