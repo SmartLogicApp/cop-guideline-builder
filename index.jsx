@@ -1194,11 +1194,27 @@ function saveGapEntry(entry) {
   }
 }
 
+function saveGapActionPlan(entryId, actionPlan) {
+  if (!entryId) return {};
+  try {
+    const current = loadGapSession();
+    const actionPlans = { ...(current.actionPlans || {}) };
+    if (actionPlan) actionPlans[entryId] = actionPlan;
+    else delete actionPlans[entryId];
+    saveGapSession({ actionPlans });
+    return actionPlans;
+  } catch {
+    return {};
+  }
+}
+
 function deleteGapEntry(id) {
   try {
     const existing = loadGapHistory();
     const updated = existing.filter((e) => e.id !== id);
-    saveGapSession({ history: updated });
+    const actionPlans = { ...(loadGapSession().actionPlans || {}) };
+    delete actionPlans[id];
+    saveGapSession({ history: updated, actionPlans });
     return updated;
   } catch {
     return [];
@@ -2632,12 +2648,16 @@ function GapScannerTab({ institution }) {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(() => hasRestoredSession ? (initialSession.result ?? null) : null);
   const [resultMeta, setResultMeta] = useState(() => hasRestoredSession ? (initialSession.resultMeta ?? null) : null); // { institution, topic, timestamp }
-  const [actionPlan, setActionPlan] = useState(() => hasRestoredSession ? (initialSession.actionPlan ?? null) : null);
+  const initialLoadedEntryId = hasRestoredSession ? (initialSession.loadedEntryId ?? null) : null;
+  const [actionPlan, setActionPlan] = useState(() => {
+    if (!hasRestoredSession) return null;
+    return initialSession.actionPlans?.[initialLoadedEntryId] ?? initialSession.actionPlan ?? null;
+  });
   const [actionPlanLoading, setActionPlanLoading] = useState(false);
   const [actionPlanError, setActionPlanError] = useState(null);
   const [history, setHistory] = useState(() => loadGapHistory());
   const [showHistory, setShowHistory] = useState(false);
-  const [loadedEntryId, setLoadedEntryId] = useState(() => hasRestoredSession ? (initialSession.loadedEntryId ?? null) : null); // which history entry is currently shown
+  const [loadedEntryId, setLoadedEntryId] = useState(initialLoadedEntryId); // which history entry is currently shown
   const [actionCompletion, setActionCompletion] = useState(() => loadActionCompletion(hasRestoredSession ? initialSession.loadedEntryId : null));
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState([]); // up to 2 selected ids
@@ -2668,8 +2688,8 @@ function GapScannerTab({ institution }) {
       result,
       resultMeta,
       actionPlan,
-      history,
       loadedEntryId,
+      history,
     });
   }, [institution, unit, topic, customTopic, policyText, result, resultMeta, actionPlan, history, loadedEntryId]);
 
@@ -2759,6 +2779,7 @@ Rules:
       const parsed = repairJson(raw);
       const generatedPlan = parsed.actions || parsed;
       setActionPlan(generatedPlan);
+      saveGapActionPlan(loadedEntryId, generatedPlan);
       setActionCompletion(loadActionCompletion(loadedEntryId));
       if (loadedEntryId) {
         const currentEntry = history.find((entry) => entry.id === loadedEntryId);
@@ -2880,7 +2901,7 @@ Rules:
     setLoadedEntryId(entry.id);
     setActionCompletion(loadActionCompletion(entry.id));
     setShowHistory(false);
-    setActionPlan(entry.actionPlan ?? null);
+    setActionPlan(loadGapSession().actionPlans?.[entry.id] ?? entry.actionPlan ?? null);
     setActionPlanError(null);
     // Sync selectors to match the loaded entry
     const matchedTopic = topics.includes(entry.topic) ? entry.topic : topics[0] ?? TOPICS[0];
@@ -2896,6 +2917,7 @@ Rules:
     if (loadedEntryId === id) {
       setResult(null);
       setResultMeta(null);
+      setActionPlan(null);
       setLoadedEntryId(null);
     }
   }
@@ -3355,7 +3377,11 @@ Rules:
                   <ExcelButton onClick={() => exportActionPlanXlsx(actionPlan, effectiveInst, effectiveTopic)} label="↓ Excel" />
                   <button
                     style={{ ...S.btnSm }}
-                    onClick={() => { setActionPlan(null); setActionPlanError(null); }}
+                    onClick={() => {
+                      saveGapActionPlan(loadedEntryId, null);
+                      setActionPlan(null);
+                      setActionPlanError(null);
+                    }}
                     title="Dismiss action plan"
                   >✕ Dismiss</button>
                 </div>
