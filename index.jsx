@@ -4419,6 +4419,11 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
           <p style={{ margin: "-3px 0 14px", color: "#64748B", fontSize: "12px" }}>
             Provider Category → Provider Type → Compliance Workspace
           </p>
+          <p style={{ margin: "-8px 0 14px", color: "#64748B", fontSize: "11px" }}>
+            <span style={{ color: "#047857", fontWeight: 700 }}>● Automatic CCN verification</span>
+            {" · "}
+            <span style={{ color: "#B45309", fontWeight: 700 }}>● Manual enrollment review</span>
+          </p>
           <div style={{ display: "grid", gap: "16px" }}>
             {PROVIDER_CATEGORIES.map((category) => {
               const providers = getProvidersByCategory(category.id);
@@ -4439,6 +4444,16 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
                         <div>{provider.name}{provider.abbreviation ? ` (${provider.abbreviation})` : ""}</div>
                         <div style={{ fontSize: "10px", fontWeight: 500, marginTop: "3px", color: provider.contentStatus === "pending-verification" ? "#B45309" : "inherit", opacity: 0.82 }}>
                           {provider.displayReference}
+                        </div>
+                        <div style={{
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          marginTop: "5px",
+                          color: provider.ccnLookupStatus === "automatic" ? "#047857" : "#B45309",
+                        }}>
+                          {provider.ccnLookupStatus === "automatic"
+                            ? "● Automatic CCN verification"
+                            : "● Manual enrollment review"}
                         </div>
                       </button>
                     ))}

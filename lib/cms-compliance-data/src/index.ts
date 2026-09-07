@@ -130,7 +130,7 @@ export interface ProviderProfile {
     part: number;
     label: string;
   };
-  ccnLookupStatus: "configured" | "pending";
+  ccnLookupStatus: "automatic" | "manual";
 }
 
 export interface ProviderCategory {
@@ -873,7 +873,10 @@ function profile(seed: ProfileSeed): ProviderProfile {
       : verified
         ? "Verified Regulatory Content"
         : "Legacy Content Available",
-    ccnLookupStatus: ["hospital", "snf", "hha", "hospice"].includes(seed.id) ? "configured" : "pending",
+    ccnLookupStatus: [
+      "hospital", "cah", "psych", "ltch", "childrens", "irf",
+      "snf", "hha", "hospice", "asc", "esrd",
+    ].includes(seed.id) ? "automatic" : "manual",
   };
 }
 
@@ -1995,4 +1998,5 @@ export const LEGACY_INSTITUTION_TYPES = PROVIDER_PROFILES.map((provider) => ({
   cfr: provider.displayReference,
   categoryId: provider.categoryId,
   contentStatus: provider.contentStatus,
+  ccnLookupStatus: provider.ccnLookupStatus,
 }));

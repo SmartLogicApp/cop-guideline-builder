@@ -3,6 +3,7 @@ import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { accounts, accountUsers, adminUsers } from "@workspace/db";
 import { eq, and, isNull } from "drizzle-orm";
+import {
 
 const router: IRouter = Router();
 const CURRENT_TERMS_VERSION = "2026-08-13";
@@ -17,68 +18,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   (req as any).clerkEmail = (auth as any)?.sessionClaims?.email ?? null;
   next();
 }
-
-// ─── CCN lookup via CMS Care Compare API ────────────────────────────────────
-
-const CMS_DATASETS = [
-  // Hospitals  (field: facility_id)
-  { id: "xubh-q36u", ccnField: "facility_id", nameField: "facility_name",
-    stateField: "state", cityField: "city", type: "hospital" },
-  // Skilled Nursing Facilities  (field: federal_provider_number)
-  { id: "s5hk-2gjn", ccnField: "federal_provider_number", nameField: "provider_name",
-    stateField: "provider_state", cityField: "provider_city", type: "snf" },
-  // Home Health Agencies  (field: cms_certification_number_ccn)
-  { id: "qqw3-t4ie", ccnField: "cms_certification_number_ccn", nameField: "provider_name",
-    stateField: "state", cityField: "city", type: "hha" },
-  // Hospice  (field: cms_certification_number_ccn)
-  { id: "yc7d-nc2q", ccnField: "cms_certification_number_ccn", nameField: "facility_name",
-    stateField: "state", cityField: "city", type: "hospice" },
-];
-
-async function lookupCCN(ccn: string) {
-  for (const ds of CMS_DATASETS) {
-    try {
-      const resp = await fetch(
-        `https://data.cms.gov/provider-data/api/1/datastore/query/${ds.id}/0`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conditions: [{ property: ds.ccnField, value: ccn.toUpperCase(), operator: "=" }],
-            limit: 1,
-          }),
-          signal: AbortSignal.timeout(6_000),
-        },
-      );
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      const row = data?.results?.[0] ?? data?.data?.[0];
-      if (row) {
-        return {
-          found: true,
-          facilityName: row[ds.nameField] ?? null,
-          state:        row[ds.stateField] ?? null,
-          city:         row[ds.cityField] ?? null,
-          facilityType: ds.type,
-        };
-      }
-    } catch {
-      // network error or timeout → try next dataset
-    }
-  }
-  return { found: false, facilityName: null, state: null, city: null, facilityType: null };
-}
-
-// ─── Routes ──────────────────────────────────────────────────────────────────
-
-// GET /api/accounts/validate-ccn?ccn=XXXXXX
-router.get("/validate-ccn", async (req, res) => {
   const ccn = (req.query.ccn as string | undefined)?.trim().toUpperCase();
-  if (!ccn || !/^[A-Z0-9]{6}$/.test(ccn)) {
-    return res.status(400).json({ error: "CCN must be exactly 6 alphanumeric characters" });
-  }
 
-  // Check if already registered
+  const institutionType = (req.query.institutionType as string | undefined)?.trim().toLowerCase();
   const existing = await db.select().from(accounts).where(eq(accounts.ccn, ccn)).limit(1);
   if (existing.length) {
     return res.json({
@@ -88,11 +30,35 @@ router.get("/validate-ccn", async (req, res) => {
       facilityType: existing[0].facilityType,
       state: existing[0].state,
       city: existing[0].city,
+      verificationMode: "registered",
+      message: null,
     });
   }
 
-  const info = await lookupCCN(ccn);
-  return res.json({ ccn, alreadyRegistered: false, ...info });
+  if (institutionType && MANUAL_VERIFICATION_TYPES.has(institutionType)) {
+    return res.json({
+      ccn,
+      alreadyRegistered: false,
+      found: false,
+      facilityName: null,
+      state: null,
+      city: null,
+      facilityType: institutionType,
+      verificationMode: "manual",
+      message: MANUAL_VERIFICATION_MESSAGE,
+    });
+  }
+
+  const info = await lookupCCN(ccn, institutionType);
+  return res.json({
+    ccn,
+    alreadyRegistered: false,
+    ...info,
+    verificationMode: info.found ? "automatic" : "manual",
+    message: info.found
+      ? null
+      : "We could not confirm this CCN automatically. You can continue with registration and the facility will be reviewed manually.",
+  });
 });
 
 // GET /api/accounts/whoami — diagnostic: returns clerk ID + super-admin match result
@@ -254,8 +220,8 @@ router.post("/register", requireAuth, async (req, res) => {
   }
 
   const normalCCN = ccn.trim().toUpperCase();
-  if (!/^[A-Z0-9]{6}$/.test(normalCCN)) {
-    return res.status(400).json({ error: "CCN must be exactly 6 alphanumeric characters" });
+  if (!isValidProviderIdentifier(normalCCN, facilityType)) {
+    return res.status(400).json({ error: providerIdentifierError(facilityType) });
   }
 
   // Check if this user already has an account
