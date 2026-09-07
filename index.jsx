@@ -1267,6 +1267,184 @@ function gapToText(result, inst, topic) {
   return lines.join("\n");
 }
 
+// ─── Gap Comparison helpers ───────────────────────────────────────────────────
+
+/** Build a structured diff between two gap-analysis results (older = a, newer = b). */
+function buildGapComparison(a, b) {
+  // Key by "body|code" to avoid collisions across regulatory bodies.
+  // Fall back gracefully when body or code is absent.
+  const makeKey = (item) => `${(item.body || "").trim()}|${(item.code || item.title || "").trim()}`;
+
+  const index = (arr, status) =>
+    Object.fromEntries((arr || []).map((item) => [makeKey(item), { ...item, status }]));
+
+  const aAll = { ...index(a.met, "met"), ...index(a.weak, "weak"), ...index(a.missing, "missing") };
+  const bAll = { ...index(b.met, "met"), ...index(b.weak, "weak"), ...index(b.missing, "missing") };
+
+  const allKeys = new Set([...Object.keys(aAll), ...Object.keys(bAll)]);
+
+  const newlyMet     = []; // was weak/missing in A, now met in B
+  const improved     = []; // was missing in A, now weak in B
+  const regressions  = []; // was met/weak in A, now worse in B (met→weak, met→missing, weak→missing)
+  const stillWeak    = []; // weak in both
+  const stillMissing = []; // missing in both
+  const newItems     = []; // not in A at all, appeared in B
+  const dropped      = []; // was in A (any status), gone from B entirely
+
+  allKeys.forEach((key) => {
+    const av = aAll[key];
+    const bv = bAll[key];
+
+    if (!av && bv) {
+      // Only in B — new requirement surfaced by the newer scan
+      newItems.push({ ...bv });
+    } else if (av && !bv) {
+      // Only in A — requirement no longer flagged in the newer scan
+      dropped.push({ ...av });
+    } else {
+      // Present in both — classify the transition
+      const aS = av.status;
+      const bS = bv.status;
+
+      if (bS === "met" && (aS === "weak" || aS === "missing")) {
+        newlyMet.push({ a: av, b: bv });
+      } else if (bS === "weak" && aS === "missing") {
+        improved.push({ a: av, b: bv });
+      } else if (
+        (aS === "met"  && (bS === "weak" || bS === "missing")) ||
+        (aS === "weak" && bS === "missing")
+      ) {
+        // All worsening transitions: met→weak, met→missing, weak→missing
+        regressions.push({ a: av, b: bv });
+      } else if (aS === "weak" && bS === "weak") {
+        stillWeak.push({ a: av, b: bv });
+      } else if (aS === "missing" && bS === "missing") {
+        stillMissing.push({ a: av, b: bv });
+      }
+      // met in both — unchanged, no need to surface
+    }
+  });
+
+  return { newlyMet, improved, regressions, stillWeak, stillMissing, newItems, dropped };
+}
+
+function comparisonToText(entryA, entryB, diff) {
+  const instA = INSTITUTION_TYPES.find((i) => i.value === entryA.institution)?.label || entryA.institutionLabel || entryA.institution;
+  const instB = INSTITUTION_TYPES.find((i) => i.value === entryB.institution)?.label || entryB.institutionLabel || entryB.institution;
+  const dateA = new Date(entryA.timestamp).toLocaleDateString();
+  const dateB = new Date(entryB.timestamp).toLocaleDateString();
+  const scoreDelta = entryB.score !== null && entryA.score !== null ? entryB.score - entryA.score : null;
+
+  const itemLine = (item) => `  [${item.body || ""}] ${item.code || ""} — ${item.title || ""}`;
+
+  const lines = [
+    "GAP ANALYSIS COMPARISON",
+    `Baseline: ${instA} — ${entryA.topic} (${dateA}, score: ${entryA.score ?? "N/A"}%)`,
+    `Current:  ${instB} — ${entryB.topic} (${dateB}, score: ${entryB.score ?? "N/A"}%)`,
+    scoreDelta !== null ? `Score Change: ${scoreDelta >= 0 ? "+" : ""}${scoreDelta}%` : "",
+    "",
+  ];
+
+  if (diff.newlyMet.length) {
+    lines.push(`── ✅ NEWLY MET (${diff.newlyMet.length}) ──`);
+    diff.newlyMet.forEach(({ a, b }) => lines.push(`${itemLine(b)}  [was ${a.status}]`));
+    lines.push("");
+  }
+  if (diff.improved.length) {
+    lines.push(`── 📈 IMPROVED: Missing → Weak (${diff.improved.length}) ──`);
+    diff.improved.forEach(({ b }) => {
+      lines.push(itemLine(b));
+      if (b.recommendation) lines.push(`    Fix: ${b.recommendation}`);
+    });
+    lines.push("");
+  }
+  if (diff.regressions.length) {
+    lines.push(`── 🔴 REGRESSIONS (${diff.regressions.length}) ──`);
+    diff.regressions.forEach(({ a, b }) => {
+      lines.push(`${itemLine(b)}  [${a.status} → ${b.status}]`);
+      if (b.finding) lines.push(`    Finding: ${b.finding}`);
+      if (b.recommendation) lines.push(`    Fix: ${b.recommendation}`);
+    });
+    lines.push("");
+  }
+  if (diff.stillMissing.length) {
+    lines.push(`── ❌ STILL MISSING (${diff.stillMissing.length}) ──`);
+    diff.stillMissing.forEach(({ b }) => {
+      lines.push(itemLine(b));
+      if (b.recommendation) lines.push(`    Fix: ${b.recommendation}`);
+    });
+    lines.push("");
+  }
+  if (diff.stillWeak.length) {
+    lines.push(`── ⚠️ STILL WEAK (${diff.stillWeak.length}) ──`);
+    diff.stillWeak.forEach(({ b }) => {
+      lines.push(itemLine(b));
+      if (b.recommendation) lines.push(`    Fix: ${b.recommendation}`);
+    });
+    lines.push("");
+  }
+  if (diff.newItems.length) {
+    lines.push(`── 🆕 NEW IN CURRENT SCAN (${diff.newItems.length}) ──`);
+    diff.newItems.forEach((item) => {
+      lines.push(`${itemLine(item)}  [${item.status}]`);
+      if (item.finding) lines.push(`    Finding: ${item.finding}`);
+      if (item.recommendation) lines.push(`    Fix: ${item.recommendation}`);
+    });
+    lines.push("");
+  }
+  if (diff.dropped.length) {
+    lines.push(`── 🗑 NO LONGER FLAGGED IN CURRENT SCAN (${diff.dropped.length}) ──`);
+    diff.dropped.forEach((item) => lines.push(`${itemLine(item)}  [was ${item.status}]`));
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+function exportComparisonXlsx(entryA, entryB, diff) {
+  const instA = INSTITUTION_TYPES.find((i) => i.value === entryA.institution)?.label || entryA.institutionLabel;
+  const instB = INSTITUTION_TYPES.find((i) => i.value === entryB.institution)?.label || entryB.institutionLabel;
+
+  const rows = [];
+  const add = (category, transition, item, findingItem) => rows.push({
+    "Category": category,
+    "Transition": transition,
+    "Regulatory Body": item.body || "",
+    "Code / Reference": item.code || "",
+    "Requirement Title": item.title || "",
+    "Finding (Current)": (findingItem || item).finding || "",
+    "Recommended Fix": (findingItem || item).recommendation || "",
+  });
+
+  diff.newlyMet.forEach(({ a, b })     => add("✅ Newly Met",              `${a.status} → met`,      b));
+  diff.improved.forEach(({ a, b })     => add("📈 Improved",               "missing → weak",          b));
+  diff.regressions.forEach(({ a, b }) => add("🔴 Regression",             `${a.status} → ${b.status}`, b));
+  diff.stillMissing.forEach(({ b })   => add("❌ Still Missing",           "missing → missing",       b));
+  diff.stillWeak.forEach(({ b })      => add("⚠️ Still Weak",              "weak → weak",             b));
+  diff.newItems.forEach((item)         => add("🆕 New in Current Scan",    `new (${item.status})`,    item));
+  diff.dropped.forEach((item)          => add("🗑 No Longer Flagged",      `${item.status} → (gone)`, item));
+
+  const scoreDelta = (entryB.score !== null && entryA.score !== null) ? entryB.score - entryA.score : null;
+  const summary = [{
+    "Baseline": `${instA} — ${entryA.topic} (${new Date(entryA.timestamp).toLocaleDateString()})`,
+    "Baseline Score": entryA.score !== null ? `${entryA.score}%` : "N/A",
+    "Current": `${instB} — ${entryB.topic} (${new Date(entryB.timestamp).toLocaleDateString()})`,
+    "Current Score": entryB.score !== null ? `${entryB.score}%` : "N/A",
+    "Score Change": scoreDelta !== null ? `${scoreDelta >= 0 ? "+" : ""}${scoreDelta}%` : "N/A",
+    "Newly Met": diff.newlyMet.length,
+    "Improved": diff.improved.length,
+    "Regressions": diff.regressions.length,
+    "Still Missing": diff.stillMissing.length,
+    "Still Weak": diff.stillWeak.length,
+    "New in Current Scan": diff.newItems.length,
+    "No Longer Flagged": diff.dropped.length,
+  }];
+
+  downloadXlsx(
+    [{ name: "Comparison", rows }, { name: "Summary", rows: summary }],
+    `GapComparison_${new Date(entryA.timestamp).toLocaleDateString("en-CA")}_vs_${new Date(entryB.timestamp).toLocaleDateString("en-CA")}.xlsx`,
+  );
+}
+
 // ─── Action Plan helpers ──────────────────────────────────────────────────────
 
 function actionPlanToText(actions, inst, topic) {
@@ -2115,6 +2293,238 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
   );
 }
 
+// ─── Gap Comparison View ─────────────────────────────────────────────────────
+
+function GapComparisonView({ entryA, entryB, onClose }) {
+  const instA = INSTITUTION_TYPES.find((i) => i.value === entryA.institution) || { label: entryA.institutionLabel || entryA.institution, cfr: "" };
+  const instB = INSTITUTION_TYPES.find((i) => i.value === entryB.institution) || { label: entryB.institutionLabel || entryB.institution, cfr: "" };
+
+  const dateA = new Date(entryA.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const dateB = new Date(entryB.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+  const diff = buildGapComparison(entryA.result, entryB.result);
+  const scoreDelta = entryB.score !== null && entryA.score !== null ? entryB.score - entryA.score : null;
+
+  const scoreColorA = entryA.score >= 75 ? "#065F46" : entryA.score >= 50 ? "#92400E" : "#991B1B";
+  const scoreBgA    = entryA.score >= 75 ? "#D1FAE5" : entryA.score >= 50 ? "#FEF3C7" : "#FEE2E2";
+  const scoreColorB = entryB.score >= 75 ? "#065F46" : entryB.score >= 50 ? "#92400E" : "#991B1B";
+  const scoreBgB    = entryB.score >= 75 ? "#D1FAE5" : entryB.score >= 50 ? "#FEF3C7" : "#FEE2E2";
+
+  const deltaColor = scoreDelta === null ? "#64748B" : scoreDelta > 0 ? "#065F46" : scoreDelta < 0 ? "#991B1B" : "#64748B";
+  const deltaBg    = scoreDelta === null ? "#F1F5F9" : scoreDelta > 0 ? "#D1FAE5" : scoreDelta < 0 ? "#FEE2E2" : "#F1F5F9";
+  const deltaIcon  = scoreDelta > 0 ? "▲" : scoreDelta < 0 ? "▼" : "─";
+
+  const sectionStyle = (color, bg) => ({
+    background: bg, borderLeft: `4px solid ${color}`, padding: "10px 14px",
+    borderRadius: "0 6px 6px 0", marginBottom: "10px",
+  });
+
+  // Renders a single requirement row; `item` is the current (B) version, `statusLabel` is optional badge text
+  const CompareRow = ({ item, statusLabel, statusColor }) => (
+    <div style={{ border: "1px solid #E2E8F0", borderRadius: "7px", padding: "10px 12px", marginBottom: "8px", background: "#FAFAFA" }}>
+      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginBottom: "6px" }}>
+        {item.code && (
+          <span style={{ fontFamily: "monospace", fontSize: "11.5px", fontWeight: 700, color: "#475569", background: "#F1F5F9", padding: "1px 6px", borderRadius: "3px" }}>
+            {item.code}
+          </span>
+        )}
+        {item.body && (
+          <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", background: "#F1F5F9", padding: "1px 8px", borderRadius: "10px" }}>{item.body}</span>
+        )}
+        <span style={{ fontSize: "13px", fontWeight: 600, color: "#1A2332" }}>{item.title}</span>
+        {statusLabel && (
+          <span style={{ fontSize: "11px", fontWeight: 700, color: statusColor, background: `${statusColor}1A`, padding: "1px 8px", borderRadius: "10px", border: `1px solid ${statusColor}55` }}>
+            {statusLabel}
+          </span>
+        )}
+      </div>
+      {item.finding && (
+        <div style={{ fontSize: "12.5px", color: "#334155", marginBottom: "4px" }}>
+          <span style={{ fontWeight: 700, color: "#64748B", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.3px" }}>Finding: </span>
+          {item.finding}
+        </div>
+      )}
+      {item.recommendation && (
+        <div style={{ padding: "6px 10px", background: "#F0FDF4", borderRadius: "5px", borderLeft: "3px solid #10B981", fontSize: "12.5px", color: "#1A2332" }}>
+          <span style={{ fontWeight: 700, color: "#065F46", fontSize: "11px" }}>FIX: </span>
+          {item.recommendation}
+        </div>
+      )}
+    </div>
+  );
+
+  const copyText = comparisonToText(entryA, entryB, diff);
+
+  return (
+    <div style={{ ...S.card, borderLeft: "4px solid #0D5C6B", marginTop: "16px" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+        <div>
+          <div style={{ fontSize: "15px", fontWeight: 700, color: "#0D5C6B" }}>📊 Gap Scan Comparison</div>
+          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>Side-by-side diff of two saved analyses</div>
+        </div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <CopyButton text={copyText} label="Copy Comparison" />
+          <ExcelButton onClick={() => exportComparisonXlsx(entryA, entryB, diff)} label="↓ Excel" />
+          <button style={S.btnSm} onClick={onClose}>✕ Close</button>
+        </div>
+      </div>
+
+      {/* Side-by-side header cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: "10px", marginBottom: "18px", alignItems: "center" }}>
+        {/* Baseline */}
+        <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px 14px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "4px" }}>Baseline</div>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "#1A2332" }}>{entryA.topic}</div>
+          <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "2px" }}>{instA.label} · {dateA}</div>
+          {entryA.score !== null && (
+            <div style={{ display: "inline-block", padding: "3px 12px", borderRadius: "6px", background: scoreBgA, color: scoreColorA, fontWeight: 700, fontSize: "20px", marginTop: "8px" }}>
+              {entryA.score}%
+            </div>
+          )}
+        </div>
+
+        {/* Delta */}
+        <div style={{ textAlign: "center", flexShrink: 0 }}>
+          <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
+            <span style={{ fontSize: "18px", color: "#94A3B8" }}>→</span>
+            {scoreDelta !== null && (
+              <div style={{ padding: "4px 10px", borderRadius: "6px", background: deltaBg, color: deltaColor, fontWeight: 700, fontSize: "14px", whiteSpace: "nowrap" }}>
+                {deltaIcon} {scoreDelta >= 0 ? "+" : ""}{scoreDelta}%
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Current */}
+        <div style={{ background: "#F0FDF9", border: "1px solid #A7F3D0", borderRadius: "8px", padding: "12px 14px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "#065F46", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "4px" }}>Current</div>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "#1A2332" }}>{entryB.topic}</div>
+          <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "2px" }}>{instB.label} · {dateB}</div>
+          {entryB.score !== null && (
+            <div style={{ display: "inline-block", padding: "3px 12px", borderRadius: "6px", background: scoreBgB, color: scoreColorB, fontWeight: 700, fontSize: "20px", marginTop: "8px" }}>
+              {entryB.score}%
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Stats summary row */}
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "18px" }}>
+        {[
+          { label: "Newly Met",          count: diff.newlyMet.length,     bg: "#D1FAE5", color: "#065F46", icon: "✅" },
+          { label: "Improved",           count: diff.improved.length,     bg: "#DBEAFE", color: "#1E40AF", icon: "📈" },
+          { label: "Regressions",        count: diff.regressions.length,  bg: "#FEE2E2", color: "#991B1B", icon: "🔴" },
+          { label: "Still Missing",      count: diff.stillMissing.length, bg: "#FEE2E2", color: "#991B1B", icon: "❌" },
+          { label: "Still Weak",         count: diff.stillWeak.length,    bg: "#FEF3C7", color: "#92400E", icon: "⚠️" },
+          { label: "New in Current",     count: diff.newItems.length,     bg: "#F5F3FF", color: "#5B21B6", icon: "🆕" },
+          { label: "No Longer Flagged",  count: diff.dropped.length,      bg: "#F1F5F9", color: "#475569", icon: "🗑" },
+        ].map(({ label, count, bg, color, icon }) => (
+          count > 0 && (
+            <div key={label} style={{ padding: "6px 14px", borderRadius: "8px", background: bg, color, fontWeight: 700, fontSize: "13px", textAlign: "center" }}>
+              {icon} {count} <span style={{ fontSize: "11px", fontWeight: 600 }}>{label}</span>
+            </div>
+          )
+        ))}
+        {Object.values(diff).every((arr) => arr.length === 0) && (
+          <div style={{ color: "#94A3B8", fontSize: "13px", padding: "6px 0" }}>No comparable requirements found across both scans.</div>
+        )}
+      </div>
+
+      {/* Newly met */}
+      {diff.newlyMet.length > 0 && (
+        <div style={{ marginBottom: "14px" }}>
+          <div style={sectionStyle("#10B981", "#D1FAE5")}>
+            <div style={{ fontWeight: 700, color: "#065F46", fontSize: "13px" }}>✅ Newly Met Requirements ({diff.newlyMet.length})</div>
+            <div style={{ fontSize: "11px", color: "#065F46", opacity: 0.8, marginTop: "2px" }}>These gaps were closed — requirements are now fully satisfied.</div>
+          </div>
+          {diff.newlyMet.map(({ a, b }, idx) => (
+            <CompareRow key={idx} item={b} statusLabel={`was ${a.status}`} statusColor="#065F46" />
+          ))}
+        </div>
+      )}
+
+      {/* Improved */}
+      {diff.improved.length > 0 && (
+        <div style={{ marginBottom: "14px" }}>
+          <div style={sectionStyle("#1E40AF", "#DBEAFE")}>
+            <div style={{ fontWeight: 700, color: "#1E40AF", fontSize: "13px" }}>📈 Improved: Missing → Weak ({diff.improved.length})</div>
+            <div style={{ fontSize: "11px", color: "#1E40AF", opacity: 0.8, marginTop: "2px" }}>Partial progress — these requirements moved from missing to partial coverage.</div>
+          </div>
+          {diff.improved.map(({ a, b }, idx) => (
+            <CompareRow key={idx} item={b} statusLabel="missing → weak" statusColor="#1E40AF" />
+          ))}
+        </div>
+      )}
+
+      {/* Regressions (met→weak, met→missing, weak→missing) */}
+      {diff.regressions.length > 0 && (
+        <div style={{ marginBottom: "14px" }}>
+          <div style={sectionStyle("#EF4444", "#FEE2E2")}>
+            <div style={{ fontWeight: 700, color: "#991B1B", fontSize: "13px" }}>🔴 Regressions ({diff.regressions.length})</div>
+            <div style={{ fontSize: "11px", color: "#991B1B", opacity: 0.8, marginTop: "2px" }}>Compliance worsened — includes met→weak, met→missing, and weak→missing transitions.</div>
+          </div>
+          {diff.regressions.map(({ a, b }, idx) => (
+            <CompareRow key={idx} item={b} statusLabel={`${a.status} → ${b.status}`} statusColor="#991B1B" />
+          ))}
+        </div>
+      )}
+
+      {/* Still missing */}
+      {diff.stillMissing.length > 0 && (
+        <div style={{ marginBottom: "14px" }}>
+          <div style={sectionStyle("#EF4444", "#FEE2E2")}>
+            <div style={{ fontWeight: 700, color: "#991B1B", fontSize: "13px" }}>❌ Still Missing ({diff.stillMissing.length})</div>
+            <div style={{ fontSize: "11px", color: "#991B1B", opacity: 0.8, marginTop: "2px" }}>Unresolved gaps — these requirements remain absent in both scans.</div>
+          </div>
+          {diff.stillMissing.map(({ a, b }, idx) => (
+            <CompareRow key={idx} item={b} statusLabel={null} statusColor="#991B1B" />
+          ))}
+        </div>
+      )}
+
+      {/* Still weak */}
+      {diff.stillWeak.length > 0 && (
+        <div style={{ marginBottom: "14px" }}>
+          <div style={sectionStyle("#F59E0B", "#FEF3C7")}>
+            <div style={{ fontWeight: 700, color: "#92400E", fontSize: "13px" }}>⚠️ Still Weak ({diff.stillWeak.length})</div>
+            <div style={{ fontSize: "11px", color: "#92400E", opacity: 0.8, marginTop: "2px" }}>Partial coverage persists across both scans — needs strengthening.</div>
+          </div>
+          {diff.stillWeak.map(({ a, b }, idx) => (
+            <CompareRow key={idx} item={b} statusLabel={null} statusColor="#92400E" />
+          ))}
+        </div>
+      )}
+
+      {/* New items in current scan (not in baseline) */}
+      {diff.newItems.length > 0 && (
+        <div style={{ marginBottom: "14px" }}>
+          <div style={sectionStyle("#7C3AED", "#F5F3FF")}>
+            <div style={{ fontWeight: 700, color: "#5B21B6", fontSize: "13px" }}>🆕 New in Current Scan ({diff.newItems.length})</div>
+            <div style={{ fontSize: "11px", color: "#5B21B6", opacity: 0.8, marginTop: "2px" }}>These requirements were not in the baseline scan — newly surfaced by the current analysis.</div>
+          </div>
+          {diff.newItems.map((item, idx) => (
+            <CompareRow key={idx} item={item} statusLabel={item.status} statusColor="#5B21B6" />
+          ))}
+        </div>
+      )}
+
+      {/* Dropped items (in baseline only, not in current scan) */}
+      {diff.dropped.length > 0 && (
+        <div style={{ marginBottom: "14px" }}>
+          <div style={sectionStyle("#94A3B8", "#F1F5F9")}>
+            <div style={{ fontWeight: 700, color: "#475569", fontSize: "13px" }}>🗑 No Longer Flagged ({diff.dropped.length})</div>
+            <div style={{ fontSize: "11px", color: "#475569", opacity: 0.8, marginTop: "2px" }}>These requirements appeared in the baseline but were not flagged by the current scan. They may be resolved or may reflect different AI sampling.</div>
+          </div>
+          {diff.dropped.map((item, idx) => (
+            <CompareRow key={idx} item={item} statusLabel={`was ${item.status}`} statusColor="#475569" />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Gap Scanner Tab ─────────────────────────────────────────────────────────
 
 function GapScannerTab({ institution }) {
@@ -2142,6 +2552,9 @@ function GapScannerTab({ institution }) {
   const [history, setHistory] = useState(() => loadGapHistory());
   const [showHistory, setShowHistory] = useState(false);
   const [loadedEntryId, setLoadedEntryId] = useState(null); // which history entry is currently shown
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState([]); // up to 2 selected ids
+  const [comparison, setComparison] = useState(null); // { entryA, entryB } when comparison is open
 
   // Reset unit when institution changes
   useEffect(() => {
@@ -2549,30 +2962,85 @@ Rules:
       {/* History panel */}
       {showHistory && (
         <div style={S.card}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            <div style={{ fontSize: "13px", fontWeight: 700, color: "#1A2332" }}>Temporary Session Results</div>
-            <div style={{ fontSize: "11px", color: "#94A3B8" }}>Available only during this browser session</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+            <div>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1A2332" }}>Temporary Session Results</div>
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "2px" }}>Available only during this browser session</div>
+            </div>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              {compareMode && compareIds.length === 2 && (
+                <button
+                  style={{ padding: "6px 14px", fontSize: "12px", fontWeight: 700, border: "none", borderRadius: "6px", background: "#0D5C6B", color: "#fff", cursor: "pointer" }}
+                  onClick={() => {
+                    const a = history.find((e) => e.id === compareIds[0]);
+                    const b = history.find((e) => e.id === compareIds[1]);
+                    if (!a || !b) return;
+                    // Ensure A is older (lower timestamp) and B is newer
+                    const [entryA, entryB] = new Date(a.timestamp) <= new Date(b.timestamp) ? [a, b] : [b, a];
+                    setComparison({ entryA, entryB });
+                    setShowHistory(false);
+                    setCompareMode(false);
+                    setCompareIds([]);
+                  }}
+                >
+                  📊 Compare 2 Selected
+                </button>
+              )}
+              {history.length >= 2 && (
+                <button
+                  style={{ padding: "6px 12px", fontSize: "12px", fontWeight: 600, border: `1px solid ${compareMode ? "#0D5C6B" : "#CBD5E1"}`, borderRadius: "6px", background: compareMode ? "#E8F4F5" : "#fff", color: compareMode ? "#0D5C6B" : "#475569", cursor: "pointer" }}
+                  onClick={() => { setCompareMode((v) => !v); setCompareIds([]); }}
+                >
+                  {compareMode ? "✕ Cancel Compare" : "⇄ Compare"}
+                </button>
+              )}
+              {!compareMode && <div style={{ fontSize: "11px", color: "#94A3B8" }}>Click a row to reload</div>}
+              {compareMode && <div style={{ fontSize: "11px", color: "#0D5C6B", fontWeight: 600 }}>Select 2 to compare ({compareIds.length}/2)</div>}
+            </div>
           </div>
           {history.length === 0 ? (
             <div style={{ color: "#94A3B8", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>No temporary results yet. Run a scan to begin this session.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               {history.map((entry) => {
-                const scoreColor = entry.score === null ? "#64748B" : entry.score >= 75 ? "#065F46" : entry.score >= 50 ? "#92400E" : "#991B1B";
-                const scoreBg   = entry.score === null ? "#F1F5F9"  : entry.score >= 75 ? "#D1FAE5"  : entry.score >= 50 ? "#FEF3C7"  : "#FEE2E2";
-                const isLoaded  = loadedEntryId === entry.id;
-                const instLabel = INSTITUTION_TYPES.find((i) => i.value === entry.institution)?.label || entry.institutionLabel || entry.institution;
+                const eScoreColor = entry.score === null ? "#64748B" : entry.score >= 75 ? "#065F46" : entry.score >= 50 ? "#92400E" : "#991B1B";
+                const eScoreBg   = entry.score === null ? "#F1F5F9"  : entry.score >= 75 ? "#D1FAE5"  : entry.score >= 50 ? "#FEF3C7"  : "#FEE2E2";
+                const isLoaded   = loadedEntryId === entry.id;
+                const isSelected = compareIds.includes(entry.id);
+                const instLabel  = INSTITUTION_TYPES.find((i) => i.value === entry.institution)?.label || entry.institutionLabel || entry.institution;
                 const date = new Date(entry.timestamp);
                 const dateStr = date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
                 const timeStr = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+                const handleRowClick = () => {
+                  if (compareMode) {
+                    if (isSelected) {
+                      setCompareIds(compareIds.filter((id) => id !== entry.id));
+                    } else if (compareIds.length < 2) {
+                      setCompareIds([...compareIds, entry.id]);
+                    }
+                  } else {
+                    loadHistoryEntry(entry);
+                  }
+                };
+
+                const borderColor = isSelected ? "#0D5C6B" : isLoaded ? "#0D5C6B" : "#E2E8F0";
+                const bgColor     = isSelected ? "#E8F4F5" : isLoaded ? "#E8F4F5" : "#FAFAFA";
+
                 return (
                   <div
                     key={entry.id}
-                    onClick={() => loadHistoryEntry(entry)}
-                    style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px", borderRadius: "7px", border: `1px solid ${isLoaded ? "#0D5C6B" : "#E2E8F0"}`, background: isLoaded ? "#E8F4F5" : "#FAFAFA", cursor: "pointer", transition: "border-color 0.15s" }}
+                    onClick={handleRowClick}
+                    style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px", borderRadius: "7px", border: `1px solid ${borderColor}`, background: bgColor, cursor: "pointer", transition: "border-color 0.15s" }}
                   >
+                    {/* Compare mode checkbox */}
+                    {compareMode && (
+                      <div style={{ width: "18px", height: "18px", borderRadius: "4px", border: `2px solid ${isSelected ? "#0D5C6B" : "#CBD5E1"}`, background: isSelected ? "#0D5C6B" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {isSelected && <span style={{ color: "#fff", fontSize: "11px", fontWeight: 700 }}>✓</span>}
+                      </div>
+                    )}
                     {entry.score !== null && (
-                      <div style={{ padding: "4px 10px", borderRadius: "6px", background: scoreBg, color: scoreColor, fontWeight: 700, fontSize: "15px", flexShrink: 0, minWidth: "52px", textAlign: "center" }}>
+                      <div style={{ padding: "4px 10px", borderRadius: "6px", background: eScoreBg, color: eScoreColor, fontWeight: 700, fontSize: "15px", flexShrink: 0, minWidth: "52px", textAlign: "center" }}>
                         {entry.score}%
                       </div>
                     )}
@@ -2584,18 +3052,30 @@ Rules:
                       <div>{dateStr}</div>
                       <div>{timeStr}</div>
                     </div>
-                    {isLoaded && <span style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B", background: "#E8F4F5", padding: "2px 7px", borderRadius: "4px", border: "1px solid #0D5C6B", flexShrink: 0 }}>Loaded</span>}
-                    <button
-                      onClick={(e) => handleDeleteEntry(e, entry.id)}
-                      style={{ padding: "3px 7px", fontSize: "11px", border: "1px solid #FCA5A5", borderRadius: "4px", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", flexShrink: 0 }}
-                      title="Delete this entry"
-                    >✕</button>
+                    {isSelected && <span style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B", background: "#E8F4F5", padding: "2px 7px", borderRadius: "4px", border: "1px solid #0D5C6B", flexShrink: 0 }}>Selected</span>}
+                    {!compareMode && isLoaded && <span style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B", background: "#E8F4F5", padding: "2px 7px", borderRadius: "4px", border: "1px solid #0D5C6B", flexShrink: 0 }}>Loaded</span>}
+                    {!compareMode && (
+                      <button
+                        onClick={(e) => handleDeleteEntry(e, entry.id)}
+                        style={{ padding: "3px 7px", fontSize: "11px", border: "1px solid #FCA5A5", borderRadius: "4px", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", flexShrink: 0 }}
+                        title="Delete this entry"
+                      >✕</button>
+                    )}
                   </div>
                 );
               })}
             </div>
           )}
         </div>
+      )}
+
+      {/* Comparison view */}
+      {comparison && !showHistory && (
+        <GapComparisonView
+          entryA={comparison.entryA}
+          entryB={comparison.entryB}
+          onClose={() => setComparison(null)}
+        />
       )}
 
       {loading && <div style={S.card}><LoadingSpinner message={loadingMsg} /></div>}
