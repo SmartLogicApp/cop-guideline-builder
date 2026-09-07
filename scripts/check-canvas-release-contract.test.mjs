@@ -14,17 +14,16 @@ import {
   requiresCanvasRelease,
 } from "./validate-canvas-changes.mjs";
 
-const [
-  replitConfig,
-  packageJsonText,
-  changedPathGuardText,
-  documentationText,
-] = await Promise.all([
-  readFile(new URL("../.replit", import.meta.url), "utf8"),
-  readFile(new URL("../package.json", import.meta.url), "utf8"),
-  readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
-  readFile(new URL("../docs/canvas-release-gate.md", import.meta.url), "utf8"),
-]);
+const [replitConfig, packageJsonText, changedPathGuardText, documentationText] =
+  await Promise.all([
+    readFile(new URL("../.replit", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
+    readFile(
+      new URL("../docs/canvas-release-gate.md", import.meta.url),
+      "utf8",
+    ),
+  ]);
 
 function failures({
   replit = replitConfig,
@@ -80,8 +79,7 @@ test("discovers and rejects unsafe Buildkite changed-path producers", async (t) 
     ].join("\n"),
   );
 
-  const workflowConfigs =
-    await readCheckedInWorkflowConfigs(rootDirectory);
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
   const result = failures({ workflowConfigs }).join("\n");
 
   assert.match(result, /\.buildkite\/pipeline\.yml:4/);
@@ -100,18 +98,71 @@ test("discovers and accepts safe Buildkite JSON-array producers", async (t) => {
       "steps:",
       '  - command: "pnpm run validate:canvas:changed"',
       "    env:",
-      "      CANVAS_RELEASE_CHANGED_PATHS: '[\"README.md\",\"path with spaces\"]'",
+      '      CANVAS_RELEASE_CHANGED_PATHS: \'["README.md","path with spaces"]\'',
     ].join("\n"),
   );
 
-  const workflowConfigs =
-    await readCheckedInWorkflowConfigs(rootDirectory);
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
 
   assert.deepEqual(
     workflowConfigs.map(({ path }) => path),
     [".buildkite/pipelines/canvas.yml"],
   );
   assert.deepEqual(failures({ workflowConfigs }), []);
+});
+
+test("discovers unsafe producers in every supported workflow location only", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  const supportedLocations = [
+    ".replit",
+    ".gitlab-ci.yml",
+    "bitbucket-pipelines.yml",
+    "Jenkinsfile",
+    ".github/workflows/nested/canvas.yml",
+    ".circleci/nested/config.yml",
+    ".buildkite/nested/pipeline.yml",
+  ];
+  const excludedLocations = [
+    "src/workflow.js",
+    "docs/workflow.md",
+    ".github/canvas.yml",
+    "circleci/config.yml",
+    "buildkite/pipeline.yml",
+  ];
+  const allLocations = [...supportedLocations, ...excludedLocations];
+
+  await Promise.all(
+    allLocations.map(async (path) => {
+      await mkdir(join(rootDirectory, ...path.split("/").slice(0, -1)), {
+        recursive: true,
+      });
+      await writeFile(
+        join(rootDirectory, path),
+        `CANVAS_RELEASE_CHANGED_PATHS: unsafe-${path}`,
+      );
+    }),
+  );
+
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
+  const discoveredPaths = workflowConfigs.map(({ path }) => path).sort();
+  const result = failures({ workflowConfigs }).join("\n");
+
+  assert.deepEqual(discoveredPaths, supportedLocations.toSorted());
+  for (const path of supportedLocations) {
+    assert.match(
+      result,
+      new RegExp(`${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:1`),
+    );
+  }
+  for (const path of excludedLocations) {
+    assert.doesNotMatch(
+      result,
+      new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+  }
+  assert.match(result, /must be a provable JSON array of path strings/);
 });
 
 test("rejects newline-delimited workflow producers with actionable guidance", () => {
