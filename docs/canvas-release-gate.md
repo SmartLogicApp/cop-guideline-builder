@@ -31,6 +31,7 @@ file exactly. The release contract check compares this ordered block with the
 guard's executable list, so keep the markers and one-path-per-line format.
 
 <!-- canvas-protected-paths:start -->
+
 ```text
 .replit
 package.json
@@ -43,6 +44,7 @@ artifacts/api-server/src/routes/billing.ts
 scripts/validate-canvas-changes.mjs
 scripts/validate-canvas-changes.test.mjs
 ```
+
 <!-- canvas-protected-paths:end -->
 
 The consultant-training package manifest is protected because its Vite optional
@@ -50,6 +52,15 @@ peers share pnpm resolution context with Canvas.
 
 Other documentation, API, mobile, marketing, slide, and video changes exit
 successfully without installing dependencies or building Canvas.
+
+## Windows portability check
+
+The focused `test:canvas-release-contract` suite also runs on
+`windows-latest` with Node 24. Hard-link identity and deterministic ordering
+remain required there. Symlink cases run when the hosted runner permits
+symbolic-link creation; if Windows denies that capability with a filesystem
+permission error, only those fixtures are reported as skipped with an explicit
+platform-policy reason.
 
 The guard can be checked deterministically by setting
 `CANVAS_RELEASE_CHANGED_PATHS` to a JSON array of path strings, such as

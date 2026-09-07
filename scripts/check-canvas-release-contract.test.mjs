@@ -36,6 +36,24 @@ const [replitConfig, packageJsonText, changedPathGuardText, documentationText] =
     ),
   ]);
 
+async function createSymlinkOrSkip(t, target, path) {
+  try {
+    await symlink(target, path);
+  } catch (error) {
+    if (
+      process.platform === "win32" &&
+      ["EPERM", "EACCES", "UNKNOWN"].includes(error?.code)
+    ) {
+      t.skip(
+        "Windows runner policy does not permit symbolic-link creation; hard-link identity coverage still runs",
+      );
+      return false;
+    }
+    throw error;
+  }
+  return true;
+}
+
 function failures({
   replit = replitConfig,
   command,
@@ -412,7 +430,11 @@ test("rejects missing and empty workflow location paths with clear entry and fie
 
 test("rejects absolute workflow paths and identifies the malformed entry and field", () => {
   const locations = [
-    { type: "file", path: "/etc/workflow.yml", fixturePath: "/etc/workflow.yml" },
+    {
+      type: "file",
+      path: "/etc/workflow.yml",
+      fixturePath: "/etc/workflow.yml",
+    },
     {
       type: "directory",
       path: ".github/workflows",
@@ -541,7 +563,15 @@ test("rejects workflow symlinks that resolve outside the repository and identifi
 
   const externalWorkflow = join(externalDirectory, "canvas.yml");
   await writeFile(externalWorkflow, "CANVAS_RELEASE_CHANGED_PATHS: unsafe");
-  await symlink(externalWorkflow, join(rootDirectory, ".gitlab-ci.yml"));
+  if (
+    !(await createSymlinkOrSkip(
+      t,
+      externalWorkflow,
+      join(rootDirectory, ".gitlab-ci.yml"),
+    ))
+  ) {
+    return;
+  }
 
   await assert.rejects(
     readCheckedInWorkflowConfigs(rootDirectory),
@@ -558,7 +588,15 @@ test("accepts workflow symlinks that resolve inside the repository", async (t) =
     join(rootDirectory, "ci", "canvas.yml"),
     'CANVAS_RELEASE_CHANGED_PATHS=["README.md"]',
   );
-  await symlink("ci/canvas.yml", join(rootDirectory, ".gitlab-ci.yml"));
+  if (
+    !(await createSymlinkOrSkip(
+      t,
+      "ci/canvas.yml",
+      join(rootDirectory, ".gitlab-ci.yml"),
+    ))
+  ) {
+    return;
+  }
 
   const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
 
@@ -580,8 +618,19 @@ test("scans converging file aliases once and keeps the first checked-in location
     join(rootDirectory, "ci", "canvas.yml"),
     "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
   );
-  await symlink("ci/canvas.yml", join(rootDirectory, ".gitlab-ci.yml"));
-  await symlink("ci/canvas.yml", join(rootDirectory, "bitbucket-pipelines.yml"));
+  if (
+    !(await createSymlinkOrSkip(
+      t,
+      "ci/canvas.yml",
+      join(rootDirectory, ".gitlab-ci.yml"),
+    ))
+  ) {
+    return;
+  }
+  await symlink(
+    "ci/canvas.yml",
+    join(rootDirectory, "bitbucket-pipelines.yml"),
+  );
 
   const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
 
@@ -651,7 +700,15 @@ test("deduplicates mixed symlink and hard-link aliases in deterministic supporte
   await mkdir(join(rootDirectory, ".github", "workflows"), { recursive: true });
   const sourcePath = join(rootDirectory, "ci", "canvas.yml");
   await writeFile(sourcePath, "CANVAS_RELEASE_CHANGED_PATHS: unsafe");
-  await symlink("ci/canvas.yml", join(rootDirectory, ".gitlab-ci.yml"));
+  if (
+    !(await createSymlinkOrSkip(
+      t,
+      "ci/canvas.yml",
+      join(rootDirectory, ".gitlab-ci.yml"),
+    ))
+  ) {
+    return;
+  }
   await link(
     sourcePath,
     join(rootDirectory, ".github", "workflows", "canvas.yml"),
@@ -680,10 +737,15 @@ test("scans converging directory aliases once and keeps the first sorted checked
     join(rootDirectory, "ci", "shared", "canvas.yml"),
     "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
   );
-  await symlink(
-    "../../ci/shared",
-    join(rootDirectory, ".github", "workflows", "z-alias"),
-  );
+  if (
+    !(await createSymlinkOrSkip(
+      t,
+      "../../ci/shared",
+      join(rootDirectory, ".github", "workflows", "z-alias"),
+    ))
+  ) {
+    return;
+  }
   await symlink(
     "../../ci/shared",
     join(rootDirectory, ".github", "workflows", "a-alias"),
@@ -713,7 +775,15 @@ test("walks shared workflow directory trees once across top-level aliases and ke
     join(rootDirectory, "ci", "shared", "nested", "canvas.yml"),
     "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
   );
-  await symlink("ci/shared", join(rootDirectory, ".circleci"));
+  if (
+    !(await createSymlinkOrSkip(
+      t,
+      "ci/shared",
+      join(rootDirectory, ".circleci"),
+    ))
+  ) {
+    return;
+  }
   await mkdir(join(rootDirectory, ".github"), { recursive: true });
   await symlink("../ci/shared", join(rootDirectory, ".github", "workflows"));
 
@@ -749,10 +819,15 @@ test("discovers nested workflow symlinks that resolve inside the repository", as
     join(rootDirectory, "ci", "canvas.yml"),
     "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
   );
-  await symlink(
-    "../../../ci/canvas.yml",
-    join(rootDirectory, ".github", "workflows", "nested", "canvas.yml"),
-  );
+  if (
+    !(await createSymlinkOrSkip(
+      t,
+      "../../../ci/canvas.yml",
+      join(rootDirectory, ".github", "workflows", "nested", "canvas.yml"),
+    ))
+  ) {
+    return;
+  }
 
   const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
 
@@ -781,10 +856,15 @@ test("rejects nested workflow symlinks that resolve outside the repository witho
   });
   const externalWorkflow = join(externalDirectory, "canvas.yml");
   await writeFile(externalWorkflow, "CANVAS_RELEASE_CHANGED_PATHS: unsafe");
-  await symlink(
-    externalWorkflow,
-    join(rootDirectory, ".buildkite", "nested", "canvas.yml"),
-  );
+  if (
+    !(await createSymlinkOrSkip(
+      t,
+      externalWorkflow,
+      join(rootDirectory, ".buildkite", "nested", "canvas.yml"),
+    ))
+  ) {
+    return;
+  }
 
   await assert.rejects(
     readCheckedInWorkflowConfigs(rootDirectory),
@@ -1044,5 +1124,23 @@ test("rejects altered workflow args and swallowed failures", () => {
       ),
     }).join("\n"),
     /propagate failures/,
+  );
+});
+
+test("keeps the focused Canvas release contract suite on a supported Windows CI runner", async () => {
+  const windowsWorkflow = await readFile(
+    new URL(
+      "../.github/workflows/canvas-release-contract-windows.yml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(windowsWorkflow, /^name: Canvas release contract \(Windows\)$/m);
+  assert.match(windowsWorkflow, /^\s+runs-on: windows-latest$/m);
+  assert.match(windowsWorkflow, /^\s+node-version: 24$/m);
+  assert.match(
+    windowsWorkflow,
+    /^\s+run: pnpm run test:canvas-release-contract$/m,
   );
 });
