@@ -24,7 +24,6 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   (req as any).clerkEmail = (auth as any)?.sessionClaims?.email ?? null;
   return next();
 }
-
 router.get("/validate-ccn", requireAuth, async (req, res) => {
   const ccn = (req.query.ccn as string | undefined)?.trim().toUpperCase();
   const institutionType = (req.query.institutionType as string | undefined)?.trim().toLowerCase();
