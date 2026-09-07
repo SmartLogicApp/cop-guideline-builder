@@ -1183,7 +1183,10 @@ function loadGapHistory() {
 function saveGapEntry(entry) {
   try {
     const existing = loadGapHistory();
-    const updated = [entry, ...existing].slice(0, GAP_HISTORY_MAX);
+    const existingIndex = existing.findIndex((item) => item.id === entry.id);
+    const updated = existingIndex >= 0
+      ? existing.map((item, index) => index === existingIndex ? { ...item, ...entry } : item)
+      : [entry, ...existing].slice(0, GAP_HISTORY_MAX);
     saveGapSession({ history: updated });
     return updated;
   } catch {
@@ -2754,8 +2757,16 @@ Rules:
     try {
       const raw = await callApi(systemPrompt, userContent, 3000);
       const parsed = repairJson(raw);
-      setActionPlan(parsed.actions || parsed);
+      const generatedPlan = parsed.actions || parsed;
+      setActionPlan(generatedPlan);
       setActionCompletion(loadActionCompletion(loadedEntryId));
+      if (loadedEntryId) {
+        const currentEntry = history.find((entry) => entry.id === loadedEntryId);
+        if (currentEntry) {
+          const updated = saveGapEntry({ ...currentEntry, actionPlan: generatedPlan });
+          setHistory(updated);
+        }
+      }
     } catch (e) {
       setActionPlanError(e.message);
     } finally {
@@ -2854,6 +2865,7 @@ Rules:
       setActionCompletion(loadActionCompletion(entry.id));
       const updated = saveGapEntry(entry);
       setHistory(updated);
+      setLoadedEntryId(entry.id);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -2868,7 +2880,7 @@ Rules:
     setLoadedEntryId(entry.id);
     setActionCompletion(loadActionCompletion(entry.id));
     setShowHistory(false);
-    setActionPlan(null);
+    setActionPlan(entry.actionPlan ?? null);
     setActionPlanError(null);
     // Sync selectors to match the loaded entry
     const matchedTopic = topics.includes(entry.topic) ? entry.topic : topics[0] ?? TOPICS[0];
