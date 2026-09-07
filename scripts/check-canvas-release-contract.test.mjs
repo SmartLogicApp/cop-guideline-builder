@@ -166,6 +166,26 @@ test("rejects a unique backslash workflow path and shows its canonical replaceme
   );
 });
 
+test("rejects a unique backslash fixture path and shows its canonical replacement", () => {
+  const declaredFixturePath = ".teamcity\\pipelines\\canvas.yml";
+  const canonicalFixturePath = ".teamcity/pipelines/canvas.yml";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: ".teamcity",
+      fixturePath: declaredFixturePath,
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `supported workflow location entry 8 field "fixturePath" uses non-canonical workflow path "\\.teamcity\\\\\\\\pipelines\\\\\\\\canvas\\.yml"; use "\\.teamcity/pipelines/canvas\\.yml" instead`,
+    ),
+  );
+});
+
 test("rejects a unique repeated-separator workflow path and shows its canonical replacement", () => {
   const declaredPath = ".woodpecker//pipelines";
   const canonicalPath = ".woodpecker/pipelines";
