@@ -15,12 +15,21 @@ export const protectedCanvasPaths = [
   "scripts/validate-canvas-changes.test.mjs",
 ];
 
+// Repository portability is intentionally limited to ASCII case-insensitivity.
+// Do not normalize or Unicode-case-fold Git paths: filesystems disagree about
+// whether distinct Unicode spellings identify the same path.
+export function foldAsciiPath(path) {
+  return path.replace(/[A-Z]/g, (character) =>
+    String.fromCharCode(character.charCodeAt(0) + 0x20),
+  );
+}
+
 export function requiresCanvasRelease(changedPaths) {
   return changedPaths.some((changedPath) => {
-    const portableChangedPath = changedPath.toLowerCase();
+    const portableChangedPath = foldAsciiPath(changedPath);
 
     return protectedCanvasPaths.some((protectedPath) => {
-      const portableProtectedPath = protectedPath.toLowerCase();
+      const portableProtectedPath = foldAsciiPath(protectedPath);
 
       return (
         protectedPath.endsWith("/")

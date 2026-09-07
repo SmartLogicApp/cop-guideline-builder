@@ -26,10 +26,16 @@ import {
   requiresCanvasRelease,
 } from "./validate-canvas-changes.mjs";
 
-const [replitConfig, packageJsonText, changedPathGuardText, documentationText] =
-  await Promise.all([
+const [
+  replitConfig,
+  packageJsonText,
+  releaseContractSource,
+  changedPathGuardText,
+  documentationText,
+] = await Promise.all([
     readFile(new URL("../.replit", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("./check-canvas-release-contract.mjs", import.meta.url), "utf8"),
     readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
     readFile(
       new URL("../docs/canvas-release-gate.md", import.meta.url),
@@ -89,6 +95,19 @@ function failures({
 
 test("accepts the protected Canvas release configuration", () => {
   assert.deepEqual(failures(), []);
+});
+
+test("repository path scanners do not use Unicode-aware case conversion", () => {
+  for (const [path, source] of [
+    ["scripts/check-canvas-release-contract.mjs", releaseContractSource],
+    ["scripts/validate-canvas-changes.mjs", changedPathGuardText],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /\.(?:toLowerCase|toLocaleLowerCase|toUpperCase|toLocaleUpperCase)\s*\(/u,
+      `${path} must use the documented ASCII-only path fold`,
+    );
+  }
 });
 
 test("rejects composed, decomposed, and case-varied non-ASCII protected path declarations identically", () => {
@@ -660,6 +679,40 @@ test("rejects composed, decomposed, and case-varied non-ASCII discovered workflo
         assert.equal(
           error.message,
           `workflow path ${JSON.stringify(`.github/workflows/${name}`)} must contain ASCII characters only; non-ASCII workflow names are unsupported so discovery is identical across filesystems`,
+        );
+        return true;
+      },
+    );
+  }
+});
+
+test("rejects portable Unicode workflow fixtures identically on Linux, macOS, and Windows", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+  const workflowDirectory = join(rootDirectory, ".github", "workflows");
+  await mkdir(workflowDirectory, { recursive: true });
+  await writeFile(join(workflowDirectory, "canvas.yml"), "safe");
+  const [entry] = await readdir(workflowDirectory, { withFileTypes: true });
+  const fixtures = [
+    ["linux", "release-\u212a.yml"],
+    ["macos", "release-e\u0301.yml"],
+    ["windows", "release-\u0130.yml"],
+  ];
+
+  for (const [platform, name] of fixtures) {
+    await assert.rejects(
+      readCheckedInWorkflowConfigs(rootDirectory, {
+        readDirectory: async (directory, options) => {
+          const entries = await readdir(directory, options);
+          if (directory !== workflowDirectory) return entries;
+          return [{ ...entry, name }];
+        },
+      }),
+      (error) => {
+        assert.equal(
+          error.message,
+          `workflow path ${JSON.stringify(`.github/workflows/${name}`)} must contain ASCII characters only; non-ASCII workflow names are unsupported so discovery is identical across filesystems`,
+          platform,
         );
         return true;
       },

@@ -88,6 +88,15 @@ function normalizedWorkflowPath(value) {
   );
 }
 
+// Declaration paths are ASCII-only, and portability comparisons fold only
+// ASCII A-Z. Unicode normalization/case-folding is deliberately unsupported
+// because filesystem behavior differs across Linux, macOS, and Windows.
+function foldAsciiPath(value) {
+  return value.replace(/[A-Z]/g, (character) =>
+    String.fromCharCode(character.charCodeAt(0) + 0x20),
+  );
+}
+
 export function workflowLocationShapeFailures(
   locations = supportedWorkflowLocations,
 ) {
@@ -176,7 +185,7 @@ export function duplicateWorkflowLocationFailures(
       const value = location?.[key];
       if (typeof value !== "string" || value.trim() === "") continue;
       const normalizedValue = normalizedWorkflowPath(value);
-      const portableValue = normalizedValue.toLowerCase();
+      const portableValue = foldAsciiPath(normalizedValue);
       const originalValue = seen.get(portableValue);
       if (originalValue !== undefined) {
         if (normalizedWorkflowPath(originalValue) === normalizedValue) {
@@ -319,7 +328,7 @@ function assertNoCaseCollidingWorkflowEntries(
 ) {
   const seen = new Map();
   for (const entry of entries) {
-    const foldedName = entry.name.toLowerCase();
+    const foldedName = foldAsciiPath(entry.name);
     const originalName = seen.get(foldedName);
     if (originalName !== undefined && originalName !== entry.name) {
       const firstPath = normalizedWorkflowPath(

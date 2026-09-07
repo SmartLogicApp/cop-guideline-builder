@@ -7,10 +7,35 @@ import test from "node:test";
 
 import {
   changedPathsFromGit,
+  foldAsciiPath,
   formatCanvasPathForDisplay,
   parseEnvironmentChangedPaths,
   requiresCanvasRelease,
 } from "./validate-canvas-changes.mjs";
+
+const portableUnicodePathFixtures = [
+  {
+    platform: "linux",
+    paths: [
+      "artifacts/mockup-sandbo\u212a/src/App.tsx",
+      "scr\u0130pts/validate-canvas-changes.mjs",
+    ],
+  },
+  {
+    platform: "macos",
+    paths: [
+      "artifacts/mockup-sandbox\u0301/src/App.tsx",
+      "scripts/validate-canvas-changes.mjs\u0301",
+    ],
+  },
+  {
+    platform: "windows",
+    paths: [
+      "artifacts/mockup-sandbo\u017f/src/App.tsx",
+      "scr\u0131pts/validate-canvas-changes.mjs",
+    ],
+  },
+];
 
 function initializeRepository(repository) {
   execFileSync("git", ["init", "--quiet"], { cwd: repository });
@@ -96,6 +121,23 @@ test("case-only protected directory prefixes require the gate portably", () => {
     requiresCanvasRelease(["ARTIFACTS/MOCKUP-SANDBOX-COPY/src/App.tsx"]),
     false,
   );
+});
+
+test("folds ASCII case without normalizing or case-folding Unicode", () => {
+  assert.equal(foldAsciiPath("PACKAGE.JSON"), "package.json");
+  assert.equal(foldAsciiPath("CAF\u00c9/cafe\u0301/\u212a/\u0130"), "caf\u00c9/cafe\u0301/\u212a/\u0130");
+});
+
+test("Unicode neighboring paths have identical Linux, macOS, and Windows outcomes", () => {
+  for (const fixture of portableUnicodePathFixtures) {
+    for (const path of fixture.paths) {
+      assert.equal(
+        requiresCanvasRelease([path]),
+        false,
+        `${fixture.platform}: ${path}`,
+      );
+    }
+  }
 });
 
 test("deleted files in every protected category still require the gate", () => {
