@@ -54,6 +54,15 @@ export const tokenUsage = pgTable("token_usage", {
   createdAt:       timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
+export const ecfrCacheEntries = pgTable("ecfr_cache_entries", {
+  institutionValue: text("institution_value").primaryKey(),
+  text:             text("text").notNull(),
+  fetchDate:        text("fetch_date").notNull(),
+  source:           text("source").notNull(),
+  expiresAt:        timestamp("expires_at", { withTimezone: true }).notNull(),
+  updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export type Account     = typeof accounts.$inferSelect;
 export type AccountUser = typeof accountUsers.$inferSelect;
 export type AdminUser   = typeof adminUsers.$inferSelect;

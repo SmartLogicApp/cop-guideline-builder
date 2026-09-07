@@ -2,10 +2,14 @@ import { randomUUID } from "crypto";
 import { Router, type IRouter } from "express";
 import { GenerateWithAnthropicBody } from "@workspace/api-zod";
 import { db } from "@workspace/db";
-import { accountUsers, tokenUsage } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { accountUsers, ecfrCacheEntries, tokenUsage } from "@workspace/db";
+import { eq, lte } from "drizzle-orm";
 import { requireAuth } from "./accounts";
 import { getEcfrSource, isProviderContentAvailable } from "@workspace/cms-compliance-data";
+import {
+  DurableCache,
+  type DurableCacheAdapter,
+} from "../lib/durable-cache";
 
 const router: IRouter = Router();
 
@@ -87,27 +91,69 @@ function extractSectionsFromXml(xml: string, charLimit = MAX_ECFR_CHARS): string
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-interface CacheEntry {
-  result: EcfrResult;
-  expiresAt: number;
-}
+const ecfrCacheAdapter: DurableCacheAdapter<EcfrResult> = {
+  async load(institutionValue) {
+    const [entry] = await db
+      .select()
+      .from(ecfrCacheEntries)
+      .where(eq(ecfrCacheEntries.institutionValue, institutionValue))
+      .limit(1);
+    if (!entry) return undefined;
+    return {
+      value: {
+        text: entry.text,
+        fetchDate: entry.fetchDate,
+        source: entry.source === "ecfr" ? "ecfr" : "ai",
+      },
+      expiresAt: entry.expiresAt.getTime(),
+    };
+  },
+  async save(institutionValue, entry) {
+    await db
+      .insert(ecfrCacheEntries)
+      .values({
+        institutionValue,
+        text: entry.value.text,
+        fetchDate: entry.value.fetchDate,
+        source: entry.value.source,
+        expiresAt: new Date(entry.expiresAt),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: ecfrCacheEntries.institutionValue,
+        set: {
+          text: entry.value.text,
+          fetchDate: entry.value.fetchDate,
+          source: entry.value.source,
+          expiresAt: new Date(entry.expiresAt),
+          updatedAt: new Date(),
+        },
+      });
+    await db.delete(ecfrCacheEntries).where(lte(ecfrCacheEntries.expiresAt, new Date()));
+  },
+  async remove(institutionValue) {
+    await db
+      .delete(ecfrCacheEntries)
+      .where(eq(ecfrCacheEntries.institutionValue, institutionValue));
+  },
+};
 
-const ecfrCache = new Map<string, CacheEntry>();
+const ecfrCache = new DurableCache(ecfrCacheAdapter, CACHE_TTL_MS);
 
-function getCachedEcfr(institutionValue: string): EcfrResult | undefined {
-  const entry = ecfrCache.get(institutionValue);
-  if (!entry) return undefined;
-  if (Date.now() > entry.expiresAt) {
-    ecfrCache.delete(institutionValue);
+async function getCachedEcfr(institutionValue: string): Promise<EcfrResult | undefined> {
+  try {
+    return await ecfrCache.get(institutionValue);
+  } catch (error) {
+    console.warn("[eCFR cache] Persistent cache read failed; fetching live", error);
     return undefined;
   }
-  return entry.result;
 }
 
-function setCachedEcfr(institutionValue: string, result: EcfrResult): void {
-  ecfrCache.set(institutionValue, { result, expiresAt: Date.now() + CACHE_TTL_MS });
-  for (const [k, entry] of ecfrCache) {
-    if (Date.now() > entry.expiresAt) ecfrCache.delete(k);
+async function setCachedEcfr(institutionValue: string, result: EcfrResult): Promise<void> {
+  try {
+    await ecfrCache.set(institutionValue, result);
+  } catch (error) {
+    console.warn("[eCFR cache] Persistent cache write failed; keeping in-memory entry", error);
   }
 }
 
@@ -125,7 +171,7 @@ async function fetchEcfrText(institutionValue: string): Promise<EcfrResult> {
 
   const today = new Date();
 
-  const cached = getCachedEcfr(institutionValue);
+  const cached = await getCachedEcfr(institutionValue);
   if (cached) {
     console.info(`[eCFR cache] HIT  institution=${institutionValue} fetchDate=${cached.fetchDate}`);
     return cached;
@@ -180,7 +226,7 @@ async function fetchEcfrText(institutionValue: string): Promise<EcfrResult> {
       if (!text) continue;
 
       const result: EcfrResult = { text, fetchDate: dateStr, source: "ecfr" };
-      setCachedEcfr(institutionValue, result);
+      await setCachedEcfr(institutionValue, result);
       console.info(`[eCFR cache] STORED institution=${institutionValue} fetchDate=${dateStr} ttl=24h`);
       return result;
     } catch {

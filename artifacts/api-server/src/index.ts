@@ -42,6 +42,21 @@ async function initStripeIfAvailable() {
 
 await initStripeIfAvailable();
 
+async function migrateEcfrCache() {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ecfr_cache_entries (
+      institution_value text PRIMARY KEY,
+      text text NOT NULL,
+      fetch_date text NOT NULL,
+      source text NOT NULL,
+      expires_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+await migrateEcfrCache();
+
 // ── Bootstrap super-admins into the DB on every startup ──────────────────────
 // Reads valid Clerk user IDs from ADMIN_CLERK_USER_IDS (comma-separated) and
 // upserts them into admin_users so the button works even if the secret is stale.
