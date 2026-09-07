@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -378,6 +385,46 @@ test("discovers and accepts safe Buildkite JSON-array producers", async (t) => {
     workflowConfigs.map(({ path }) => path),
     [".buildkite/pipelines/canvas.yml"],
   );
+  assert.deepEqual(failures({ workflowConfigs }), []);
+});
+
+test("rejects workflow symlinks that resolve outside the repository and identifies the location", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  const externalDirectory = await mkdtemp(
+    join(tmpdir(), "canvas-contract-external-"),
+  );
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+  t.after(() => rm(externalDirectory, { recursive: true, force: true }));
+
+  const externalWorkflow = join(externalDirectory, "canvas.yml");
+  await writeFile(externalWorkflow, "CANVAS_RELEASE_CHANGED_PATHS: unsafe");
+  await symlink(externalWorkflow, join(rootDirectory, ".gitlab-ci.yml"));
+
+  await assert.rejects(
+    readCheckedInWorkflowConfigs(rootDirectory),
+    /supported workflow location "\.gitlab-ci\.yml" resolves outside the repository/,
+  );
+});
+
+test("accepts workflow symlinks that resolve inside the repository", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  await mkdir(join(rootDirectory, "ci"), { recursive: true });
+  await writeFile(
+    join(rootDirectory, "ci", "canvas.yml"),
+    'CANVAS_RELEASE_CHANGED_PATHS=["README.md"]',
+  );
+  await symlink("ci/canvas.yml", join(rootDirectory, ".gitlab-ci.yml"));
+
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
+
+  assert.deepEqual(workflowConfigs, [
+    {
+      path: ".gitlab-ci.yml",
+      text: 'CANVAS_RELEASE_CHANGED_PATHS=["README.md"]',
+    },
+  ]);
   assert.deepEqual(failures({ workflowConfigs }), []);
 });
 

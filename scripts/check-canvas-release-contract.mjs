@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, posix, relative, resolve, sep, win32 } from "node:path";
 import { protectedCanvasPaths } from "./validate-canvas-changes.mjs";
 
@@ -164,6 +164,16 @@ function isPathNestedUnder(parentPath, childPath) {
   );
 }
 
+function isPathContainedBy(parentPath, childPath) {
+  const containedPath = relative(parentPath, childPath);
+  return (
+    containedPath === "" ||
+    (containedPath !== ".." &&
+      !containedPath.startsWith(`..${sep}`) &&
+      !isAbsolute(containedPath))
+  );
+}
+
 export function overlappingWorkflowLocationFailures(
   locations = supportedWorkflowLocations,
 ) {
@@ -273,6 +283,7 @@ async function filesBelow(directory) {
 }
 
 export async function readCheckedInWorkflowConfigs(rootDirectory) {
+  const resolvedRootDirectory = await realpath(rootDirectory);
   const candidates = [];
   for (const location of supportedWorkflowLocations) {
     const absolutePath = resolve(rootDirectory, location.path);
@@ -286,9 +297,15 @@ export async function readCheckedInWorkflowConfigs(rootDirectory) {
   const configs = [];
   for (const path of candidates) {
     try {
+      const resolvedPath = await realpath(path);
+      if (!isPathContainedBy(resolvedRootDirectory, resolvedPath)) {
+        throw new Error(
+          `supported workflow location "${relative(rootDirectory, path)}" resolves outside the repository`,
+        );
+      }
       configs.push({
         path: relative(rootDirectory, path),
-        text: await readFile(path, "utf8"),
+        text: await readFile(resolvedPath, "utf8"),
       });
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
