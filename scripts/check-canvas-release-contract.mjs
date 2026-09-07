@@ -17,13 +17,35 @@ const protectedPathsBlock =
   /<!-- canvas-protected-paths:start -->\s*```text\s*\n([\s\S]*?)\n```\s*<!-- canvas-protected-paths:end -->/;
 
 const changedPathsVariable = "CANVAS_RELEASE_CHANGED_PATHS";
-const rootWorkflowFiles = [
-  ".replit",
-  ".gitlab-ci.yml",
-  "bitbucket-pipelines.yml",
-  "Jenkinsfile",
+export const supportedWorkflowLocations = [
+  { type: "file", path: ".replit", fixturePath: ".replit" },
+  {
+    type: "file",
+    path: ".gitlab-ci.yml",
+    fixturePath: ".gitlab-ci.yml",
+  },
+  {
+    type: "file",
+    path: "bitbucket-pipelines.yml",
+    fixturePath: "bitbucket-pipelines.yml",
+  },
+  { type: "file", path: "Jenkinsfile", fixturePath: "Jenkinsfile" },
+  {
+    type: "directory",
+    path: ".github/workflows",
+    fixturePath: ".github/workflows/nested/canvas.yml",
+  },
+  {
+    type: "directory",
+    path: ".circleci",
+    fixturePath: ".circleci/nested/config.yml",
+  },
+  {
+    type: "directory",
+    path: ".buildkite",
+    fixturePath: ".buildkite/nested/pipeline.yml",
+  },
 ];
-const workflowDirectories = [".github/workflows", ".circleci", ".buildkite"];
 
 function isJsonArrayProducer(line) {
   const assignment = line.match(
@@ -90,11 +112,14 @@ async function filesBelow(directory) {
 }
 
 export async function readCheckedInWorkflowConfigs(rootDirectory) {
-  const candidates = rootWorkflowFiles.map((path) =>
-    resolve(rootDirectory, path),
-  );
-  for (const directory of workflowDirectories) {
-    candidates.push(...(await filesBelow(resolve(rootDirectory, directory))));
+  const candidates = [];
+  for (const location of supportedWorkflowLocations) {
+    const absolutePath = resolve(rootDirectory, location.path);
+    if (location.type === "file") {
+      candidates.push(absolutePath);
+    } else {
+      candidates.push(...(await filesBelow(absolutePath)));
+    }
   }
 
   const configs = [];

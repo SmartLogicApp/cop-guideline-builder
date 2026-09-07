@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   checkCanvasReleaseContract,
   readCheckedInWorkflowConfigs,
+  supportedWorkflowLocations,
 } from "./check-canvas-release-contract.mjs";
 import {
   parseEnvironmentChangedPaths,
@@ -115,15 +116,9 @@ test("discovers unsafe producers in every supported workflow location only", asy
   const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
   t.after(() => rm(rootDirectory, { recursive: true, force: true }));
 
-  const supportedLocations = [
-    ".replit",
-    ".gitlab-ci.yml",
-    "bitbucket-pipelines.yml",
-    "Jenkinsfile",
-    ".github/workflows/nested/canvas.yml",
-    ".circleci/nested/config.yml",
-    ".buildkite/nested/pipeline.yml",
-  ];
+  const supportedLocations = supportedWorkflowLocations.map(
+    ({ fixturePath }) => fixturePath,
+  );
   const excludedLocations = [
     "src/workflow.js",
     "docs/workflow.md",
