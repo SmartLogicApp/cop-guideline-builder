@@ -2064,6 +2064,8 @@ Output as plain text only (no JSON, no markdown headers with #).`;
 
 // ─── Inspection Tab ──────────────────────────────────────────────────────────
 
+const INSPECTION_DRAFT_KEY = "cms-compliance-inspection-draft";
+
 function InspectionTab({ institution }) {
   const instUnits = INSTITUTION_UNITS[institution] || null;
   const firstDept = instUnits ? instUnits.units[0] : DEPARTMENTS[0];
@@ -2080,10 +2082,64 @@ function InspectionTab({ institution }) {
   const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
   const [standardsOpen, setStandardsOpen] = useState(true);
 
+  function clearChecklistDraft() {
+    localStorage.removeItem(INSPECTION_DRAFT_KEY);
+    setResult(null);
+    setResponses({});
+    setNotes({});
+    setFlags({});
+    setOpenNote(null);
+  }
+
   // Reset selection whenever institution type changes
   useEffect(() => {
     const iu = INSTITUTION_UNITS[institution] || null;
     setDept(iu ? iu.units[0] : DEPARTMENTS[0]);
+    setError(null);
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(INSPECTION_DRAFT_KEY) || "null");
+    } catch {
+      localStorage.removeItem(INSPECTION_DRAFT_KEY);
+    }
+    if (saved?.institution === institution && Array.isArray(saved.result)) {
+      setDept(saved.dept || (iu ? iu.units[0] : DEPARTMENTS[0]));
+      setResult(saved.result);
+      setResponses(saved.responses || {});
+      setNotes(saved.notes || {});
+      setFlags(saved.flags || {});
+    } else {
+      setResult(null);
+      setResponses({});
+      setNotes({});
+      setFlags({});
+    }
+    setOpenNote(null);
+    setDataSource(null);
+  }, [institution]);
+
+  useEffect(() => {
+    if (!result) return;
+    localStorage.setItem(
+      INSPECTION_DRAFT_KEY,
+      JSON.stringify({
+        institution,
+        dept,
+        result,
+        responses,
+        notes,
+        flags,
+      }),
+    );
+  }, [institution, dept, result, responses, notes, flags]);
+
+  const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
+  const selectedBodies = Object.entries(govBodies).filter(([, v]) => v).map(([k]) => k.toUpperCase());
+  const isContracted = dept.endsWith("(Contracted)");
+
+  async function generate() {
+    localStorage.removeItem(INSPECTION_DRAFT_KEY);
+    setLoading(true);
     setError(null);
     setResult(null);
     setResponses({});
@@ -2091,14 +2147,6 @@ function InspectionTab({ institution }) {
     setFlags({});
     setOpenNote(null);
     setDataSource(null);
-  }, [institution]);
-
-  const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
-  const selectedBodies = Object.entries(govBodies).filter(([, v]) => v).map(([k]) => k.toUpperCase());
-  const isContracted = dept.endsWith("(Contracted)");
-
-  async function generate() {
-    setLoading(true); setError(null); setResult(null); setResponses({}); setDataSource(null);
 
     const systemPrompt = `You are a healthcare inspection readiness expert. Generate a practical inspection readiness checklist.
 
@@ -2158,7 +2206,14 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
         <div style={S.row}>
           <div style={{ flex: 1 }}>
             <label style={S.label}>{instUnits ? instUnits.label : "Department / Service Area"}</label>
-            <select style={S.select} value={dept} onChange={(e) => { setDept(e.target.value); setResult(null); setResponses({}); setNotes({}); setFlags({}); setOpenNote(null); }}>
+            <select
+              style={S.select}
+              value={dept}
+              onChange={(e) => {
+                clearChecklistDraft();
+                setDept(e.target.value);
+              }}
+            >
               {instUnits ? (
                 <>
                   <optgroup label="Units / Departments">
