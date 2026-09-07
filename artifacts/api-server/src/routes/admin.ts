@@ -1,8 +1,13 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
 import { adminUsers, accounts, accountUsers, tokenUsage } from "@workspace/db";
-import { eq, and, gte, lt, desc } from "drizzle-orm";
+import { eq, and, gte, lt, desc, isNull, inArray } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
+import {
+  TRIAL_WARNING_SUBJECT,
+  trialWarningEmailHtml,
+  trialWarningWindow,
+} from "../lib/trial-warning-email";
 
 const router: IRouter = Router();
 
@@ -23,6 +28,13 @@ function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(403).json({ error: "Super-admin access required" });
   (req as any).clerkUserId = userId;
   next();
+}
+
+function requireCronOrSuperAdmin(req: Request, res: Response, next: NextFunction) {
+  const authorization = req.get("authorization");
+  const schedulerSecret = process.env.SESSION_SECRET;
+  if (schedulerSecret && authorization === `Bearer ${schedulerSecret}`) return next();
+  return requireSuperAdmin(req, res, next);
 }
 
 // ─── requireAnyAdmin — env-var OR active DB admin ────────────────────────────
@@ -83,6 +95,102 @@ function toCsv(headers: string[], rows: (string | number | null | undefined)[][]
 }
 
 // ─── Platform stats ───────────────────────────────────────────────────────────
+
+// POST /api/admin/cron/trial-warnings
+// External schedulers authenticate with Authorization: Bearer <SESSION_SECRET>.
+router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) => {
+  const now = new Date();
+  const { start, end } = trialWarningWindow(now);
+  const protocol = req.get("x-forwarded-proto") ?? req.protocol;
+  const host = req.get("x-forwarded-host") ?? req.get("host");
+  if (!host) return res.status(400).json({ error: "Unable to determine billing URL" });
+  const billingUrl = `${protocol}://${host}/billing`;
+
+  try {
+    const candidates = await db
+      .select()
+      .from(accounts)
+      .where(and(
+        eq(accounts.subscriptionStatus, "trial"),
+        gte(accounts.trialEndsAt, start),
+        lt(accounts.trialEndsAt, end),
+        isNull(accounts.trialWarningEmailSentAt),
+      ));
+
+    const users = candidates.length
+      ? await db.select().from(accountUsers).where(
+          inArray(accountUsers.accountId, candidates.map((account) => account.id)),
+        )
+      : [];
+    const usersByAccount = new Map<string, typeof users>();
+    for (const user of users) {
+      if (!user.accountId || !user.email) continue;
+      const current = usersByAccount.get(user.accountId) ?? [];
+      current.push(user);
+      usersByAccount.set(user.accountId, current);
+    }
+
+    const { ReplitConnectors } = await import("@replit/connectors-sdk");
+    const connectors = new ReplitConnectors();
+    let sent = 0;
+    let skipped = 0;
+    const failed: Array<{ accountId: string; error: string }> = [];
+
+    for (const account of candidates) {
+      const recipient = (usersByAccount.get(account.id) ?? [])
+        .sort((a, b) => Number(b.role === "admin") - Number(a.role === "admin"))[0]?.email;
+      if (!recipient || !account.trialEndsAt) {
+        skipped++;
+        continue;
+      }
+
+      // Claim before sending so concurrent scheduler calls cannot send duplicates.
+      const [claimed] = await db.update(accounts)
+        .set({ trialWarningEmailSentAt: now })
+        .where(and(eq(accounts.id, account.id), isNull(accounts.trialWarningEmailSentAt)))
+        .returning({ id: accounts.id });
+      if (!claimed) continue;
+
+      try {
+        const emailResponse = await connectors.proxy("resend", "/emails", {
+          method: "POST",
+          body: JSON.stringify({
+            from: "CMS Compliance Suite <onboarding@resend.dev>",
+            to: [recipient],
+            subject: TRIAL_WARNING_SUBJECT,
+            html: trialWarningEmailHtml({
+              facilityName: account.facilityName,
+              trialEndsAt: account.trialEndsAt,
+              billingUrl,
+            }),
+          }),
+        });
+        if (!emailResponse.ok) throw new Error(await emailResponse.text());
+        sent++;
+      } catch (error: any) {
+        // Release the claim so a later scheduler run can retry a provider failure.
+        await db.update(accounts)
+          .set({ trialWarningEmailSentAt: null })
+          .where(and(
+            eq(accounts.id, account.id),
+            eq(accounts.trialWarningEmailSentAt, now),
+          ));
+        failed.push({ accountId: account.id, error: error?.message ?? "Email provider error" });
+      }
+    }
+
+    return res.status(failed.length ? 207 : 200).json({
+      ok: failed.length === 0,
+      matched: candidates.length,
+      sent,
+      skipped,
+      failed,
+    });
+  } catch (error: any) {
+    req.log.error({ err: error }, "Trial warning cron failed");
+    return res.status(500).json({ error: "Failed to process trial warnings" });
+  }
+});
 
 // GET /api/admin/stats
 router.get("/stats", requireAnyAdmin, async (req, res) => {

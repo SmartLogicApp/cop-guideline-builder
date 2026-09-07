@@ -12,6 +12,7 @@ export const accounts = pgTable("accounts", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus:   text("subscription_status").default("trial"),
   trialEndsAt:          timestamp("trial_ends_at", { withTimezone: true }),
+  trialWarningEmailSentAt: timestamp("trial_warning_email_sent_at", { withTimezone: true }),
   termsAcceptedAt:      timestamp("terms_accepted_at", { withTimezone: true }),
   termsVersion:         text("terms_version"),
   createdAt:            timestamp("created_at", { withTimezone: true }).defaultNow(),

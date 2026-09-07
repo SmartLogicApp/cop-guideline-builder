@@ -57,6 +57,15 @@ async function migrateEcfrCache() {
 
 await migrateEcfrCache();
 
+async function migrateTrialWarningTracking() {
+  await db.execute(sql`
+    ALTER TABLE accounts
+    ADD COLUMN IF NOT EXISTS trial_warning_email_sent_at timestamptz
+  `);
+}
+
+await migrateTrialWarningTracking();
+
 // ── Bootstrap super-admins into the DB on every startup ──────────────────────
 // Reads valid Clerk user IDs from ADMIN_CLERK_USER_IDS (comma-separated) and
 // upserts them into admin_users so the button works even if the secret is stale.
