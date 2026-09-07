@@ -13,7 +13,8 @@
     "@replit/connectors-sdk": "^0.4.1",
     "@workspace/cms-compliance-data": "workspace:*",
     "exceljs": "^4.4.0",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "react": "catalog:"
   },
   "devDependencies": {
     "prettier": "^3.9.6",

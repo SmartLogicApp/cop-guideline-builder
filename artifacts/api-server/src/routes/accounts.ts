@@ -4,6 +4,12 @@ import { db } from "@workspace/db";
 import { accounts, accountUsers, adminUsers } from "@workspace/db";
 import { eq, and, isNull } from "drizzle-orm";
 import {
+  lookupCCN,
+  isValidProviderIdentifier,
+  providerIdentifierError,
+  MANUAL_VERIFICATION_MESSAGE,
+  MANUAL_VERIFICATION_TYPES,
+} from "../lib/ccn-lookup.js";
 
 const router: IRouter = Router();
 const CURRENT_TERMS_VERSION = "2026-08-13";
@@ -16,11 +22,17 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   (req as any).clerkUserId = userId;
   (req as any).clerkEmail = (auth as any)?.sessionClaims?.email ?? null;
-  next();
+  return next();
 }
-  const ccn = (req.query.ccn as string | undefined)?.trim().toUpperCase();
 
+// GET /api/accounts/validate-ccn?ccn=XXXXXX&institutionType=TYPE
+router.get("/validate-ccn", async (req, res) => {
+  const ccn = (req.query.ccn as string | undefined)?.trim().toUpperCase();
   const institutionType = (req.query.institutionType as string | undefined)?.trim().toLowerCase();
+  if (!ccn || !isValidProviderIdentifier(ccn, institutionType)) {
+    return res.status(400).json({ error: providerIdentifierError(institutionType) });
+  }
+
   const existing = await db.select().from(accounts).where(eq(accounts.ccn, ccn)).limit(1);
   if (existing.length) {
     return res.json({
@@ -66,7 +78,7 @@ router.get("/whoami", requireAuth, (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const rawEnv = process.env.ADMIN_CLERK_USER_IDS ?? "";
   const ids = rawEnv.split(",").map((s) => s.trim()).filter(Boolean);
-  const isSuperAdmin = superAdminIds.includes(userId);
+  const isSuperAdmin = ids.includes(userId);
   res.json({
     clerkUserId: userId,
     isSuperAdmin,
@@ -112,7 +124,7 @@ router.get("/me", requireAuth, async (req, res) => {
   const [au] = await db.select().from(accountUsers).where(eq(accountUsers.clerkUserId, userId)).limit(1);
   if (!au?.accountId) return res.json({ clerkUserId: userId, account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
 
-  let [account] = await db.select().from(accounts).where(eq(accounts.ccn, normalCCN)).limit(1);
+  const [account] = await db.select().from(accounts).where(eq(accounts.id, au.accountId)).limit(1);
   if (!account) return res.json({ clerkUserId: userId, account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
 
   const now = new Date();
@@ -146,12 +158,11 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "acceptedAt must be a valid ISO timestamp" });
   }
 
-  const [accountUser] = await db.insert(accountUsers).values({
-    clerkUserId: userId,
-    accountId:   account.id,
-    role:        isFirstUser ? "admin" : "member",
-    email:       email ?? null,
-  }).returning();
+  const [accountUser] = await db
+    .select()
+    .from(accountUsers)
+    .where(eq(accountUsers.clerkUserId, userId))
+    .limit(1);
   if (!accountUser?.accountId) {
     return res.status(409).json({
       error: "Complete facility registration before recording terms acceptance",

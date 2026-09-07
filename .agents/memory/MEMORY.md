@@ -4,3 +4,4 @@
 - [Ephemeral customer policy handling](ephemeral-policy-handling.md) — proprietary policy text and derived results must remain session-scoped, user-bound, short-lived, and absent from permanent storage/logs.
 - [Autoscale cache persistence](autoscale-cache-persistence.md) — local files do not survive autoscale replacement; restart-safe shared caches must use a durable external store.
 - [CCN verification sources](ccn-verification-sources.md) — Care Compare supports direct CCN queries for some provider types; FQHC and OPO require separate CMS enrollment-file integration.
+- [Vite optional peer alignment](vite-optional-peer-alignment.md) — unpeered Vite plugins must resolve the same optional-peer context as the consuming artifact to keep plugin types compatible.
