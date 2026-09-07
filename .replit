@@ -24,6 +24,10 @@ args = "server.js backend"
 task = "workflow.run"
 args = "canvas-release"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "canvas-release-contract"
+
 [[workflows.workflow]]
 name = "server.js backend"
 author = "agent"
@@ -43,6 +47,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "pnpm run validate:canvas"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "canvas-release-contract"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm run test:canvas-release-contract"
 
 [workflows.workflow.metadata]
 isValidation = true
