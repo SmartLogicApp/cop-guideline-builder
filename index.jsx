@@ -1134,6 +1134,9 @@ function mergeGapResults(results) {
 // ─── Ephemeral policy-analysis session ────────────────────────────────────────
 
 const LEGACY_GAP_HISTORY_KEY = "cop_gap_analysis_history";
+const GAP_HISTORY_CACHE_KEY = "cms_gap_analysis_history_cache";
+const GAP_HISTORY_TOKEN_KEY = "cms_gap_history_session_token";
+const GAP_HISTORY_DELETIONS_KEY = "cms_gap_history_pending_deletions";
 const GAP_SESSION_KEY = "cms_ephemeral_policy_session";
 const GAP_SESSION_OWNER_KEY = "cms_ephemeral_policy_session_owner";
 const ACTIVE_WORKSPACE_TAB_KEY = "cms_active_workspace_tab";
@@ -1189,20 +1192,18 @@ function saveGapSession(patch) {
   }
 }
 
-function loadGapHistory() {
-  const history = loadGapSession().history;
-  return Array.isArray(history) ? history : [];
+function ownerScopedHistoryKey(baseKey, ownerId) {
+  return `${baseKey}:${ownerId || "anonymous"}`;
 }
 
-function saveGapEntry(entry) {
+function gapHistoryStorage(ownerId) {
+  return ownerId ? localStorage : sessionStorage;
+}
+
+function loadGapHistory(ownerId) {
   try {
-    const existing = loadGapHistory();
-    const existingIndex = existing.findIndex((item) => item.id === entry.id);
-    const updated = existingIndex >= 0
-      ? existing.map((item, index) => index === existingIndex ? { ...item, ...entry } : item)
-      : [entry, ...existing].slice(0, GAP_HISTORY_MAX);
-    saveGapSession({ history: updated });
-    return updated;
+    const history = JSON.parse(gapHistoryStorage(ownerId).getItem(ownerScopedHistoryKey(GAP_HISTORY_CACHE_KEY, ownerId)) || "[]");
+    return Array.isArray(history) ? history : [];
   } catch {
     return [];
   }
@@ -1222,17 +1223,146 @@ function saveGapActionPlan(entryId, actionPlan) {
   }
 }
 
-function deleteGapEntry(id) {
+function cacheGapHistory(history, ownerId) {
   try {
-    const existing = loadGapHistory();
-    const updated = existing.filter((e) => e.id !== id);
-    const actionPlans = { ...(loadGapSession().actionPlans || {}) };
-    delete actionPlans[id];
-    saveGapSession({ history: updated, actionPlans });
-    return updated;
+    gapHistoryStorage(ownerId).setItem(ownerScopedHistoryKey(GAP_HISTORY_CACHE_KEY, ownerId), JSON.stringify(history.slice(0, GAP_HISTORY_MAX)));
+  } catch {
+    // Storage may be unavailable; in-memory state still works.
+  }
+}
+
+function loadPendingGapHistoryDeletions(ownerId) {
+  try {
+    const ids = JSON.parse(gapHistoryStorage(ownerId).getItem(ownerScopedHistoryKey(GAP_HISTORY_DELETIONS_KEY, ownerId)) || "[]");
+    return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
   } catch {
     return [];
   }
+}
+
+function cachePendingGapHistoryDeletions(ids, ownerId) {
+  try {
+    gapHistoryStorage(ownerId).setItem(ownerScopedHistoryKey(GAP_HISTORY_DELETIONS_KEY, ownerId), JSON.stringify([...new Set(ids)]));
+  } catch {
+    // Storage may be unavailable; deletion still applies to in-memory state.
+  }
+}
+
+function getGapHistoryToken(ownerId) {
+  try {
+    const storage = gapHistoryStorage(ownerId);
+    const tokenKey = ownerScopedHistoryKey(GAP_HISTORY_TOKEN_KEY, ownerId);
+    const existing = storage.getItem(tokenKey);
+    if (existing) return existing;
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    storage.setItem(tokenKey, token);
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+function gapHistoryHeaders(includeJson = false, ownerId = null) {
+  const token = getGapHistoryToken(ownerId);
+  return {
+    ...(includeJson ? { "Content-Type": "application/json" } : {}),
+    "X-Gap-History-Owner": ownerId || "anonymous",
+    ...(token ? { "X-Gap-Session-Token": token } : {}),
+  };
+}
+
+async function fetchGapHistory(ownerId, signal) {
+  const cached = loadGapHistory(ownerId);
+  const pendingDeletions = loadPendingGapHistoryDeletions(ownerId);
+  const deletionResults = await Promise.allSettled(
+    pendingDeletions.map(async (id) => {
+      const response = await fetch(`/api/gap-history/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: gapHistoryHeaders(false, ownerId),
+        credentials: "include",
+        signal,
+      });
+      if (!response.ok && response.status !== 404) throw new Error("Delete sync failed");
+      return id;
+    })
+  );
+  const syncedDeletionIds = new Set(
+    deletionResults
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value)
+  );
+  cachePendingGapHistoryDeletions(
+    pendingDeletions.filter((id) => !syncedDeletionIds.has(id)),
+    ownerId,
+  );
+
+  const response = await fetch("/api/gap-history", {
+    headers: gapHistoryHeaders(false, ownerId),
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok) throw new Error("Could not sync gap history");
+  const remote = await response.json();
+  if (!Array.isArray(remote)) throw new Error("Invalid gap history response");
+  const deletedIds = new Set(pendingDeletions);
+  const visibleRemote = remote.filter((entry) => !deletedIds.has(entry.id));
+  const remoteIds = new Set(visibleRemote.map((entry) => entry.id));
+  const pending = cached.filter((entry) => !remoteIds.has(entry.id));
+  const merged = [...pending, ...visibleRemote]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, GAP_HISTORY_MAX);
+  cacheGapHistory(merged, ownerId);
+
+  await Promise.allSettled(
+    pending.map((entry) =>
+      fetch("/api/gap-history", {
+        method: "POST",
+        headers: gapHistoryHeaders(true, ownerId),
+        credentials: "include",
+        body: JSON.stringify(entry),
+        signal,
+      })
+    )
+  );
+  return merged;
+}
+
+async function saveGapEntry(entry, ownerId, signal) {
+  const existing = loadGapHistory(ownerId);
+  const updated = [entry, ...existing.filter((item) => item.id !== entry.id)].slice(0, GAP_HISTORY_MAX);
+  cacheGapHistory(updated, ownerId);
+  const response = await fetch("/api/gap-history", {
+    method: "POST",
+    headers: gapHistoryHeaders(true, ownerId),
+    credentials: "include",
+    body: JSON.stringify(entry),
+    signal,
+  });
+  if (!response.ok) throw new Error("Gap history was cached locally but could not sync");
+  return updated;
+}
+
+async function deleteGapEntry(id, ownerId, signal) {
+  const updated = loadGapHistory(ownerId).filter((entry) => entry.id !== id);
+  cacheGapHistory(updated, ownerId);
+  const pendingDeletions = [...loadPendingGapHistoryDeletions(ownerId), id];
+  cachePendingGapHistoryDeletions(pendingDeletions, ownerId);
+  const response = await fetch(`/api/gap-history/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: gapHistoryHeaders(false, ownerId),
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok && response.status !== 404) {
+    throw new Error("History entry was removed locally but could not sync");
+  }
+  cachePendingGapHistoryDeletions(
+    loadPendingGapHistoryDeletions(ownerId).filter((pendingId) => pendingId !== id),
+    ownerId,
+  );
+  return updated;
 }
 
 export async function purgeEphemeralPolicySession() {
@@ -2679,7 +2809,7 @@ function GapComparisonView({ entryA, entryB, onClose }) {
 
 // ─── Gap Scanner Tab ─────────────────────────────────────────────────────────
 
-function GapScannerTab({ institution }) {
+function GapScannerTab({ institution, historyOwnerId }) {
   const instUnits = INSTITUTION_UNITS[institution] || null;
   const topics = getProviderTopics(institution);
   const [initialSession] = useState(() => loadGapSession());
@@ -2705,13 +2835,32 @@ function GapScannerTab({ institution }) {
   });
   const [actionPlanLoading, setActionPlanLoading] = useState(false);
   const [actionPlanError, setActionPlanError] = useState(null);
-  const [history, setHistory] = useState(() => loadGapHistory());
+  const [history, setHistory] = useState(() => loadGapHistory(historyOwnerId));
   const [showHistory, setShowHistory] = useState(false);
   const [loadedEntryId, setLoadedEntryId] = useState(initialLoadedEntryId); // which history entry is currently shown
   const [actionCompletion, setActionCompletion] = useState(() => loadActionCompletion(hasRestoredSession ? initialSession.loadedEntryId : null));
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState([]); // up to 2 selected ids
   const [comparison, setComparison] = useState(null); // { entryA, entryB } when comparison is open
+  const historySyncAbortRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    historySyncAbortRef.current = controller;
+    fetchGapHistory(historyOwnerId, controller.signal)
+      .then((syncedHistory) => {
+        if (!cancelled) setHistory(syncedHistory);
+      })
+      .catch(() => {
+        // Keep the local cache available while offline or if sync is unavailable.
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (historySyncAbortRef.current === controller) historySyncAbortRef.current = null;
+    };
+  }, [historyOwnerId]);
 
   // Reset unit when institution changes
   useEffect(() => {
@@ -2748,7 +2897,7 @@ function GapScannerTab({ institution }) {
       void clearSessionData();
     }, GAP_SESSION_TTL_MS);
     return () => window.clearTimeout(expiryTimer);
-  }, [policyText, result, actionPlan, history]);
+  }, [policyText, result, actionPlan]);
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
   const topicFinal = customTopic.trim() || topic;
@@ -2834,8 +2983,13 @@ Rules:
       if (loadedEntryId) {
         const currentEntry = history.find((entry) => entry.id === loadedEntryId);
         if (currentEntry) {
-          const updated = saveGapEntry({ ...currentEntry, actionPlan: generatedPlan });
-          setHistory(updated);
+          const updatedEntry = { ...currentEntry, actionPlan: generatedPlan };
+          setHistory([updatedEntry, ...history.filter((entry) => entry.id !== loadedEntryId)].slice(0, GAP_HISTORY_MAX));
+          try {
+            await saveGapEntry(updatedEntry, historyOwnerId, historySyncAbortRef.current?.signal);
+          } catch {
+            // The updated entry remains in the local cache and will sync when connectivity returns.
+          }
         }
       }
     } catch (e) {
@@ -2934,9 +3088,13 @@ Rules:
       };
       setLoadedEntryId(entry.id);
       setActionCompletion(loadActionCompletion(entry.id));
-      const updated = saveGapEntry(entry);
-      setHistory(updated);
-      setLoadedEntryId(entry.id);
+      const cached = [entry, ...history.filter((item) => item.id !== entry.id)].slice(0, GAP_HISTORY_MAX);
+      setHistory(cached);
+      try {
+        await saveGapEntry(entry, historyOwnerId, historySyncAbortRef.current?.signal);
+      } catch {
+        // The entry remains in the local cache and will be visible offline.
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -2960,10 +3118,16 @@ Rules:
     setError(null);
   }
 
-  function handleDeleteEntry(e, id) {
+  async function handleDeleteEntry(e, id) {
     e.stopPropagation();
-    const updated = deleteGapEntry(id);
+    const updated = history.filter((entry) => entry.id !== id);
     setHistory(updated);
+    saveGapActionPlan(id, null);
+    try {
+      await deleteGapEntry(id, historyOwnerId, historySyncAbortRef.current?.signal);
+    } catch {
+      // Preserve the local deletion while offline.
+    }
     if (loadedEntryId === id) {
       setResult(null);
       setResultMeta(null);
@@ -2979,7 +3143,6 @@ Rules:
     setResult(null);
     setResultMeta(null);
     setActionPlan(null);
-    setHistory([]);
     setShowHistory(false);
     setLoadedEntryId(null);
     setActionCompletion({});
@@ -3906,7 +4069,16 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
   const [legal, setLegal] = useState(null); // "terms" | "privacy" | null
   const [adminOpen, setAdminOpen] = useState(false);
   const [subscription, setSubscription] = useState(undefined);
-  const [accountData, setAccountData] = useState(null);
+  const explicitOwnerId = clerkUserId || null;
+  const [identityState, setIdentityState] = useState(() => ({
+    requestKey: explicitOwnerId,
+    ownerId: clerkUserId || undefined,
+    accountData: null,
+  }));
+  const [identityRefreshNonce, setIdentityRefreshNonce] = useState(0);
+  const identityIsCurrent = identityState.requestKey === explicitOwnerId;
+  const resolvedHistoryOwnerId = identityIsCurrent ? identityState.ownerId : undefined;
+  const accountData = identityIsCurrent ? identityState.accountData : null;
   // Check Clerk user ID directly (no API/cache dependency) + fall back to server flags
   const isAdmin = ADMIN_CLERK_IDS.includes(clerkUserId ?? "")
     || accountData?.isSuperAdmin
@@ -3920,23 +4092,91 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
   }, [institution]);
 
   useEffect(() => {
+    let cancelled = false;
+    let requestGeneration = 0;
+
+    async function resolveIdentity() {
+      const generation = ++requestGeneration;
+      setIdentityState({
+        requestKey: explicitOwnerId,
+        ownerId: clerkUserId || undefined,
+        accountData: null,
+      });
+      try {
+        const response = await fetch("/api/accounts/me", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (cancelled || generation !== requestGeneration) return;
+        if (response.status === 401) {
+          setIdentityState({
+            requestKey: explicitOwnerId,
+            ownerId: clerkUserId || null,
+            accountData: null,
+          });
+          return;
+        }
+        if (!response.ok) throw new Error("Could not resolve history owner");
+        const data = await response.json();
+        if (cancelled || generation !== requestGeneration) return;
+        const ownerId = clerkUserId || (typeof data.clerkUserId === "string" ? data.clerkUserId : null);
+        setIdentityState({
+          requestKey: explicitOwnerId,
+          ownerId,
+          accountData: data,
+        });
+        if (ownerId) bindEphemeralPolicySessionToUser(ownerId);
+      } catch {
+        if (!cancelled && generation === requestGeneration) {
+          setIdentityState({
+            requestKey: explicitOwnerId,
+            ownerId: clerkUserId || undefined,
+            accountData: null,
+          });
+        }
+      }
+    }
+
+    void resolveIdentity();
+    const handleFocus = () => { void resolveIdentity(); };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void resolveIdentity();
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+    const removeClerkListener = window.Clerk?.addListener?.(() => {
+      void resolveIdentity();
+    });
+
+    return () => {
+      cancelled = true;
+      requestGeneration += 1;
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (typeof removeClerkListener === "function") removeClerkListener();
+    };
+  }, [clerkUserId, explicitOwnerId, identityRefreshNonce]);
+
+  async function handleSignOut() {
+    setIdentityState({
+      requestKey: null,
+      ownerId: undefined,
+      accountData: null,
+    });
+    try {
+      await onSignOut?.();
+    } finally {
+      setIdentityRefreshNonce((value) => value + 1);
+    }
+  }
+
+  useEffect(() => {
     try { sessionStorage.setItem(ACTIVE_WORKSPACE_TAB_KEY, tab); } catch {}
   }, [tab]);
 
   useEffect(() => {
     if (!clerkUserId) return;
     let cancelled = false;
-    fetch(`${basePath}/api/accounts/me`, { credentials: "include" })
-      .then((response) => {
-        if (!response.ok) throw new Error("Unable to load account");
-        return response.json();
-      })
-      .then((data) => {
-        if (!cancelled) setAccountData(data);
-      })
-      .catch(() => {
-        // Admin access still falls back to the known Clerk IDs below.
-      });
     fetch(`${basePath}/api/billing/subscription`, { credentials: "include" })
       .then((response) => {
         if (!response.ok) throw new Error("Unable to load subscription status");
@@ -3997,7 +4237,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
                 ✉ Share Feedback
               </a>
               <button
-                onClick={() => onSignOut?.()}
+                  onClick={handleSignOut}
                 style={{ padding: "8px 14px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
                 Sign Out
               </button>
@@ -4072,7 +4312,16 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
             {tab === "guidelines" && <GuidelinesTab institution={institution} />}
             {tab === "policy"     && <PolicyTab     institution={institution} />}
             {tab === "inspection" && <InspectionTab institution={institution} />}
-            {tab === "gap"        && <GapScannerTab institution={institution} />}
+            {tab === "gap" && resolvedHistoryOwnerId === undefined && (
+              <div style={{ ...S.card, color: "#64748B" }}>Loading saved scan history…</div>
+            )}
+            {tab === "gap" && resolvedHistoryOwnerId !== undefined && (
+              <GapScannerTab
+                key={resolvedHistoryOwnerId || "anonymous"}
+                institution={institution}
+                historyOwnerId={resolvedHistoryOwnerId}
+              />
+            )}
           </>
         )}
       </div>

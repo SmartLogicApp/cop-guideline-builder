@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: generation
     description: AI-assisted compliance content generation
+  - name: gap-history
+    description: Durable gap analysis history
 paths:
   /healthz:
     get:
@@ -57,6 +59,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /gap-history:
+    get:
+      operationId: listGapHistory
+      tags: [gap-history]
+      summary: List gap analysis history
+      responses:
+        "200":
+          description: Most recent gap analysis entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GapHistoryEntry"
+    post:
+      operationId: createGapHistory
+      tags: [gap-history]
+      summary: Save a gap analysis entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GapHistoryEntry"
+      responses:
+        "201":
+          description: Saved gap analysis entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GapHistoryEntry"
+  /gap-history/{id}:
+    delete:
+      operationId: deleteGapHistory
+      tags: [gap-history]
+      summary: Delete a gap analysis entry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Entry deleted
 components:
   schemas:
     HealthStatus:
@@ -113,4 +160,38 @@ components:
           type: string
       required:
         - error
+    GapHistoryEntry:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          maxLength: 100
+        institution:
+          type: string
+          maxLength: 100
+        institutionLabel:
+          type: string
+          maxLength: 200
+        topic:
+          type: string
+          maxLength: 300
+        score:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 100
+        timestamp:
+          type: string
+          format: date-time
+        result:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - institution
+        - institutionLabel
+        - topic
+        - score
+        - timestamp
+        - result
 

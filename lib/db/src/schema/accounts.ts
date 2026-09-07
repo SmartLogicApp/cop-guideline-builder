@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, boolean, integer, doublePrecision, jsonb, index } from "drizzle-orm/pg-core";
 
 export const accounts = pgTable("accounts", {
   id:                   uuid("id").primaryKey().defaultRandom(),
@@ -56,6 +56,22 @@ export const tokenUsage = pgTable("token_usage", {
   createdAt:       timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
+export const gapHistory = pgTable("gap_history", {
+  id:             text("id").primaryKey(),
+  clerkUserId:    text("clerk_user_id"),
+  sessionTokenHash: text("session_token_hash"),
+  institution:    text("institution").notNull(),
+  institutionLabel: text("institution_label").notNull(),
+  topic:          text("topic").notNull(),
+  score:          integer("score"),
+  scannedAt:      timestamp("scanned_at", { withTimezone: true }).notNull(),
+  result:         jsonb("result").notNull(),
+  createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("gap_history_clerk_user_id_idx").on(table.clerkUserId),
+  index("gap_history_session_token_hash_idx").on(table.sessionTokenHash),
+  index("gap_history_scanned_at_idx").on(table.scannedAt),
+]);
 export const ecfrCacheEntries = pgTable("ecfr_cache_entries", {
   institutionValue: text("institution_value").primaryKey(),
   text:             text("text").notNull(),
@@ -69,3 +85,5 @@ export type Account     = typeof accounts.$inferSelect;
 export type AccountUser = typeof accountUsers.$inferSelect;
 export type AdminUser   = typeof adminUsers.$inferSelect;
 export type TokenUsage  = typeof tokenUsage.$inferSelect;
+
+export type GapHistory   = typeof gapHistory.$inferSelect;

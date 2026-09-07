@@ -100,7 +100,7 @@ router.get("/whoami", requireAuth, (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const rawEnv = process.env.ADMIN_CLERK_USER_IDS ?? "";
   const ids = rawEnv.split(",").map((s) => s.trim()).filter(Boolean);
-  const isSuperAdmin = ids.includes(userId);
+  const isSuperAdmin = superAdminIds.includes(userId);
   res.json({
     clerkUserId: userId,
     isSuperAdmin,
@@ -144,10 +144,10 @@ router.get("/me", requireAuth, async (req, res) => {
   const isAdminUser = isSuperAdmin || isDbAdmin;
 
   const [au] = await db.select().from(accountUsers).where(eq(accountUsers.clerkUserId, userId)).limit(1);
-  if (!au?.accountId) return res.json({ account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
+  if (!au?.accountId) return res.json({ clerkUserId: userId, account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
 
-  const [account] = await db.select().from(accounts).where(eq(accounts.id, au.accountId)).limit(1);
-  if (!account) return res.json({ account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
+  let [account] = await db.select().from(accounts).where(eq(accounts.ccn, normalCCN)).limit(1);
+  if (!account) return res.json({ clerkUserId: userId, account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
 
   const now = new Date();
   const isActive =
@@ -157,7 +157,7 @@ router.get("/me", requireAuth, async (req, res) => {
       account.trialEndsAt != null &&
       account.trialEndsAt > now);
 
-  return res.json({ account, accountUser: au, isActive, isAdminUser, isSuperAdmin });
+  return res.json({ clerkUserId: userId, account, accountUser: au, isActive, isAdminUser, isSuperAdmin });
 });
 
 // POST /api/accounts/terms-acceptance
@@ -180,11 +180,12 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "acceptedAt must be a valid ISO timestamp" });
   }
 
-  const [accountUser] = await db
-    .select()
-    .from(accountUsers)
-    .where(eq(accountUsers.clerkUserId, userId))
-    .limit(1);
+  const [accountUser] = await db.insert(accountUsers).values({
+    clerkUserId: userId,
+    accountId:   account.id,
+    role:        isFirstUser ? "admin" : "member",
+    email:       email ?? null,
+  }).returning();
   if (!accountUser?.accountId) {
     return res.status(409).json({
       error: "Complete facility registration before recording terms acceptance",
