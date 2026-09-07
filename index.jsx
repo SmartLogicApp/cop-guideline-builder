@@ -837,6 +837,21 @@ const INST_UNIT_CITATIONS = {
   },
 };
 
+function citationToUrl(citation) {
+  const sectionMatch = citation.match(/§\s*(\d+)\.(\d+)/);
+  if (sectionMatch) {
+    return `https://www.ecfr.gov/current/title-42/section-${sectionMatch[1]}.${sectionMatch[2]}`;
+  }
+
+  const partMatch = citation.match(/\b42\s+CFR\s+(\d+)\b/i);
+  if (partMatch) {
+    return `https://www.ecfr.gov/current/title-42/part-${partMatch[1]}`;
+  }
+
+  const standardCode = citation.split(/\s+[–—-]\s+/)[0].trim();
+  return `https://www.jointcommission.org/search/#q=${encodeURIComponent(standardCode)}`;
+}
+
 function getUnitCitations(institution, unit) {
   return INST_UNIT_CITATIONS[institution]?.[unit] || UNIT_CITATIONS[unit] || [];
 }
@@ -2256,7 +2271,17 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
                 <summary style={{ fontSize: "10px", fontWeight: 700, color: "#1E40AF", textTransform: "uppercase", letterSpacing: "0.5px", cursor: "pointer", userSelect: "none" }}>Key Standards for this Area</summary>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "5px" }}>
                   {unitCitations.map((c) => (
-                    <span key={c} style={{ fontSize: "10.5px", fontFamily: "monospace", background: "#DBEAFE", color: "#1E40AF", padding: "2px 7px", borderRadius: "4px", border: "1px solid #BFDBFE" }}>{c}</span>
+                    <a
+                      key={c}
+                      href={citationToUrl(c)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`${c} (opens official source in a new tab)`}
+                      title="Open official source in a new tab"
+                      style={{ fontSize: "10.5px", fontFamily: "monospace", background: "#DBEAFE", color: "#1E40AF", padding: "2px 7px", borderRadius: "4px", border: "1px solid #BFDBFE", textDecoration: "underline", textDecorationColor: "#93C5FD", textUnderlineOffset: "2px" }}
+                    >
+                      {c} <span aria-hidden="true">↗</span>
+                    </a>
                   ))}
                 </div>
               </details>
