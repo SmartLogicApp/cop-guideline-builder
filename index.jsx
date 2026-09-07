@@ -2055,6 +2055,11 @@ Output as plain text only (no JSON, no markdown headers with #).`;
           </div>
           <hr style={S.divider} />
           <pre style={S.pre}>{result}</pre>
+          {dataSource?.kind === "ecfr" && (
+            <div style={{ marginTop: "10px", padding: "8px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0" }}>
+              📡 CMS regulatory citations sourced from live eCFR as of {dataSource.fetchDate}.
+            </div>
+          )}
           <AiDisclosureBanner />
         </div>
       )}
