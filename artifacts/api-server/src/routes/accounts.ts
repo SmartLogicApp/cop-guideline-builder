@@ -78,22 +78,11 @@ router.get("/whoami", requireAuth, (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const rawEnv = process.env.ADMIN_CLERK_USER_IDS ?? "";
   const ids = rawEnv.split(",").map((s) => s.trim()).filter(Boolean);
-  const isSuperAdmin = ids.includes(userId);
-  res.json({
-    clerkUserId: userId,
-    isSuperAdmin,
-    adminIdCount: ids.length,
-    // Show partial IDs for debugging (first 8 chars of each)
-    adminIdPrefixes: ids.map((id) => id.slice(0, 10) + "…"),
-    yourIdPrefix: userId.slice(0, 10) + "…",
-  });
-});
+  const isSuperAdmin = superAdminIds.includes(userId);
 
-// GET /api/accounts/me — get the current user's account + subscription status
-router.get("/me", requireAuth, async (req, res) => {
-  // Never cache — admin/subscription status can change at any time.
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.setHeader("Pragma", "no-cache");
+  const access = await getSubscriptionAccess(userId);
+
+  const access = await getSubscriptionAccess(userId);
   const userId = (req as any).clerkUserId as string;
 
   // Check super-admin and DB-admin FIRST — before any account-lookup early returns,
@@ -113,35 +102,21 @@ router.get("/me", requireAuth, async (req, res) => {
   ];
   const isSuperAdmin = superAdminIds.includes(userId);
 
-  const [dbAdminRow] = await db
-    .select()
-    .from(adminUsers)
-    .where(and(eq(adminUsers.clerkUserId, userId), eq(adminUsers.isActive, true)))
-    .limit(1);
-  const isDbAdmin = !!dbAdminRow;
-  const isAdminUser = isSuperAdmin || isDbAdmin;
+  const access = await getSubscriptionAccess(userId);
 
-  const [au] = await db.select().from(accountUsers).where(eq(accountUsers.clerkUserId, userId)).limit(1);
-  if (!au?.accountId) return res.json({ clerkUserId: userId, account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
+  const access = await getSubscriptionAccess(userId);
+  const isAdminUser = isSuperAdmin || access.isAdminUser;
+  let [account] = await db.select().from(accounts).where(eq(accounts.ccn, normalCCN)).limit(1);
+  const isActive = isAdminUser || access.isActive;
 
-  const [account] = await db.select().from(accounts).where(eq(accounts.id, au.accountId)).limit(1);
-  if (!account) return res.json({ clerkUserId: userId, account: null, accountUser: null, isActive: isAdminUser, isAdminUser, isSuperAdmin });
-
-  const now = new Date();
-  const isActive =
-    isAdminUser ||
-    account.subscriptionStatus === "active" ||
-    (account.subscriptionStatus === "trial" &&
-      account.trialEndsAt != null &&
-      account.trialEndsAt > now);
-
-  return res.json({ clerkUserId: userId, account, accountUser: au, isActive, isAdminUser, isSuperAdmin });
-});
-
-// POST /api/accounts/terms-acceptance
-// Records the first acceptance only. The authenticated server receipt time is
-// authoritative so a client cannot backdate or overwrite the legal record.
-router.post("/terms-acceptance", requireAuth, async (req, res) => {
+  const payload = {
+    clerkUserId: userId,
+    account: access.account,
+    accountUser: access.accountUser,
+    isActive,
+    isAdminUser,
+    isSuperAdmin,
+  };
   const userId = (req as any).clerkUserId as string;
   const { termsVersion, acceptedAt } = req.body as {
     termsVersion?: string;
@@ -158,11 +133,12 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "acceptedAt must be a valid ISO timestamp" });
   }
 
-  const [accountUser] = await db
-    .select()
-    .from(accountUsers)
-    .where(eq(accountUsers.clerkUserId, userId))
-    .limit(1);
+  const [accountUser] = await db.insert(accountUsers).values({
+    clerkUserId: userId,
+    accountId:   account.id,
+    role:        isFirstUser ? "admin" : "member",
+    email:       email ?? null,
+  }).returning();
   if (!accountUser?.accountId) {
     return res.status(409).json({
       error: "Complete facility registration before recording terms acceptance",

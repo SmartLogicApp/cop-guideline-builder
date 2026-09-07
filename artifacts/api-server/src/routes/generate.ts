@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { accountUsers, tokenUsage } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "./accounts";
+import { requireActiveSubscription } from "../middlewares/requireActiveSubscription";
 import { getEcfrSource, isProviderContentAvailable } from "@workspace/cms-compliance-data";
 import { createEcfrService } from "../services/ecfr";
 import { ecfrDatabaseAdapter } from "../services/ecfr-database-adapter";
@@ -43,8 +44,8 @@ type Job =
 
 const jobs = new Map<string, Job>();
 
-// POST /api/generate — requireAuth so we can record token usage per account.
-router.post("/generate", requireAuth, async (req, res): Promise<void> => {
+// POST /api/generate — paid access only; requireAuth also identifies usage owner.
+router.post("/generate", requireAuth, requireActiveSubscription, async (req, res): Promise<void> => {
   const parsed = GenerateWithAnthropicBody.safeParse(req.body);
   if (!parsed.success) {
     req.log.warn({ issueCount: parsed.error.issues.length }, "Invalid generation request");
@@ -174,7 +175,7 @@ router.post("/generate", requireAuth, async (req, res): Promise<void> => {
 });
 
 // GET /api/generate/result?jobId=...
-router.get("/generate/result", requireAuth, (req, res): void => {
+router.get("/generate/result", requireAuth, requireActiveSubscription, (req, res): void => {
   const { jobId } = req.query;
   if (!jobId || typeof jobId !== "string") {
     res.status(400).json({ error: "Missing jobId" });
