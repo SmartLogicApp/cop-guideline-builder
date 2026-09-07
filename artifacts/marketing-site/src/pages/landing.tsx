@@ -260,7 +260,7 @@ export default function LandingPage() {
               <p>&copy; {new Date().getFullYear()} CMS Compliance Suite. All rights reserved.</p>
               <nav className="flex flex-wrap justify-start gap-x-4 gap-y-1 md:justify-end" aria-label="Legal and support">
                 <a href="/terms" className="hover:text-slate-900">Terms of Service</a>
-                <a href="/privacy" className="hover:text-slate-900">Privacy Policy</a>
+                <a href="/terms#privacy" className="hover:text-slate-900">Privacy Policy</a>
                 <a href="/terms#billing" className="hover:text-slate-900">Billing &amp; Cancellation</a>
                 <a href="mailto:CMSComplianceGuardianHelp@Outlook.com" className="hover:text-slate-900">Support</a>
               </nav>

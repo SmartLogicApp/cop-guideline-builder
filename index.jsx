@@ -1914,6 +1914,7 @@ function PolicyTab({ institution }) {
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
     setTopic(getProviderTopics(institution)[0] ?? TOPICS[0]);
     setCustomTopic("");
+    setError(null);
     setResult(null);
     setDataSource(null);
   }, [institution]);
@@ -2082,6 +2083,7 @@ function InspectionTab({ institution }) {
   useEffect(() => {
     const iu = INSTITUTION_UNITS[institution] || null;
     setDept(iu ? iu.units[0] : DEPARTMENTS[0]);
+    setError(null);
     setResult(null);
     setResponses({});
     setNotes({});
