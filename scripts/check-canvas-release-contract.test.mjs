@@ -144,6 +144,26 @@ test("rejects a unique leading-dot workflow path and shows its canonical replace
   );
 });
 
+test("rejects a unique backslash workflow path and shows its canonical replacement", () => {
+  const declaredPath = ".woodpecker\\pipelines";
+  const canonicalPath = ".woodpecker/pipelines";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: declaredPath,
+      fixturePath: ".woodpecker/pipelines/canvas.yml",
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `supported workflow location entry 8 field "path" uses non-canonical workflow path "\\.woodpecker\\\\\\\\pipelines"; use "\\.woodpecker/pipelines" instead`,
+    ),
+  );
+});
+
 test("rejects a unique trailing-slash fixture path and shows its canonical replacement", () => {
   const declaredFixturePath = ".teamcity/canvas.yml/";
   const canonicalFixturePath = ".teamcity/canvas.yml";
@@ -160,6 +180,26 @@ test("rejects a unique trailing-slash fixture path and shows its canonical repla
     failures({ workflowLocations: locations }).join("\n"),
     new RegExp(
       `supported workflow location entry 8 field "fixturePath" uses non-canonical workflow path "\\.teamcity/canvas\\.yml/"; use "\\.teamcity/canvas\\.yml" instead`,
+    ),
+  );
+});
+
+test("rejects a unique embedded-dot fixture path and shows its canonical replacement", () => {
+  const declaredFixturePath = ".teamcity/./pipelines/canvas.yml";
+  const canonicalFixturePath = ".teamcity/pipelines/canvas.yml";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: ".teamcity",
+      fixturePath: declaredFixturePath,
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `supported workflow location entry 8 field "fixturePath" uses non-canonical workflow path "\\.teamcity/\\./pipelines/canvas\\.yml"; use "\\.teamcity/pipelines/canvas\\.yml" instead`,
     ),
   );
 });
