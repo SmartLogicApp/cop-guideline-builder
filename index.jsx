@@ -575,7 +575,7 @@ const UNIT_CITATIONS = {
   "Labor & Delivery / OB":         ["§482.57 – Obstetric Services","§482.23 – Nursing Services","§482.13 – Patient Rights","§482.42 – Infection Control"],
   "Pediatrics":                    ["§482.23 – Nursing Services","§482.13 – Patient Rights","§482.25 – Pharmaceutical Services","§482.42 – Infection Control"],
   "Neonatal ICU (NICU)":           ["§482.23 – Nursing Services","§482.13 – Patient Rights","§482.42 – Infection Control","§482.41 – Physical Environment"],
-  "Psychiatric / Behavioral Health":["§482.13(e) – Restraint & Seclusion","§482.13 – Patient Rights","§482.62 – Psychiatric Distinct Part","§482.23 – Nursing Services"],
+  "Psychiatric / Behavioral Health":["§482.13 – Patient Rights","§482.13(e) – Restraint & Seclusion","§482.62 – Psychiatric Distinct Part","NPCP.01.01.01 – Psychiatric Patient Care"],
   "Oncology":                      ["§482.23 – Nursing Services","§482.25 – Pharmaceutical Services","§482.42 – Infection Control","§482.43 – Discharge Planning"],
   "Cardiac / Telemetry":           ["§482.23 – Nursing Services","§482.41 – Physical Environment","§482.25 – Pharmaceutical Services","§482.21 – QAPI"],
   "Orthopedics":                   ["§482.23 – Nursing Services","§482.51 – Surgical Services","§482.25 – Pharmaceutical Services","§482.42 – Infection Control"],
@@ -607,7 +607,7 @@ const UNIT_CITATIONS = {
   "Staffing / Agency Nursing (Contracted)":         ["§482.12(e) – Contracted Services Oversight","§482.23 – Nursing Services","§482.13 – Patient Rights"],
   "Rehabilitation / Therapy Services (Contracted)": ["§482.12(e) – Contracted Services Oversight","§482.56 – Rehabilitation Services"],
   "Telemedicine / Telehealth Services (Contracted)":["§482.12(e) – Contracted Services Oversight","§482.13 – Patient Rights"],
-  "Anesthesia Services (Contracted)":               ["§482.12(e) – Contracted Services Oversight","§482.52 – Anesthesia Services"],
+  "Anesthesia Services (Contracted)":               ["§482.12(e) – Contracted Services Oversight","§482.52 – Anesthesia Services","PC.03.01.01 – Anesthesia Care","MS.06.01.03 – Credentialing"],
   "Wound Care Services (Contracted)":               ["§482.12(e) – Contracted Services Oversight","§482.23 – Nursing","§482.42 – Infection Control"],
   "Dialysis Services (Contracted)":                 ["§482.12(e) – Contracted Services Oversight","42 CFR 494 – ESRD"],
   "Waste Management (Contracted)":                  ["§482.12(e) – Contracted Services Oversight","§482.41 – Physical Environment"],
@@ -2078,6 +2078,7 @@ function InspectionTab({ institution }) {
   const [flags, setFlags] = useState({});       // itemId → bool
   const [openNote, setOpenNote] = useState(null); // itemId whose note box is expanded
   const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
+  const [standardsOpen, setStandardsOpen] = useState(true);
 
   // Reset selection whenever institution type changes
   useEffect(() => {
@@ -2173,14 +2174,14 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
             </select>
             {/* Key Standards — instant, no generation needed */}
             {unitCitations.length > 0 && (
-              <div style={{ marginTop: "8px", padding: "8px 10px", background: "#EFF6FF", borderRadius: "6px", border: "1px solid #BFDBFE" }}>
-                <div style={{ fontSize: "10px", fontWeight: 700, color: "#1E40AF", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "5px" }}>Key Standards for this Area</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+              <details open={standardsOpen} onToggle={(e) => setStandardsOpen(e.currentTarget.open)} style={{ marginTop: "8px", padding: "8px 10px", background: "#EFF6FF", borderRadius: "6px", border: "1px solid #BFDBFE" }}>
+                <summary style={{ fontSize: "10px", fontWeight: 700, color: "#1E40AF", textTransform: "uppercase", letterSpacing: "0.5px", cursor: "pointer", userSelect: "none" }}>Key Standards for this Area</summary>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "5px" }}>
                   {unitCitations.map((c) => (
                     <span key={c} style={{ fontSize: "10.5px", fontFamily: "monospace", background: "#DBEAFE", color: "#1E40AF", padding: "2px 7px", borderRadius: "4px", border: "1px solid #BFDBFE" }}>{c}</span>
                   ))}
                 </div>
-              </div>
+              </details>
             )}
           </div>
           <div>
