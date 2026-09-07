@@ -34,6 +34,7 @@ function failures({
   documentation = documentationText,
   executablePaths = protectedCanvasPaths,
   workflowConfigs = [{ path: ".replit", text: replit }],
+  workflowLocations = supportedWorkflowLocations,
 } = {}) {
   const packageJson = JSON.parse(packageJsonText);
   if (command !== undefined) {
@@ -49,11 +50,48 @@ function failures({
     documentation,
     executablePaths,
     workflowConfigs,
+    workflowLocations,
   );
 }
 
 test("accepts the protected Canvas release configuration", () => {
   assert.deepEqual(failures(), []);
+});
+
+test("rejects duplicate supported workflow paths and identifies the conflict", () => {
+  const duplicatePath = ".github/workflows";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: duplicatePath,
+      fixturePath: ".github/workflows/another-canvas.yml",
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(`duplicate supported workflow path entry "${duplicatePath}"`),
+  );
+});
+
+test("rejects duplicate representative fixture paths and identifies the conflict", () => {
+  const duplicateFixturePath = ".circleci/nested/config.yml";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: ".teamcity",
+      fixturePath: duplicateFixturePath,
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `duplicate supported workflow fixturePath entry "${duplicateFixturePath}"`,
+    ),
+  );
 });
 
 test("accepts workflow producers that assign JSON arrays of paths", () => {

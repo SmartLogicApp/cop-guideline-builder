@@ -47,6 +47,26 @@ export const supportedWorkflowLocations = [
   },
 ];
 
+export function duplicateWorkflowLocationFailures(
+  locations = supportedWorkflowLocations,
+) {
+  const failures = [];
+  for (const key of ["path", "fixturePath"]) {
+    const seen = new Set();
+    for (const location of locations) {
+      const value = location[key];
+      if (seen.has(value)) {
+        failures.push(
+          `duplicate supported workflow ${key} entry "${value}"`,
+        );
+      } else {
+        seen.add(value);
+      }
+    }
+  }
+  return failures;
+}
+
 function isJsonArrayProducer(line) {
   const assignment = line.match(
     /CANVAS_RELEASE_CHANGED_PATHS\s*(?::|=)\s*(.*)$/,
@@ -155,8 +175,9 @@ export function checkCanvasReleaseContract(
   documentationText,
   executableProtectedPaths = protectedCanvasPaths,
   workflowConfigs = [],
+  workflowLocations = supportedWorkflowLocations,
 ) {
-  const failures = [];
+  const failures = duplicateWorkflowLocationFailures(workflowLocations);
   const unsafeProducers = unsafeChangedPathProducers(workflowConfigs);
   if (unsafeProducers.length > 0) {
     failures.push(
