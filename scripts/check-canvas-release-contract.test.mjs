@@ -17,6 +17,9 @@ import {
   checkCanvasReleaseContract,
   protectedCanvasPathDeclarationFailures,
   readCheckedInWorkflowConfigs,
+  readReleaseCheckEntryPoints,
+  releasePathScannerAuditFailures,
+  releasePathScannerRegistry,
   supportedWorkflowLocations,
   workflowFileIdentity,
 } from "./check-canvas-release-contract.mjs";
@@ -42,6 +45,17 @@ const [
       "utf8",
     ),
   ]);
+
+const releaseCheckEntryPoints = [
+  {
+    path: "scripts/check-canvas-release-contract.mjs",
+    text: releaseContractSource,
+  },
+  {
+    path: "scripts/validate-canvas-changes.mjs",
+    text: changedPathGuardText,
+  },
+];
 
 async function createSymlinkOrSkip(t, target, path) {
   try {
@@ -71,6 +85,8 @@ function failures({
   executablePaths = protectedCanvasPaths,
   workflowConfigs = [{ path: ".replit", text: replit }],
   workflowLocations = supportedWorkflowLocations,
+  scannerEntryPoints = releaseCheckEntryPoints,
+  scannerRegistry = releasePathScannerRegistry,
 } = {}) {
   const packageJson = JSON.parse(packageJsonText);
   if (command !== undefined) {
@@ -90,6 +106,8 @@ function failures({
     executablePaths,
     workflowConfigs,
     workflowLocations,
+    scannerEntryPoints,
+    scannerRegistry,
   );
 }
 
@@ -97,17 +115,64 @@ test("accepts the protected Canvas release configuration", () => {
   assert.deepEqual(failures(), []);
 });
 
-test("repository path scanners do not use Unicode-aware case conversion", () => {
-  for (const [path, source] of [
-    ["scripts/check-canvas-release-contract.mjs", releaseContractSource],
-    ["scripts/validate-canvas-changes.mjs", changedPathGuardText],
-  ]) {
-    assert.doesNotMatch(
-      source,
-      /\.(?:toLowerCase|toLocaleLowerCase|toUpperCase|toLocaleUpperCase)\s*\(/u,
-      `${path} must use the documented ASCII-only path fold`,
-    );
-  }
+test("automatically inventoried repository path scanners pass their declared audits", async () => {
+  const rootDirectory = new URL("..", import.meta.url).pathname;
+  const inventoried = await readReleaseCheckEntryPoints(rootDirectory);
+  assert.deepEqual(
+    releasePathScannerAuditFailures(inventoried),
+    [],
+  );
+});
+
+test("adding an unaudited release path scanner fails with registry guidance", () => {
+  const scannerPath = "scripts/check-new-release-paths.mjs";
+  const result = failures({
+    scannerEntryPoints: [
+      ...releaseCheckEntryPoints,
+      {
+        path: scannerPath,
+        text:
+          'execFileSync("git", ["diff", "--name-only", "HEAD^", "HEAD"]);',
+      },
+    ],
+  }).join("\n");
+
+  assert.match(result, new RegExp(`release path scanner "${scannerPath}" is unaudited`));
+  assert.match(result, /add it to releasePathScannerRegistry/);
+  assert.match(result, /"ascii-only" semantics or document and register its intentional Unicode semantics/);
+});
+
+test("automatic scanner inventory excludes vendored dependencies", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+  await mkdir(join(rootDirectory, "scripts", "node_modules", "scanner"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(rootDirectory, "scripts", "node_modules", "scanner", "index.mjs"),
+    'execFileSync("git", ["diff", "--name-only"]);',
+  );
+  await mkdir(join(rootDirectory, ".github", "workflows"), {
+    recursive: true,
+  });
+
+  assert.deepEqual(await readReleaseCheckEntryPoints(rootDirectory), []);
+});
+
+test("ASCII-only scanner registrations reject Unicode-aware case conversion", () => {
+  const path = "scripts/validate-canvas-changes.mjs";
+  const result = failures({
+    scannerEntryPoints: releaseCheckEntryPoints.map((entry) =>
+      entry.path === path
+        ? { ...entry, text: `${entry.text}\npath.toLocaleLowerCase();` }
+        : entry,
+    ),
+  }).join("\n");
+
+  assert.match(
+    result,
+    /declares ASCII-only path semantics but uses Unicode-aware case conversion/,
+  );
 });
 
 test("rejects composed, decomposed, and case-varied non-ASCII protected path declarations identically", () => {

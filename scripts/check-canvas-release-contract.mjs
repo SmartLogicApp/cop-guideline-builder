@@ -47,6 +47,93 @@ export const supportedWorkflowLocations = [
   },
 ];
 
+export const releasePathScannerRegistry = [
+  {
+    path: "scripts/check-canvas-release-contract.mjs",
+    semantics: "ascii-only",
+  },
+  {
+    path: "scripts/validate-canvas-changes.mjs",
+    semantics: "ascii-only",
+  },
+];
+
+const unicodeCaseConversion =
+  /\.(?:toLowerCase|toLocaleLowerCase|toUpperCase|toLocaleUpperCase)\s*\(/u;
+
+function looksLikeReleasePathScanner({ path, text }) {
+  if (path.startsWith("scripts/") && /\.test\.[cm]?[jt]s$/u.test(path)) {
+    return false;
+  }
+
+  return (
+    /(?:--name-only|CANVAS_RELEASE_CHANGED_PATHS)/u.test(text) ||
+    (/\breaddir\b/u.test(text) && /\brelative\b/u.test(text))
+  );
+}
+
+export function releasePathScannerAuditFailures(
+  entryPoints,
+  registry = releasePathScannerRegistry,
+) {
+  const failures = [];
+  const discovered = entryPoints.filter(looksLikeReleasePathScanner);
+  const discoveredByPath = new Map(discovered.map((entry) => [entry.path, entry]));
+  const registeredPaths = new Set();
+
+  for (const [index, registration] of registry.entries()) {
+    const label = `release path scanner registry entry ${index + 1}`;
+    if (
+      !registration ||
+      typeof registration !== "object" ||
+      Array.isArray(registration) ||
+      typeof registration.path !== "string" ||
+      registration.path.trim() === ""
+    ) {
+      failures.push(`${label} must declare a non-empty path`);
+      continue;
+    }
+    if (
+      registration.semantics !== "ascii-only" &&
+      registration.semantics !== "documented-unicode"
+    ) {
+      failures.push(
+        `${label} for ${JSON.stringify(registration.path)} must declare "ascii-only" or "documented-unicode" semantics`,
+      );
+    }
+    if (registeredPaths.has(registration.path)) {
+      failures.push(
+        `${label} duplicates registered scanner ${JSON.stringify(registration.path)}`,
+      );
+    }
+    registeredPaths.add(registration.path);
+
+    const entryPoint = discoveredByPath.get(registration.path);
+    if (!entryPoint) {
+      failures.push(
+        `${label} references ${JSON.stringify(registration.path)}, but automatic inventory did not identify it as a release path scanner`,
+      );
+    } else if (
+      registration.semantics === "ascii-only" &&
+      unicodeCaseConversion.test(entryPoint.text)
+    ) {
+      failures.push(
+        `${registration.path} declares ASCII-only path semantics but uses Unicode-aware case conversion; use an explicit ASCII A-Z fold`,
+      );
+    }
+  }
+
+  for (const { path } of discovered) {
+    if (!registeredPaths.has(path)) {
+      failures.push(
+        `automatically discovered release path scanner ${JSON.stringify(path)} is unaudited; add it to releasePathScannerRegistry with "ascii-only" semantics or document and register its intentional Unicode semantics`,
+      );
+    }
+  }
+
+  return failures;
+}
+
 export function protectedCanvasPathDeclarationFailures(
   paths = protectedCanvasPaths,
 ) {
@@ -517,6 +604,42 @@ export async function readCheckedInWorkflowConfigs(
   return configs;
 }
 
+export async function readReleaseCheckEntryPoints(rootDirectory) {
+  const resolvedRootDirectory = await realpath(rootDirectory);
+  const candidates = [
+    ...(await filesBelow(
+      resolve(rootDirectory, "scripts"),
+      rootDirectory,
+      resolvedRootDirectory,
+    )),
+    ...(await filesBelow(
+      resolve(rootDirectory, ".github/workflows"),
+      rootDirectory,
+      resolvedRootDirectory,
+    )),
+  ];
+  const entryPoints = [];
+  for (const path of candidates) {
+    const repositoryPath = normalizedWorkflowPath(
+      relative(rootDirectory, path),
+    );
+    if (
+      repositoryPath.split("/").some((segment) =>
+        ["node_modules", ".git", "dist", "coverage"].includes(segment),
+      )
+    ) {
+      continue;
+    }
+    const file = await stat(path);
+    if (!file.isFile()) continue;
+    entryPoints.push({
+      path: repositoryPath,
+      text: await readFile(path, "utf8"),
+    });
+  }
+  return entryPoints;
+}
+
 export function documentedProtectedCanvasPaths(documentationText) {
   const match = documentationText.match(protectedPathsBlock);
   if (!match) {
@@ -537,12 +660,15 @@ export function checkCanvasReleaseContract(
   executableProtectedPaths = protectedCanvasPaths,
   workflowConfigs = [],
   workflowLocations = supportedWorkflowLocations,
+  releaseCheckEntryPoints = [],
+  scannerRegistry = releasePathScannerRegistry,
 ) {
   const failures = [
     ...protectedCanvasPathDeclarationFailures(executableProtectedPaths),
     ...workflowLocationShapeFailures(workflowLocations),
     ...duplicateWorkflowLocationFailures(workflowLocations),
     ...overlappingWorkflowLocationFailures(workflowLocations),
+    ...releasePathScannerAuditFailures(releaseCheckEntryPoints, scannerRegistry),
   ];
   const unsafeProducers = unsafeChangedPathProducers(workflowConfigs);
   if (unsafeProducers.length > 0) {
@@ -676,6 +802,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
     changedPathGuardText,
     documentationText,
     workflowConfigs,
+    releaseCheckEntryPoints,
   ] =
     await Promise.all([
       readFile(new URL("../.replit", import.meta.url), "utf8"),
@@ -685,6 +812,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
       workflowLocationFailures.length === 0
         ? readCheckedInWorkflowConfigs(rootDirectory)
         : Promise.resolve([]),
+      readReleaseCheckEntryPoints(rootDirectory),
     ]);
   const failures = checkCanvasReleaseContract(
     replitConfig,
@@ -693,6 +821,8 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
     documentationText,
     protectedCanvasPaths,
     workflowConfigs,
+    supportedWorkflowLocations,
+    releaseCheckEntryPoints,
   );
   failures.push(...workflowLocationFailures.filter(
     (failure) => !failures.includes(failure),
