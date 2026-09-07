@@ -34,6 +34,13 @@ case-insensitive filesystems. The release contract check compares this ordered
 block with the guard's executable list, so keep the markers and
 one-path-per-line format.
 
+Protected path declarations must contain ASCII characters only. The contract
+rejects every non-ASCII declaration, including composed and decomposed Unicode
+spellings and their case variants, rather than assigning repository semantics
+to JavaScript Unicode case folding or filesystem normalization. A future
+non-ASCII protected path therefore requires an explicit contract change that
+defines normalization and case-folding behavior first.
+
 <!-- canvas-protected-paths:start -->
 
 ```text
@@ -63,8 +70,10 @@ The focused `test:canvas-release-contract` suite includes the changed-path
 fixtures and runs on Linux through the Replit validation workflow and on
 `windows-latest` and `macos-latest` with Node 24. All three lanes therefore
 assert that case-only protected file and directory-prefix changes require the
-gate. Hard-link identity and deterministic ordering remain required on both
-hosted platforms.
+gate. The same suite also asserts that composed, decomposed, and case-varied
+non-ASCII protected path declarations all fail with the same ASCII-only rule.
+Hard-link identity and deterministic ordering remain required on both hosted
+platforms.
 
 Workflow paths use Unicode Normalization Form C (NFC) for declarations,
 duplicate detection, diagnostics, and directory ordering. A decomposed path in

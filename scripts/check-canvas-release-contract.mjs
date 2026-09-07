@@ -47,6 +47,21 @@ export const supportedWorkflowLocations = [
   },
 ];
 
+export function protectedCanvasPathDeclarationFailures(
+  paths = protectedCanvasPaths,
+) {
+  const failures = [];
+  for (const [index, path] of paths.entries()) {
+    if (typeof path !== "string") continue;
+    if (/[^\x00-\x7f]/u.test(path)) {
+      failures.push(
+        `protected Canvas path entry ${index + 1} must contain ASCII characters only; received ${JSON.stringify(path)}`,
+      );
+    }
+  }
+  return failures;
+}
+
 function workflowPathFailure(value) {
   if (
     posix.isAbsolute(value) ||
@@ -510,6 +525,7 @@ export function checkCanvasReleaseContract(
   workflowLocations = supportedWorkflowLocations,
 ) {
   const failures = [
+    ...protectedCanvasPathDeclarationFailures(executableProtectedPaths),
     ...workflowLocationShapeFailures(workflowLocations),
     ...duplicateWorkflowLocationFailures(workflowLocations),
     ...overlappingWorkflowLocationFailures(workflowLocations),

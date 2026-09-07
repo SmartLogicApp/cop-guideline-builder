@@ -15,6 +15,7 @@ import test from "node:test";
 
 import {
   checkCanvasReleaseContract,
+  protectedCanvasPathDeclarationFailures,
   readCheckedInWorkflowConfigs,
   supportedWorkflowLocations,
   workflowFileIdentity,
@@ -88,6 +89,29 @@ function failures({
 
 test("accepts the protected Canvas release configuration", () => {
   assert.deepEqual(failures(), []);
+});
+
+test("rejects composed, decomposed, and case-varied non-ASCII protected path declarations identically", () => {
+  const variants = [
+    "artifacts/caf\u00e9/",
+    "artifacts/cafe\u0301/",
+    "artifacts/CAF\u00c9/",
+  ];
+
+  for (const path of variants) {
+    const expectedFailure =
+      `protected Canvas path entry 1 must contain ASCII characters only; received ${JSON.stringify(path)}`;
+    assert.deepEqual(protectedCanvasPathDeclarationFailures([path]), [
+      expectedFailure,
+    ]);
+    assert.match(
+      failures({ executablePaths: [path] }).join("\n"),
+      new RegExp(
+        expectedFailure.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        "u",
+      ),
+    );
+  }
 });
 
 test("rejects duplicate supported workflow paths and identifies the conflict", () => {
