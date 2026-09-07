@@ -604,25 +604,38 @@ export async function readCheckedInWorkflowConfigs(
   return configs;
 }
 
-export async function readReleaseCheckEntryPoints(rootDirectory) {
+export async function readReleaseCheckEntryPoints(
+  rootDirectory,
+  workflowLocations = supportedWorkflowLocations,
+) {
   const resolvedRootDirectory = await realpath(rootDirectory);
-  const candidates = [
-    ...(await filesBelow(
-      resolve(rootDirectory, "scripts"),
-      rootDirectory,
-      resolvedRootDirectory,
-    )),
-    ...(await filesBelow(
-      resolve(rootDirectory, ".github/workflows"),
-      rootDirectory,
-      resolvedRootDirectory,
-    )),
-  ];
+  const candidates = await filesBelow(
+    resolve(rootDirectory, "scripts"),
+    rootDirectory,
+    resolvedRootDirectory,
+  );
+  for (const location of workflowLocations) {
+    const path = resolve(rootDirectory, location.path);
+    if (location.type === "file") {
+      candidates.push(path);
+    } else {
+      candidates.push(
+        ...(await filesBelow(
+          path,
+          rootDirectory,
+          resolvedRootDirectory,
+        )),
+      );
+    }
+  }
   const entryPoints = [];
+  const seenPaths = new Set();
   for (const path of candidates) {
     const repositoryPath = normalizedWorkflowPath(
       relative(rootDirectory, path),
     );
+    if (seenPaths.has(repositoryPath)) continue;
+    seenPaths.add(repositoryPath);
     if (
       repositoryPath.split("/").some((segment) =>
         ["node_modules", ".git", "dist", "coverage"].includes(segment),
@@ -630,12 +643,20 @@ export async function readReleaseCheckEntryPoints(rootDirectory) {
     ) {
       continue;
     }
-    const file = await stat(path);
-    if (!file.isFile()) continue;
-    entryPoints.push({
-      path: repositoryPath,
-      text: await readFile(path, "utf8"),
-    });
+    try {
+      const resolvedPath = await realpath(path);
+      if (!isPathContainedBy(resolvedRootDirectory, resolvedPath)) {
+        throw externalWorkflowLocationError(rootDirectory, path);
+      }
+      const file = await stat(resolvedPath);
+      if (!file.isFile()) continue;
+      entryPoints.push({
+        path: repositoryPath,
+        text: await readFile(resolvedPath, "utf8"),
+      });
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
   }
   return entryPoints;
 }

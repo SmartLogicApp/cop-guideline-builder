@@ -142,6 +142,42 @@ test("adding an unaudited release path scanner fails with registry guidance", ()
   assert.match(result, /"ascii-only" semantics or document and register its intentional Unicode semantics/);
 });
 
+test("unaudited scanners in every supported workflow location fail with actionable registry guidance", async (t) => {
+  const scannerSource =
+    'execFileSync("git", ["diff", "--name-only", "HEAD^", "HEAD"]);';
+
+  for (const location of supportedWorkflowLocations) {
+    await t.test(location.path, async (t) => {
+      const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+      t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+      const scannerPath = location.fixturePath;
+      await mkdir(join(rootDirectory, ...scannerPath.split("/").slice(0, -1)), {
+        recursive: true,
+      });
+      await writeFile(join(rootDirectory, scannerPath), scannerSource);
+
+      const inventoried = await readReleaseCheckEntryPoints(rootDirectory);
+      assert.ok(
+        inventoried.some(({ path }) => path === scannerPath),
+        `${scannerPath} was not included in automatic scanner inventory`,
+      );
+
+      const result = releasePathScannerAuditFailures(inventoried).join("\n");
+      assert.match(
+        result,
+        new RegExp(
+          `automatically discovered release path scanner ${JSON.stringify(scannerPath).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} is unaudited`,
+        ),
+      );
+      assert.match(result, /add it to releasePathScannerRegistry/);
+      assert.match(
+        result,
+        /"ascii-only" semantics or document and register its intentional Unicode semantics/,
+      );
+    });
+  }
+});
+
 test("automatic scanner inventory excludes vendored dependencies", async (t) => {
   const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
   t.after(() => rm(rootDirectory, { recursive: true, force: true }));
