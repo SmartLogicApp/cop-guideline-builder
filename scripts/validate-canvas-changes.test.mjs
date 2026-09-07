@@ -135,6 +135,59 @@ test("first commits report every path added by the root commit", () => {
   }
 });
 
+test("renaming a protected file to an unprotected path still requires the gate", () => {
+  const repository = mkdtempSync(join(tmpdir(), "canvas-release-rename-out-"));
+  const protectedPath = "artifacts/mockup-sandbox/src/Feature.tsx";
+  const unprotectedPath = "artifacts/marketing-site/src/Feature.tsx";
+
+  try {
+    initializeRepository(repository);
+    mkdirSync(dirname(join(repository, protectedPath)), { recursive: true });
+    writeFileSync(join(repository, protectedPath), "export const Feature = true;\n");
+    commitAll(repository, "add protected file");
+
+    mkdirSync(dirname(join(repository, unprotectedPath)), { recursive: true });
+    execFileSync("git", ["mv", protectedPath, unprotectedPath], {
+      cwd: repository,
+    });
+    commitAll(repository, "move file out of protected path");
+
+    const changedPaths = changedPathsFromGit(repository);
+    assert.deepEqual(changedPaths, [unprotectedPath, protectedPath].sort());
+    assert.equal(requiresCanvasRelease(changedPaths), true);
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("renaming an unprotected file to a protected path still requires the gate", () => {
+  const repository = mkdtempSync(join(tmpdir(), "canvas-release-rename-in-"));
+  const unprotectedPath = "artifacts/marketing-site/src/Feature.tsx";
+  const protectedPath = "artifacts/mockup-sandbox/src/Feature.tsx";
+
+  try {
+    initializeRepository(repository);
+    mkdirSync(dirname(join(repository, unprotectedPath)), { recursive: true });
+    writeFileSync(
+      join(repository, unprotectedPath),
+      "export const Feature = true;\n",
+    );
+    commitAll(repository, "add unprotected file");
+
+    mkdirSync(dirname(join(repository, protectedPath)), { recursive: true });
+    execFileSync("git", ["mv", unprotectedPath, protectedPath], {
+      cwd: repository,
+    });
+    commitAll(repository, "move file into protected path");
+
+    const changedPaths = changedPathsFromGit(repository);
+    assert.deepEqual(changedPaths, [protectedPath, unprotectedPath].sort());
+    assert.equal(requiresCanvasRelease(changedPaths), true);
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+  }
+});
+
 test("merge commits include changes relative to every parent", () => {
   const repository = mkdtempSync(join(tmpdir(), "canvas-release-merge-"));
 

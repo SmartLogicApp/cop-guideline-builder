@@ -67,11 +67,15 @@ export function changedPathsFromGit(cwd = process.cwd()) {
   const changedPaths = new Set();
   for (const parent of parents) {
     const parentChanges = parseChangedPaths(
-      execFileSync("git", ["diff", "--name-only", parent, head], {
-        cwd,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "inherit"],
-      }),
+      execFileSync(
+        "git",
+        ["diff", "--no-renames", "--name-only", parent, head],
+        {
+          cwd,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "inherit"],
+        },
+      ),
     );
     for (const path of parentChanges) {
       changedPaths.add(path);

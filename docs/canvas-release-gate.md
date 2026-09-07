@@ -18,6 +18,9 @@ The guard uses an explicit strategy for each Git history shape:
 - A merge commit compares the current commit with every parent and uses the
   union of those changed paths. This prevents a protected change from being
   hidden merely because it is already present in one side of the merge.
+- Parent comparisons disable Git rename detection, so a move is reported as
+  both a deletion and an addition. The gate therefore sees the protected side
+  whether a file moves into or out of a protected path.
 
 The full Canvas release validation only runs when at least one resulting
 protected path changed.
