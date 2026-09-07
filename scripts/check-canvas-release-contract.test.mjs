@@ -71,7 +71,49 @@ test("rejects duplicate supported workflow paths and identifies the conflict", (
 
   assert.match(
     failures({ workflowLocations: locations }).join("\n"),
-    new RegExp(`duplicate supported workflow path entry "${duplicatePath}"`),
+    new RegExp(
+      `duplicate supported workflow path entries "${duplicatePath}" and "${duplicatePath}" normalize to "${duplicatePath}"`,
+    ),
+  );
+});
+
+test("rejects trailing-slash workflow path aliases and names both declarations", () => {
+  const originalPath = ".github/workflows";
+  const aliasPath = ".github/workflows/";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: aliasPath,
+      fixturePath: ".github/workflows/another-canvas.yml",
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `duplicate supported workflow path entries "${originalPath}" and "${aliasPath}" normalize to "${originalPath}"`,
+    ),
+  );
+});
+
+test("rejects dot-segment workflow path aliases and names both declarations", () => {
+  const originalPath = ".circleci";
+  const aliasPath = "./.circleci";
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "directory",
+      path: aliasPath,
+      fixturePath: "./.circleci/another-config.yml",
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    new RegExp(
+      `duplicate supported workflow path entries "\\.circleci" and "\\./\\.circleci" normalize to "\\.circleci"`,
+    ),
   );
 });
 
@@ -89,7 +131,7 @@ test("rejects duplicate representative fixture paths and identifies the conflict
   assert.match(
     failures({ workflowLocations: locations }).join("\n"),
     new RegExp(
-      `duplicate supported workflow fixturePath entry "${duplicateFixturePath}"`,
+      `duplicate supported workflow fixturePath entries "${duplicateFixturePath}" and "${duplicateFixturePath}" normalize to "${duplicateFixturePath}"`,
     ),
   );
 });

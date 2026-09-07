@@ -64,6 +64,10 @@ function workflowPathFailure(value) {
   return null;
 }
 
+function normalizedWorkflowPath(value) {
+  return posix.normalize(value.replaceAll("\\", "/")).replace(/\/+$/, "") || "/";
+}
+
 export function workflowLocationShapeFailures(
   locations = supportedWorkflowLocations,
 ) {
@@ -132,16 +136,18 @@ export function duplicateWorkflowLocationFailures(
 ) {
   const failures = [];
   for (const key of ["path", "fixturePath"]) {
-    const seen = new Set();
+    const seen = new Map();
     for (const location of locations) {
       const value = location?.[key];
       if (typeof value !== "string" || value.trim() === "") continue;
-      if (seen.has(value)) {
+      const normalizedValue = normalizedWorkflowPath(value);
+      const originalValue = seen.get(normalizedValue);
+      if (originalValue !== undefined) {
         failures.push(
-          `duplicate supported workflow ${key} entry "${value}"`,
+          `duplicate supported workflow ${key} entries ${JSON.stringify(originalValue)} and ${JSON.stringify(value)} normalize to ${JSON.stringify(normalizedValue)}`,
         );
       } else {
-        seen.add(value);
+        seen.set(normalizedValue, value);
       }
     }
   }
