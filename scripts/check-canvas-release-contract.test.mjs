@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { checkCanvasReleaseContract } from "./check-canvas-release-contract.mjs";
-import { protectedCanvasPaths } from "./validate-canvas-changes.mjs";
+import {
+  parseEnvironmentChangedPaths,
+  protectedCanvasPaths,
+  requiresCanvasRelease,
+} from "./validate-canvas-changes.mjs";
 
 const [
   replitConfig,
@@ -24,6 +28,7 @@ function failures({
   guard = changedPathGuardText,
   documentation = documentationText,
   executablePaths = protectedCanvasPaths,
+  workflowConfigs = [{ path: ".replit", text: replit }],
 } = {}) {
   const packageJson = JSON.parse(packageJsonText);
   if (command !== undefined) {
@@ -38,11 +43,124 @@ function failures({
     guard,
     documentation,
     executablePaths,
+    workflowConfigs,
   );
 }
 
 test("accepts the protected Canvas release configuration", () => {
   assert.deepEqual(failures(), []);
+});
+
+test("accepts workflow producers that assign JSON arrays of paths", () => {
+  const workflowConfigs = [
+    {
+      path: ".gitlab-ci.yml",
+      text: 'CANVAS_RELEASE_CHANGED_PATHS=["README.md","path with spaces"]',
+    },
+  ];
+  assert.deepEqual(failures({ workflowConfigs }), []);
+});
+
+test("rejects newline-delimited workflow producers with actionable guidance", () => {
+  const result = failures({
+    workflowConfigs: [
+      {
+        path: ".github/workflows/canvas.yml",
+        text: [
+          "env:",
+          "  CANVAS_RELEASE_CHANGED_PATHS: ${{ steps.changed.outputs.all_changed_files }}",
+        ].join("\n"),
+      },
+    ],
+  }).join("\n");
+
+  assert.match(result, /\.github\/workflows\/canvas\.yml:2/);
+  assert.match(result, /must be a provable JSON array of path strings/);
+  assert.match(result, /do not use newline-delimited paths/);
+  assert.match(result, /Assign a JSON array literal/);
+});
+
+test("rejects serializer names in comments or unrelated assignment fragments", () => {
+  for (const marker of ["JSON.stringify(", "toJSON(", "jq --slurp"]) {
+    const result = failures({
+      workflowConfigs: [
+        {
+          path: ".github/workflows/canvas.yml",
+          text: `CANVAS_RELEASE_CHANGED_PATHS="$(git diff --name-only)" # ${marker}`,
+        },
+      ],
+    }).join("\n");
+
+    assert.match(result, /must be a provable JSON array of path strings/);
+  }
+});
+
+test("rejects dynamic serializers whose output type cannot be proven", () => {
+  const unsafeValues = [
+    "$(node -e 'console.log(JSON.stringify(paths.join(\"\\\\n\")))')",
+    "$(printf '%s' \"$paths\" | jq --slurp --raw-input '.')",
+    "${{ toJSON(steps.changed.outputs.all_changed_files) }}",
+  ];
+
+  for (const value of unsafeValues) {
+    const result = failures({
+      workflowConfigs: [
+        {
+          path: ".github/workflows/canvas.yml",
+          text: `CANVAS_RELEASE_CHANGED_PATHS: ${value}`,
+        },
+      ],
+    }).join("\n");
+
+    assert.match(result, /unverified dynamic serializer/);
+  }
+});
+
+test("rejects empty shell and YAML override assignments", () => {
+  const emptyAssignments = [
+    "export CANVAS_RELEASE_CHANGED_PATHS=",
+    "CANVAS_RELEASE_CHANGED_PATHS:",
+  ];
+
+  for (const text of emptyAssignments) {
+    const result = failures({
+      workflowConfigs: [
+        {
+          path: ".github/workflows/canvas.yml",
+          text,
+        },
+      ],
+    }).join("\n");
+
+    assert.match(result, /must be a provable JSON array of path strings/);
+  }
+});
+
+test("rejects indirect shell producers that can hide a scalar path", () => {
+  const scalar = '"artifacts/mockup-sandbox/src/App.tsx"';
+  assert.equal(
+    requiresCanvasRelease(parseEnvironmentChangedPaths(scalar)),
+    false,
+    "the scalar value demonstrates why an indirect producer can skip Canvas validation",
+  );
+
+  const result = failures({
+    workflowConfigs: [
+      {
+        path: ".github/workflows/canvas.yml",
+        text: [
+          "read -r CANVAS_RELEASE_CHANGED_PATHS <<'EOF'",
+          scalar,
+          "EOF",
+          "export CANVAS_RELEASE_CHANGED_PATHS",
+        ].join("\n"),
+      },
+    ],
+  }).join("\n");
+
+  assert.match(result, /\.github\/workflows\/canvas\.yml:1/);
+  assert.match(result, /\.github\/workflows\/canvas\.yml:4/);
+  assert.match(result, /must be a provable JSON array of path strings/);
 });
 
 test("rejects drift between documented and executable protected paths", () => {

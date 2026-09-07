@@ -6,3 +6,4 @@
 - [CCN verification sources](ccn-verification-sources.md) — Care Compare supports direct CCN queries for some provider types; FQHC and OPO require separate CMS enrollment-file integration.
 - [Clean checks after semantic merges](clean-checks-after-semantic-merges.md) — incremental TypeScript caches can hide merge corruption; completion checks after rebases must disable incremental mode.
 - [Vite optional peer alignment](vite-optional-peer-alignment.md) — unpeered Vite plugins must resolve the same optional-peer context as the consuming artifact to keep plugin types compatible.
+- [CI serialization contracts](ci-serialization-contracts.md) — static guards must prove the produced value's shape; serializer names alone are not evidence of safe output.
