@@ -5,6 +5,8 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import LandingPage from '@/pages/landing';
+import TermsPage from '@/pages/terms';
+import PrivacyPage from '@/pages/privacy';
 import {
   Route,
   Switch,
@@ -19,6 +21,8 @@ function Router() {
     <RoutedErrorBoundary>
       <Switch>
         <Route path="/" component={LandingPage} />
+        <Route path="/terms" component={TermsPage} />
+        <Route path="/privacy" component={PrivacyPage} />
         <Route component={NotFound} />
       </Switch>
     </RoutedErrorBoundary>
@@ -31,10 +35,14 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 }
 
 function App() {
+  const base = window.location.pathname.startsWith('/terms')
+    ? ''
+    : import.meta.env.BASE_URL.replace(/\/$/, '');
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+        <WouterRouter base={base}>
           <Router />
         </WouterRouter>
         <Toaster />
