@@ -1659,8 +1659,10 @@ function OnboardingBanner() {
 // ─── Guidelines Tab ──────────────────────────────────────────────────────────
 
 function GuidelinesTab({ institution }) {
+  const instUnits = INSTITUTION_UNITS[institution] || null;
   const topics = getProviderTopics(institution);
   const verifiedRequirements = getRequirementsForProvider(institution);
+  const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
   const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1669,8 +1671,11 @@ function GuidelinesTab({ institution }) {
   const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
 
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
+  const isContractedUnit = unit.endsWith("(Contracted)");
 
   useEffect(() => {
+    const iu = INSTITUTION_UNITS[institution] || null;
+    setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
     setTopic(getProviderTopics(institution)[0] ?? TOPICS[0]);
     setCustomTopic("");
     setResult(null);
@@ -1742,7 +1747,15 @@ Output ONLY valid JSON with this exact structure:
 
 Include 3-4 standards per source. Use real, accurate regulatory codes and citations. Be concise but specific.`;
 
-    const userContent = `Institution: ${inst.label} (${inst.cfr})\nCompliance Topic: ${topicFinal}`;
+    const unitLine = instUnits ? `${instUnits.label}: ${unit}` : `Department: ${unit}`;
+    const unitCitations = getUnitCitations(institution, unit);
+    const citationLine = unitCitations.length
+      ? `\nApplicable unit/service citations to prioritize: ${unitCitations.join("; ")}`
+      : "";
+    const contractedNote = isContractedUnit
+      ? `\nThis is a CONTRACTED service. Scope the guidance specifically to the facility's oversight obligations under §482.12(e) for hospitals (or the equivalent CoP section for this institution type): contract requirements, vendor credentialing, performance monitoring, and the service-specific regulatory standards.`
+      : "";
+    const userContent = `Institution: ${inst.label} (${inst.cfr})\n${unitLine}\nCompliance Topic: ${topicFinal}${citationLine}${contractedNote}`;
 
     try {
       const { text, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 3000, institution);
@@ -1824,6 +1837,19 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
       {/* Form */}
       <div style={S.card}>
         <div style={S.row}>
+          {instUnits && (
+            <div>
+              <label style={S.label}>{instUnits.label}</label>
+              <select style={S.select} value={unit} onChange={(e) => { setUnit(e.target.value); setResult(null); setDataSource(null); }}>
+                <optgroup label="Units / Departments">
+                  {instUnits.units.map((d) => <option key={d} value={d}>{d}</option>)}
+                </optgroup>
+                <optgroup label="Contracted Services">
+                  {instUnits.contracted.map((d) => <option key={d} value={d}>{d}</option>)}
+                </optgroup>
+              </select>
+            </div>
+          )}
           <div>
             <label style={S.label}>Topic Preset</label>
             <select style={S.select} value={topic} onChange={(e) => { setTopic(e.target.value); setCustomTopic(""); }}>
