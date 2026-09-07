@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { protectedCanvasPaths } from "./validate-canvas-changes.mjs";
 
 const expectedCommand =
@@ -67,6 +67,34 @@ export function workflowLocationShapeFailures(
       if (typeof location[field] !== "string" || location[field].trim() === "") {
         failures.push(
           `${entry} field "${field}" must be a non-empty string; received ${JSON.stringify(location[field])}`,
+        );
+      }
+    }
+
+    const hasValidPaths = ["path", "fixturePath"].every(
+      (field) =>
+        typeof location[field] === "string" && location[field].trim() !== "",
+    );
+    if (!hasValidPaths) continue;
+
+    if (location.type === "file" && location.fixturePath !== location.path) {
+      failures.push(
+        `${entry} has conflicting fields: file fixturePath ${JSON.stringify(location.fixturePath)} must equal path ${JSON.stringify(location.path)}`,
+      );
+    }
+    if (location.type === "directory") {
+      const fixtureRelativePath = relative(
+        location.path,
+        location.fixturePath,
+      );
+      if (
+        fixtureRelativePath === "" ||
+        fixtureRelativePath === ".." ||
+        fixtureRelativePath.startsWith(`..${sep}`) ||
+        isAbsolute(fixtureRelativePath)
+      ) {
+        failures.push(
+          `${entry} has conflicting fields: directory fixturePath ${JSON.stringify(location.fixturePath)} must be nested under path ${JSON.stringify(location.path)}`,
         );
       }
     }

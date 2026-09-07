@@ -110,6 +110,46 @@ test("rejects unsupported workflow location types and identifies the entry and f
   );
 });
 
+test("rejects file fixtures that do not equal their discovery path", () => {
+  const locations = [
+    ...supportedWorkflowLocations,
+    {
+      type: "file",
+      path: "Jenkinsfile.release",
+      fixturePath: "ci/Jenkinsfile.release",
+    },
+  ];
+
+  assert.match(
+    failures({ workflowLocations: locations }).join("\n"),
+    /supported workflow location entry 8 has conflicting fields: file fixturePath "ci\/Jenkinsfile\.release" must equal path "Jenkinsfile\.release"/,
+  );
+});
+
+test("rejects directory fixtures that are not nested under their discovery path", () => {
+  const mismatchedLocations = [
+    {
+      type: "directory",
+      path: ".woodpecker",
+      fixturePath: ".woodpecker-ci/canvas.yml",
+    },
+    {
+      type: "directory",
+      path: ".woodpecker",
+      fixturePath: ".woodpecker/../outside/canvas.yml",
+    },
+  ];
+
+  for (const location of mismatchedLocations) {
+    assert.match(
+      failures({
+        workflowLocations: [...supportedWorkflowLocations, location],
+      }).join("\n"),
+      /supported workflow location entry 8 has conflicting fields: directory fixturePath .* must be nested under path "\.woodpecker"/,
+    );
+  }
+});
+
 test("rejects missing and empty workflow location paths with clear entry and field names", () => {
   const malformedLocations = [
     { type: "file", fixturePath: "missing-path.yml" },
