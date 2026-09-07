@@ -25,6 +25,18 @@ export function requiresCanvasRelease(changedPaths) {
   );
 }
 
+export function formatCanvasPathForDisplay(path) {
+  if (!/["\\\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(path)) {
+    return path;
+  }
+
+  return JSON.stringify(path).replace(
+    /[\u007f-\u009f\u2028\u2029]/gu,
+    (character) =>
+      `\\u${character.codePointAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
 function parseEnvironmentChangedPaths(value) {
   return value
     .split(/\r?\n/)
@@ -128,6 +140,7 @@ function main() {
     console.log(
       `Canvas release validation required by: ${changedPaths
         .filter((path) => requiresCanvasRelease([path]))
+        .map(formatCanvasPathForDisplay)
         .join(", ")}`,
     );
   }

@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   changedPathsFromGit,
+  formatCanvasPathForDisplay,
   requiresCanvasRelease,
 } from "./validate-canvas-changes.mjs";
 
@@ -238,6 +239,60 @@ test("unusual neighboring paths cannot hide a protected Canvas change", () => {
     assert.equal(requiresCanvasRelease(changedPathsFromGit(repository)), true);
   } finally {
     rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("ordinary protected paths remain easy to read in release logs", () => {
+  assert.equal(
+    formatCanvasPathForDisplay(
+      "artifacts/mockup-sandbox/src/file with spaces.tsx",
+    ),
+    "artifacts/mockup-sandbox/src/file with spaces.tsx",
+  );
+});
+
+test("quotes and control characters are escaped in displayed paths", () => {
+  for (const [path, displayedPath] of [
+    [
+      'artifacts/mockup-sandbox/src/"quoted".tsx',
+      '"artifacts/mockup-sandbox/src/\\"quoted\\".tsx"',
+    ],
+    [
+      "artifacts/mockup-sandbox/src/line\nbreak.tsx",
+      '"artifacts/mockup-sandbox/src/line\\nbreak.tsx"',
+    ],
+    [
+      "artifacts/mockup-sandbox/src/tab\tand\u0001control.tsx",
+      '"artifacts/mockup-sandbox/src/tab\\tand\\u0001control.tsx"',
+    ],
+    [
+      "artifacts/mockup-sandbox/src/del\u007fcontrol.tsx",
+      '"artifacts/mockup-sandbox/src/del\\u007fcontrol.tsx"',
+    ],
+    [
+      "artifacts/mockup-sandbox/src/next-line\u0085control.tsx",
+      '"artifacts/mockup-sandbox/src/next-line\\u0085control.tsx"',
+    ],
+    [
+      "artifacts/mockup-sandbox/src/csi\u009bcontrol.tsx",
+      '"artifacts/mockup-sandbox/src/csi\\u009bcontrol.tsx"',
+    ],
+    [
+      "artifacts/mockup-sandbox/src/line\u2028separator.tsx",
+      '"artifacts/mockup-sandbox/src/line\\u2028separator.tsx"',
+    ],
+  ]) {
+    assert.equal(formatCanvasPathForDisplay(path), displayedPath);
+    assert.equal(
+      displayedPath.split(/\r?\n/u).length,
+      1,
+      "displayed paths must stay on one log line",
+    );
+    assert.doesNotMatch(
+      displayedPath,
+      /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u,
+      "displayed paths must not contain raw control characters",
+    );
   }
 });
 
