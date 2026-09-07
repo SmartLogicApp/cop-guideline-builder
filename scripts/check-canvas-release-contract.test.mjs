@@ -3,6 +3,7 @@ import {
   link,
   mkdtemp,
   mkdir,
+  readdir,
   readFile,
   rm,
   symlink,
@@ -632,6 +633,41 @@ test("scans converging directory aliases once and keeps the first sorted checked
   const result = failures({ workflowConfigs }).join("\n");
   assert.match(result, /\.github\/workflows\/a-alias\/canvas\.yml:1/);
   assert.doesNotMatch(result, /\.github\/workflows\/z-alias\/canvas\.yml/);
+});
+
+test("walks shared workflow directory trees once across top-level aliases and keeps the first checked-in alias for nested diagnostics", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  await mkdir(join(rootDirectory, "ci", "shared", "nested"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(rootDirectory, "ci", "shared", "nested", "canvas.yml"),
+    "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+  );
+  await symlink("ci/shared", join(rootDirectory, ".circleci"));
+  await mkdir(join(rootDirectory, ".github"), { recursive: true });
+  await symlink("../ci/shared", join(rootDirectory, ".github", "workflows"));
+
+  const directoryReads = new Map();
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory, {
+    readDirectory: async (directory, options) => {
+      directoryReads.set(directory, (directoryReads.get(directory) ?? 0) + 1);
+      return readdir(directory, options);
+    },
+  });
+
+  assert.deepEqual(workflowConfigs, [
+    {
+      path: ".github/workflows/nested/canvas.yml",
+      text: "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+    },
+  ]);
+  assert.deepEqual([...directoryReads.values()], [1, 1]);
+  const result = failures({ workflowConfigs }).join("\n");
+  assert.match(result, /\.github\/workflows\/nested\/canvas\.yml:1/);
+  assert.doesNotMatch(result, /\.circleci\/nested\/canvas\.yml/);
 });
 
 test("discovers nested workflow symlinks that resolve inside the repository", async (t) => {

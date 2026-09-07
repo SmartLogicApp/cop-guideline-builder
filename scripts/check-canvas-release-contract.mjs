@@ -283,6 +283,8 @@ async function filesBelow(
   rootDirectory,
   resolvedRootDirectory,
   ancestorDirectories = new Set(),
+  traversalCache = new Map(),
+  readDirectory = readdir,
 ) {
   let resolvedDirectory;
   try {
@@ -299,10 +301,14 @@ async function filesBelow(
       `supported workflow location "${relative(rootDirectory, directory)}" resolves to a recursive directory symlink, which is intentionally unsupported`,
     );
   }
+  const cachedRelativeFiles = traversalCache.get(resolvedDirectory);
+  if (cachedRelativeFiles) {
+    return cachedRelativeFiles.map((path) => resolve(directory, path));
+  }
 
   let entries;
   try {
-    entries = await readdir(resolvedDirectory, { withFileTypes: true });
+    entries = await readDirectory(resolvedDirectory, { withFileTypes: true });
   } catch (error) {
     if (error.code === "ENOENT") return [];
     throw error;
@@ -322,6 +328,8 @@ async function filesBelow(
           rootDirectory,
           resolvedRootDirectory,
           nestedAncestors,
+           traversalCache,
+           readDirectory,
         )),
       );
     } else if (entry.isFile()) {
@@ -339,6 +347,8 @@ async function filesBelow(
             rootDirectory,
             resolvedRootDirectory,
             nestedAncestors,
+             traversalCache,
+             readDirectory,
           )),
         );
       } else if (target.isFile()) {
@@ -346,11 +356,19 @@ async function filesBelow(
       }
     }
   }
+  traversalCache.set(
+    resolvedDirectory,
+    files.map((path) => relative(directory, path)),
+  );
   return files;
 }
 
-export async function readCheckedInWorkflowConfigs(rootDirectory) {
+export async function readCheckedInWorkflowConfigs(
+  rootDirectory,
+  { readDirectory = readdir } = {},
+) {
   const resolvedRootDirectory = await realpath(rootDirectory);
+  const traversalCache = new Map();
   const candidates = [];
   for (const location of supportedWorkflowLocations) {
     const absolutePath = resolve(rootDirectory, location.path);
@@ -362,6 +380,9 @@ export async function readCheckedInWorkflowConfigs(rootDirectory) {
           absolutePath,
           rootDirectory,
           resolvedRootDirectory,
+           new Set(),
+           traversalCache,
+           readDirectory,
         )),
       );
     }
