@@ -340,3 +340,52 @@ test("merge commits include changes relative to every parent", () => {
     rmSync(repository, { recursive: true, force: true });
   }
 });
+
+test("merge commits expose both paths when a protected file is renamed out", () => {
+  const repository = mkdtempSync(
+    join(tmpdir(), "canvas-release-merge-rename-"),
+  );
+  const protectedPath = "artifacts/mockup-sandbox/src/Feature.tsx";
+  const unprotectedPath = "artifacts/marketing-site/src/Feature.tsx";
+
+  try {
+    initializeRepository(repository);
+    mkdirSync(dirname(join(repository, protectedPath)), { recursive: true });
+    writeFileSync(join(repository, protectedPath), "export const Feature = true;\n");
+    commitAll(repository, "add protected file");
+    const mainBranch = execFileSync(
+      "git",
+      ["branch", "--show-current"],
+      { cwd: repository, encoding: "utf8" },
+    ).trim();
+
+    execFileSync("git", ["checkout", "--quiet", "-b", "rename-canvas"], {
+      cwd: repository,
+    });
+    mkdirSync(dirname(join(repository, unprotectedPath)), { recursive: true });
+    execFileSync("git", ["mv", protectedPath, unprotectedPath], {
+      cwd: repository,
+    });
+    commitAll(repository, "move file out of protected path");
+
+    execFileSync("git", ["checkout", "--quiet", mainBranch], {
+      cwd: repository,
+    });
+    writeFileSync(join(repository, "docs.md"), "main branch change\n");
+    commitAll(repository, "change docs");
+    execFileSync(
+      "git",
+      ["merge", "--quiet", "--no-ff", "rename-canvas", "-m", "merge rename"],
+      { cwd: repository },
+    );
+
+    const changedPaths = changedPathsFromGit(repository);
+    assert.deepEqual(
+      changedPaths,
+      [protectedPath, unprotectedPath, "docs.md"].sort(),
+    );
+    assert.equal(requiresCanvasRelease(changedPaths), true);
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+  }
+});
