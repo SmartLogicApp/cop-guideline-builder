@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import ExcelJS from "exceljs";
-import { useAccount } from "@/hooks/useAccount";
 import {
   DEFAULT_COMPLIANCE_TOPICS,
   LEGACY_INSTITUTION_TYPES,
@@ -3670,6 +3669,96 @@ function Footer({ onTerms, onPrivacy }) {
   );
 }
 
+// ─── Trial Expiry Interstitial ───────────────────────────────────────────────
+
+const TRIAL_END_PLANS = [
+  {
+    name: "Individual",
+    price: "$99",
+    description: "For independent compliance consultants and solo professionals",
+    features: ["1 user", "All 4 compliance tools", "AI gap scanning"],
+  },
+  {
+    name: "Facility",
+    price: "$299",
+    description: "For all staff at one facility location",
+    features: ["Unlimited staff users", "1 facility / CCN", "Priority support"],
+    highlight: true,
+  },
+];
+
+function TrialEndedScreen({ billingUrl, onSignOut }) {
+  return (
+    <main style={{
+      minHeight: "100dvh", background: "linear-gradient(155deg, #071A2F 0%, #0B3D8E 55%, #0D5C6B 100%)",
+      color: "#fff", fontFamily: "var(--app-font-sans, 'Inter', system-ui, sans-serif)",
+      padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{ width: "100%", maxWidth: "880px" }}>
+        <div style={{ textAlign: "center", maxWidth: "660px", margin: "0 auto 32px" }}>
+          <div style={{
+            width: "54px", height: "54px", borderRadius: "50%", margin: "0 auto 18px",
+            display: "grid", placeItems: "center", background: "rgba(245,197,66,0.16)",
+            border: "1px solid rgba(245,197,66,0.45)", color: "#F5C542", fontSize: "26px",
+          }} aria-hidden="true">✓</div>
+          <div style={{ color: "#F5C542", fontSize: "12px", fontWeight: 800, letterSpacing: "1.5px", textTransform: "uppercase", marginBottom: "10px" }}>
+            Trial complete
+          </div>
+          <h1 style={{ margin: "0 0 12px", fontSize: "clamp(28px, 5vw, 44px)", lineHeight: 1.12, letterSpacing: "-1px" }}>
+            Your 30-day trial has ended — subscribe to continue
+          </h1>
+          <p style={{ margin: 0, color: "rgba(255,255,255,0.72)", fontSize: "16px", lineHeight: 1.6 }}>
+            Choose the plan that fits your work to restore access to your compliance workspace.
+          </p>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "18px" }}>
+          {TRIAL_END_PLANS.map((plan) => (
+            <section key={plan.name} style={{
+              position: "relative", borderRadius: "14px", padding: "28px 26px",
+              background: plan.highlight ? "#fff" : "rgba(255,255,255,0.08)",
+              color: plan.highlight ? "#0B1F3A" : "#fff",
+              border: plan.highlight ? "2px solid #F5C542" : "1px solid rgba(255,255,255,0.18)",
+              boxShadow: plan.highlight ? "0 18px 48px rgba(0,0,0,0.24)" : "none",
+            }}>
+              {plan.highlight && (
+                <div style={{
+                  position: "absolute", top: "-12px", right: "20px", borderRadius: "999px",
+                  background: "#F5C542", color: "#0B1F3A", padding: "5px 11px",
+                  fontSize: "10px", fontWeight: 900, letterSpacing: "0.7px", textTransform: "uppercase",
+                }}>Best for teams</div>
+              )}
+              <h2 style={{ margin: "0 0 8px", fontSize: "20px" }}>{plan.name}</h2>
+              <div style={{ fontSize: "38px", fontWeight: 900, lineHeight: 1, color: plan.highlight ? "#0B3D8E" : "#fff" }}>
+                {plan.price}<span style={{ fontSize: "14px", fontWeight: 500, opacity: 0.65 }}>/month</span>
+              </div>
+              <p style={{ minHeight: "44px", margin: "12px 0 18px", fontSize: "13px", lineHeight: 1.55, opacity: 0.72 }}>
+                {plan.description}
+              </p>
+              <ul style={{ listStyle: "none", padding: 0, margin: "0 0 24px", fontSize: "13px", lineHeight: 2 }}>
+                {plan.features.map((feature) => <li key={feature}>✓ {feature}</li>)}
+              </ul>
+              <a href={billingUrl} style={{
+                display: "block", textAlign: "center", textDecoration: "none", borderRadius: "8px",
+                padding: "12px 16px", fontSize: "14px", fontWeight: 800,
+                background: plan.highlight ? "#0B3D8E" : "#fff",
+                color: plan.highlight ? "#fff" : "#0B3D8E",
+              }}>View billing options →</a>
+            </section>
+          ))}
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: "24px" }}>
+          <button onClick={() => onSignOut?.()} style={{
+            border: 0, background: "none", color: "rgba(255,255,255,0.65)",
+            fontSize: "13px", textDecoration: "underline", cursor: "pointer",
+          }}>Sign out</button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 // ─── Admin Quick Panel (super-admin only, embedded in main page) ──────────────
 
 function AdminQuickPanel({ basePath, onClose }) {
@@ -3765,7 +3854,8 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
   });
   const [legal, setLegal] = useState(null); // "terms" | "privacy" | null
   const [adminOpen, setAdminOpen] = useState(false);
-  const { data: accountData } = useAccount();
+  const [subscription, setSubscription] = useState(undefined);
+  const [accountData, setAccountData] = useState(null);
   // Check Clerk user ID directly (no API/cache dependency) + fall back to server flags
   const isAdmin = ADMIN_CLERK_IDS.includes(clerkUserId ?? "")
     || accountData?.isSuperAdmin
@@ -3781,6 +3871,44 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
   useEffect(() => {
     try { sessionStorage.setItem(ACTIVE_WORKSPACE_TAB_KEY, tab); } catch {}
   }, [tab]);
+
+  useEffect(() => {
+    if (!clerkUserId) return;
+    let cancelled = false;
+    fetch(`${basePath}/api/accounts/me`, { credentials: "include" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Unable to load account");
+        return response.json();
+      })
+      .then((data) => {
+        if (!cancelled) setAccountData(data);
+      })
+      .catch(() => {
+        // Admin access still falls back to the known Clerk IDs below.
+      });
+    fetch(`${basePath}/api/billing/subscription`, { credentials: "include" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Unable to load subscription status");
+        return response.json();
+      })
+      .then((data) => {
+        if (!cancelled) setSubscription(data.subscription ?? null);
+      })
+      .catch(() => {
+        // Fail open: a temporary billing API error must not falsely lock out a subscriber.
+      });
+    return () => { cancelled = true; };
+  }, [basePath, clerkUserId]);
+
+  const trialHasEnded = subscription !== undefined && (
+    subscription === null ||
+    subscription.isActive === false ||
+    (subscription.status === "trial" && subscription.daysLeftInTrial === 0)
+  );
+
+  if (trialHasEnded) {
+    return <TrialEndedScreen billingUrl={`${basePath}/billing`} onSignOut={onSignOut} />;
+  }
 
   return (
     <div style={S.page}>
