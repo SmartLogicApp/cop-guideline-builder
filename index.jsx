@@ -1143,6 +1143,36 @@ const ACTIVE_WORKSPACE_TAB_KEY = "cms_active_workspace_tab";
 const ACTION_COMPLETION_KEY_PREFIX = "cms_action_completion:";
 const GAP_SESSION_TTL_MS = 30 * 60 * 1000;
 const GAP_HISTORY_MAX = 10;
+const INSPECTION_HISTORY_KEY = "inspection-history";
+const INSPECTION_HISTORY_MAX = 10;
+
+function loadInspectionHistory() {
+  try {
+    const history = JSON.parse(localStorage.getItem(INSPECTION_HISTORY_KEY) || "[]");
+    return Array.isArray(history) ? history : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveInspectionHistory(history) {
+  try {
+    const updated = history.slice(0, INSPECTION_HISTORY_MAX);
+    localStorage.setItem(INSPECTION_HISTORY_KEY, JSON.stringify(updated));
+    return updated;
+  } catch {
+    return history;
+  }
+}
+
+function saveInspectionEntry(entry) {
+  const existing = loadInspectionHistory();
+  return saveInspectionHistory([entry, ...existing.filter((item) => item.id !== entry.id)]);
+}
+
+function deleteInspectionEntry(id) {
+  return saveInspectionHistory(loadInspectionHistory().filter((entry) => entry.id !== id));
+}
 
 function loadActionCompletion(entryId) {
   if (!entryId) return {};
@@ -2275,6 +2305,10 @@ function InspectionTab({ institution }) {
   const [openNote, setOpenNote] = useState(null); // itemId whose note box is expanded
   const [dataSource, setDataSource] = useState(null); // { kind: "ecfr", fetchDate } | { kind: "ai" } | null
   const [standardsOpen, setStandardsOpen] = useState(true);
+  const [history, setHistory] = useState(() => loadInspectionHistory());
+  const [showHistory, setShowHistory] = useState(false);
+  const [loadedEntryId, setLoadedEntryId] = useState(null);
+  const [resultMeta, setResultMeta] = useState(null);
 
   function clearChecklistDraft() {
     localStorage.removeItem(INSPECTION_DRAFT_KEY);
@@ -2283,6 +2317,9 @@ function InspectionTab({ institution }) {
     setNotes({});
     setFlags({});
     setOpenNote(null);
+    setDataSource(null);
+    setLoadedEntryId(null);
+    setResultMeta(null);
   }
 
   // Reset selection whenever institution type changes
@@ -2302,14 +2339,17 @@ function InspectionTab({ institution }) {
       setResponses(saved.responses || {});
       setNotes(saved.notes || {});
       setFlags(saved.flags || {});
+      setResultMeta({ institution, dept: saved.dept || (iu ? iu.units[0] : DEPARTMENTS[0]) });
     } else {
       setResult(null);
       setResponses({});
       setNotes({});
       setFlags({});
+      setResultMeta(null);
     }
     setOpenNote(null);
     setDataSource(null);
+    setLoadedEntryId(null);
   }, [institution]);
 
   useEffect(() => {
@@ -2327,6 +2367,17 @@ function InspectionTab({ institution }) {
     );
   }, [institution, dept, result, responses, notes, flags]);
 
+  useEffect(() => {
+    if (!loadedEntryId || !result) return;
+    setHistory((current) => {
+      const existing = current.find((entry) => entry.id === loadedEntryId);
+      if (!existing) return current;
+      return saveInspectionHistory(current.map((entry) => entry.id === loadedEntryId
+        ? { ...entry, result, responses, notes, flags, dataSource }
+        : entry));
+    });
+  }, [loadedEntryId, result, responses, notes, flags, dataSource]);
+
   const inst = INSTITUTION_TYPES.find((i) => i.value === institution);
   const selectedBodies = Object.entries(govBodies).filter(([, v]) => v).map(([k]) => k.toUpperCase());
   const isContracted = dept.endsWith("(Contracted)");
@@ -2341,6 +2392,8 @@ function InspectionTab({ institution }) {
     setFlags({});
     setOpenNote(null);
     setDataSource(null);
+    setLoadedEntryId(null);
+    setResultMeta(null);
 
     const systemPrompt = `You are a healthcare inspection readiness expert. Generate a practical inspection readiness checklist.
 
@@ -2372,8 +2425,24 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
       const instValue = govBodies.cms ? institution : undefined;
       const { text: raw, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 3000, instValue);
       const data = repairJson(raw);
-      setResult(data.items || data);
+      const items = data.items || data;
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        institution,
+        institutionLabel: inst.label,
+        dept,
+        timestamp: new Date().toISOString(),
+        result: items,
+        responses: {},
+        notes: {},
+        flags: {},
+        dataSource: ds,
+      };
+      setResult(items);
       setDataSource(ds);
+      setResultMeta({ institution, dept });
+      setLoadedEntryId(entry.id);
+      setHistory(saveInspectionEntry(entry));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -2393,6 +2462,38 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
     : null;
 
   const unitCitations = getUnitCitations(institution, dept);
+  const effectiveInst = resultMeta
+    ? (INSTITUTION_TYPES.find((item) => item.value === resultMeta.institution) || inst)
+    : inst;
+  const effectiveDept = resultMeta?.dept || dept;
+
+  function loadHistoryEntry(entry) {
+    setResult(entry.result);
+    setResponses(entry.responses || {});
+    setNotes(entry.notes || {});
+    setFlags(entry.flags || {});
+    setDataSource(entry.dataSource || null);
+    setResultMeta({ institution: entry.institution, dept: entry.dept });
+    setLoadedEntryId(entry.id);
+    setOpenNote(null);
+    setShowHistory(false);
+    setError(null);
+  }
+
+  function handleDeleteHistoryEntry(event, id) {
+    event.stopPropagation();
+    const updated = deleteInspectionEntry(id);
+    setHistory(updated);
+    if (loadedEntryId === id) {
+      setResult(null);
+      setResponses({});
+      setNotes({});
+      setFlags({});
+      setDataSource(null);
+      setResultMeta(null);
+      setLoadedEntryId(null);
+    }
+  }
 
   return (
     <div>
@@ -2455,11 +2556,64 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
             </div>
           </div>
         </div>
-        <button style={S.btnPrimary(loading)} onClick={generate} disabled={loading}>
-          {loading ? "Generating…" : "Generate Inspection Readiness Checklist"}
-        </button>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          <button style={{ ...S.btnPrimary(loading), flex: 1, minWidth: "230px", marginTop: 0 }} onClick={generate} disabled={loading}>
+            {loading ? "Generating…" : "Generate Inspection Readiness Checklist"}
+          </button>
+          <button
+            style={{ padding: "12px 16px", fontSize: "13px", fontWeight: 600, border: "1px solid #CBD5E1", borderRadius: "7px", background: showHistory ? "#0D5C6B" : "#fff", color: showHistory ? "#fff" : "#475569", cursor: "pointer", whiteSpace: "nowrap" }}
+            onClick={() => setShowHistory((value) => !value)}
+          >
+            🕒 Saved Checklists{history.length > 0 ? ` (${history.length})` : ""}
+          </button>
+        </div>
         {error && <div style={S.error}>⚠️ {error}</div>}
       </div>
+
+      {showHistory && (
+        <div style={S.card}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <div>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#1A2332" }}>Saved Inspection Checklists</div>
+              <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: "2px" }}>Stored in this browser. Click a row to reload it.</div>
+            </div>
+          </div>
+          {history.length === 0 ? (
+            <div style={{ color: "#94A3B8", fontSize: "13px", textAlign: "center", padding: "20px 0" }}>No saved checklists yet. Generate one to get started.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {history.map((entry) => {
+                const entryInst = INSTITUTION_TYPES.find((item) => item.value === entry.institution);
+                const readyCount = Object.values(entry.responses || {}).filter((value) => value === "yes").length;
+                const itemCount = entry.result?.length || 0;
+                const entryScore = itemCount ? Math.round((readyCount / itemCount) * 100) : null;
+                const date = new Date(entry.timestamp);
+                const isLoaded = loadedEntryId === entry.id;
+                return (
+                  <div key={entry.id} onClick={() => loadHistoryEntry(entry)}
+                    style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px", borderRadius: "7px", border: `1px solid ${isLoaded ? "#0D5C6B" : "#E2E8F0"}`, background: isLoaded ? "#E8F4F5" : "#FAFAFA", cursor: "pointer" }}>
+                    <div style={{ padding: "4px 10px", borderRadius: "6px", background: "#F1F5F9", color: "#475569", fontWeight: 700, fontSize: "14px", minWidth: "52px", textAlign: "center" }}>
+                      {entryScore === null ? "—" : `${entryScore}%`}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#1A2332", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.dept}</div>
+                      <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{entryInst?.label || entry.institutionLabel || entry.institution}</div>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8", textAlign: "right", flexShrink: 0 }}>
+                      <div>{date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</div>
+                      <div>{date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</div>
+                    </div>
+                    {isLoaded && <span style={{ fontSize: "11px", fontWeight: 700, color: "#0D5C6B" }}>Loaded</span>}
+                    <button onClick={(event) => handleDeleteHistoryEntry(event, entry.id)}
+                      style={{ padding: "3px 7px", fontSize: "11px", border: "1px solid #FCA5A5", borderRadius: "4px", background: "#FEF2F2", color: "#DC2626", cursor: "pointer" }}
+                      title="Delete this checklist">✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {loading && <div style={S.card}><LoadingSpinner message="Building inspection readiness checklist…" /></div>}
 
@@ -2470,7 +2624,7 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: Object.keys(responses).length > 0 ? "8px" : 0 }}>
               <div>
                 <span style={{ fontSize: "13px", fontWeight: 600 }}>Inspection Readiness Checklist</span>
-                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{inst.label} · {dept}</div>
+                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>{effectiveInst.label} · {effectiveDept}</div>
                 {/* Data source badge */}
                 <div style={{ marginTop: "6px" }}>
                   {dataSource?.kind === "ecfr" ? (
@@ -2488,8 +2642,8 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
                 {Object.keys(responses).length > 0 && (
                   <span style={{ fontSize: "20px", fontWeight: 700, color: score >= 80 ? "#065F46" : score >= 60 ? "#92400E" : "#991B1B" }}>{score}%</span>
                 )}
-                <CopyButton text={inspectionToText(sorted, responses, inst, dept, notes, flags)} label="Copy" />
-                <ExcelButton onClick={() => exportInspectionXlsx(sorted, responses, inst, dept, notes, flags)} />
+                <CopyButton text={inspectionToText(sorted, responses, effectiveInst, effectiveDept, notes, flags)} label="Copy" />
+                <ExcelButton onClick={() => exportInspectionXlsx(sorted, responses, effectiveInst, effectiveDept, notes, flags)} />
               </div>
             </div>
             {Object.keys(responses).length > 0 && (
