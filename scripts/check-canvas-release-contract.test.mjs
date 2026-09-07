@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  link,
   mkdtemp,
   mkdir,
   readFile,
@@ -551,6 +552,34 @@ test("scans converging file aliases once and keeps the first checked-in location
   const result = failures({ workflowConfigs }).join("\n");
   assert.match(result, /\.gitlab-ci\.yml:1/);
   assert.doesNotMatch(result, /bitbucket-pipelines\.yml/);
+});
+
+test("scans hard-linked workflows across supported locations once and keeps the first checked-in location for diagnostics", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  await mkdir(join(rootDirectory, ".github", "workflows"), { recursive: true });
+  await mkdir(join(rootDirectory, ".circleci"), { recursive: true });
+  const firstPath = join(rootDirectory, ".gitlab-ci.yml");
+  await writeFile(firstPath, "CANVAS_RELEASE_CHANGED_PATHS: unsafe");
+  await link(
+    firstPath,
+    join(rootDirectory, ".github", "workflows", "canvas.yml"),
+  );
+  await link(firstPath, join(rootDirectory, ".circleci", "config.yml"));
+
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
+
+  assert.deepEqual(workflowConfigs, [
+    {
+      path: ".gitlab-ci.yml",
+      text: "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+    },
+  ]);
+  const result = failures({ workflowConfigs }).join("\n");
+  assert.match(result, /\.gitlab-ci\.yml:1/);
+  assert.doesNotMatch(result, /\.github\/workflows\/canvas\.yml/);
+  assert.doesNotMatch(result, /\.circleci\/config\.yml/);
 });
 
 test("scans converging directory aliases once and keeps the first sorted checked-in location for diagnostics", async (t) => {

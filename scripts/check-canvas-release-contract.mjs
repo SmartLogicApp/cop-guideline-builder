@@ -369,6 +369,7 @@ export async function readCheckedInWorkflowConfigs(rootDirectory) {
 
   const configs = [];
   const seenResolvedPaths = new Set();
+  const seenFileIdentities = new Set();
   for (const path of candidates) {
     try {
       const resolvedPath = await realpath(path);
@@ -377,6 +378,10 @@ export async function readCheckedInWorkflowConfigs(rootDirectory) {
       }
       if (seenResolvedPaths.has(resolvedPath)) continue;
       seenResolvedPaths.add(resolvedPath);
+      const file = await stat(resolvedPath, { bigint: true });
+      const fileIdentity = `${file.dev}:${file.ino}`;
+      if (seenFileIdentities.has(fileIdentity)) continue;
+      seenFileIdentities.add(fileIdentity);
       configs.push({
         path: relative(rootDirectory, path),
         text: await readFile(resolvedPath, "utf8"),
