@@ -3,11 +3,18 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { checkCanvasReleaseContract } from "./check-canvas-release-contract.mjs";
+import { protectedCanvasPaths } from "./validate-canvas-changes.mjs";
 
-const [replitConfig, packageJsonText, changedPathGuardText] = await Promise.all([
+const [
+  replitConfig,
+  packageJsonText,
+  changedPathGuardText,
+  documentationText,
+] = await Promise.all([
   readFile(new URL("../.replit", import.meta.url), "utf8"),
   readFile(new URL("../package.json", import.meta.url), "utf8"),
   readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../docs/canvas-release-gate.md", import.meta.url), "utf8"),
 ]);
 
 function failures({
@@ -15,6 +22,8 @@ function failures({
   command,
   guardedCommand,
   guard = changedPathGuardText,
+  documentation = documentationText,
+  executablePaths = protectedCanvasPaths,
 } = {}) {
   const packageJson = JSON.parse(packageJsonText);
   if (command !== undefined) {
@@ -27,11 +36,43 @@ function failures({
     replit,
     JSON.stringify(packageJson),
     guard,
+    documentation,
+    executablePaths,
   );
 }
 
 test("accepts the protected Canvas release configuration", () => {
   assert.deepEqual(failures(), []);
+});
+
+test("rejects drift between documented and executable protected paths", () => {
+  const documentedDrift = documentationText.replace(
+    "artifacts/mockup-sandbox/",
+    "artifacts/mockup-sandbox",
+  );
+  assert.match(
+    failures({ documentation: documentedDrift }).join("\n"),
+    /documented protected paths do not match/,
+  );
+
+  assert.match(
+    failures({
+      executablePaths: [...protectedCanvasPaths, "docs/canvas-release-gate.md"],
+    }).join("\n"),
+    /documented protected paths do not match/,
+  );
+});
+
+test("rejects a missing documented protected-path contract block", () => {
+  assert.match(
+    failures({
+      documentation: documentationText.replace(
+        "canvas-protected-paths:start",
+        "canvas-protected-paths:disabled",
+      ),
+    }).join("\n"),
+    /missing its protected-path contract block/,
+  );
 });
 
 test("rejects Canvas workflow registration changes", () => {

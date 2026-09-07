@@ -14,16 +14,28 @@ The `canvas-release` validation workflow calls `pnpm run validate:canvas:changed
 The guard compares the current commit with its first parent and only runs the
 full Canvas release validation when at least one protected path changed.
 
-Protected paths are:
+Protected paths are listed below. A path ending in `/` matches that directory
+and everything below it by prefix. A path without a trailing slash matches one
+file exactly. The release contract check compares this ordered block with the
+guard's executable list, so keep the markers and one-path-per-line format.
 
-- `.replit` and the guard implementation/tests
-- root workspace dependency manifests: `package.json`, `pnpm-workspace.yaml`,
-  and `pnpm-lock.yaml`
-- everything under `artifacts/mockup-sandbox/`
-- `artifacts/cms-compliance-consultant-training/package.json`, because its
-  Vite optional peers share pnpm resolution context with Canvas
-- `artifacts/api-server/src/middlewares/requireActiveSubscription.ts`
-- `artifacts/api-server/src/routes/billing.ts`
+<!-- canvas-protected-paths:start -->
+```text
+.replit
+package.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+artifacts/mockup-sandbox/
+artifacts/cms-compliance-consultant-training/package.json
+artifacts/api-server/src/middlewares/requireActiveSubscription.ts
+artifacts/api-server/src/routes/billing.ts
+scripts/validate-canvas-changes.mjs
+scripts/validate-canvas-changes.test.mjs
+```
+<!-- canvas-protected-paths:end -->
+
+The consultant-training package manifest is protected because its Vite optional
+peers share pnpm resolution context with Canvas.
 
 Other documentation, API, mobile, marketing, slide, and video changes exit
 successfully without installing dependencies or building Canvas.

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { protectedCanvasPaths } from "./validate-canvas-changes.mjs";
 
 const expectedCommand =
   "pnpm install --frozen-lockfile && pnpm --filter @workspace/mockup-sandbox run typecheck && PORT=4173 BASE_PATH=/__mockup NODE_ENV=production pnpm --filter @workspace/mockup-sandbox run build";
@@ -11,10 +12,27 @@ function workflow(config, name) {
     );
 }
 
+const protectedPathsBlock =
+  /<!-- canvas-protected-paths:start -->\s*```text\s*\n([\s\S]*?)\n```\s*<!-- canvas-protected-paths:end -->/;
+
+export function documentedProtectedCanvasPaths(documentationText) {
+  const match = documentationText.match(protectedPathsBlock);
+  if (!match) {
+    return null;
+  }
+
+  return match[1]
+    .split(/\r?\n/)
+    .map((path) => path.trim())
+    .filter(Boolean);
+}
+
 export function checkCanvasReleaseContract(
   replitConfig,
   packageJsonText,
   changedPathGuardText,
+  documentationText,
+  executableProtectedPaths = protectedCanvasPaths,
 ) {
   const failures = [];
   const canvasWorkflow = workflow(replitConfig, "canvas-release");
@@ -50,6 +68,23 @@ export function checkCanvasReleaseContract(
   ) {
     failures.push(
       'the independent "canvas-release-contract" validation is not registered correctly',
+    );
+  }
+
+  const documentedPaths =
+    typeof documentationText === "string"
+      ? documentedProtectedCanvasPaths(documentationText)
+      : null;
+  if (!documentedPaths) {
+    failures.push(
+      "the Canvas release documentation is missing its protected-path contract block",
+    );
+  } else if (
+    documentedPaths.length !== executableProtectedPaths.length ||
+    documentedPaths.some((path, index) => path !== executableProtectedPaths[index])
+  ) {
+    failures.push(
+      "the documented protected paths do not match the executable protected paths (a trailing slash means directory-prefix matching; paths without one match exactly)",
     );
   }
 
@@ -105,16 +140,23 @@ export function checkCanvasReleaseContract(
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  const [replitConfig, packageJsonText, changedPathGuardText] =
+  const [
+    replitConfig,
+    packageJsonText,
+    changedPathGuardText,
+    documentationText,
+  ] =
     await Promise.all([
-    readFile(new URL("../.replit", import.meta.url), "utf8"),
-    readFile(new URL("../package.json", import.meta.url), "utf8"),
+      readFile(new URL("../.replit", import.meta.url), "utf8"),
+      readFile(new URL("../package.json", import.meta.url), "utf8"),
       readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
+      readFile(new URL("../docs/canvas-release-gate.md", import.meta.url), "utf8"),
     ]);
   const failures = checkCanvasReleaseContract(
     replitConfig,
     packageJsonText,
     changedPathGuardText,
+    documentationText,
   );
 
   if (failures.length > 0) {
