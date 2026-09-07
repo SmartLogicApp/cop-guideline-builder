@@ -27,7 +27,7 @@ function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
   if (!getSuperAdminIds().includes(userId))
     return res.status(403).json({ error: "Super-admin access required" });
   (req as any).clerkUserId = userId;
-  next();
+  return next();
 }
 
 function requireCronOrSuperAdmin(req: Request, res: Response, next: NextFunction) {
@@ -199,9 +199,7 @@ router.get("/stats", requireAnyAdmin, async (req, res) => {
 
     const [allAccounts, allTokenRows] = await Promise.all([
       db.select().from(accounts),
-      db.select().from(tokenUsage).where(
-        and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))
-      ),
+      db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
     ]);
 
     const now = new Date();
@@ -233,7 +231,7 @@ router.get("/stats", requireAnyAdmin, async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: "Failed to load stats" });
+    return res.status(500).json({ error: "Failed to load stats" });
   }
 });
 
@@ -292,7 +290,7 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
 
     return res.json(clients);
   } catch {
-    res.status(500).json({ error: "Failed to load clients" });
+    return res.status(500).json({ error: "Failed to load clients" });
   }
 });
 
@@ -361,7 +359,7 @@ router.get("/token-usage", requireAnyAdmin, async (req, res) => {
 
     return res.json({ monthLabel: label, rows, totals });
   } catch {
-    res.status(500).json({ error: "Failed to load token usage" });
+    return res.status(500).json({ error: "Failed to load token usage" });
   }
 });
 
@@ -425,7 +423,6 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
         db.select().from(accounts),
         db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
       ]);
-      const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
       const tokByAcct = new Map<string, number>();
       for (const r of allTokenRows) { if (r.accountId) tokByAcct.set(r.accountId, (tokByAcct.get(r.accountId) ?? 0) + (r.markedUpCostUsd ?? 0)); }
       const headers = ["Facility Name", "CCN", "Subscription Status", "Month", "Token Charge (USD)"];
@@ -440,7 +437,7 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.send(csv);
   } catch {
-    res.status(500).json({ error: "Failed to generate report" });
+    return res.status(500).json({ error: "Failed to generate report" });
   }
 });
 
@@ -511,7 +508,7 @@ router.post("/reports/email", requireAnyAdmin, async (req, res) => {
 
     return res.json({ ok: true, sent: recipients.length });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to send email" });
+    return res.status(500).json({ error: err?.message ?? "Failed to send email" });
   }
 });
 
@@ -559,7 +556,7 @@ router.post("/users", requireSuperAdmin, async (req, res) => {
 });
 
 router.patch("/users/:id", requireSuperAdmin, async (req, res) => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { isActive } = req.body as { isActive: boolean };
   if (typeof isActive !== "boolean") return res.status(400).json({ error: "isActive (boolean) is required" });
   const [updated] = await db.update(adminUsers).set({ isActive }).where(eq(adminUsers.id, id)).returning();
@@ -568,7 +565,7 @@ router.patch("/users/:id", requireSuperAdmin, async (req, res) => {
 });
 
 router.delete("/users/:id", requireSuperAdmin, async (req, res) => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const deleted = await db.delete(adminUsers).where(eq(adminUsers.id, id)).returning();
   if (!deleted.length) return res.status(404).json({ error: "Admin user not found" });
   return res.json({ ok: true });

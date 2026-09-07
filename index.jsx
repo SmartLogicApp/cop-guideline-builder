@@ -13,13 +13,6 @@ import {
 } from "@workspace/cms-compliance-data";
 import { getTrialAccessView, TRIAL_ACCESS_VIEW } from "./trial-access.js";
 
-// Clerk user IDs that get the admin button — covers dev and production environments.
-const ADMIN_CLERK_IDS = [
-  "user_3HyQAQQh8oexrrANO8yBOIYm2m8", // dev
-  "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production facility-owner account
-  "user_3HxczU4Qjnwl3L2O5a8TssjtfON",  // actual production admin Clerk ID
-];
-
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const INSTITUTION_TYPES = LEGACY_INSTITUTION_TYPES;
@@ -4280,9 +4273,8 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
   const identityIsCurrent = identityState.requestKey === explicitOwnerId;
   const resolvedHistoryOwnerId = identityIsCurrent ? identityState.ownerId : undefined;
   const accountData = identityIsCurrent ? identityState.accountData : null;
-  // Check Clerk user ID directly (no API/cache dependency) + fall back to server flags
-  const isAdmin = ADMIN_CLERK_IDS.includes(clerkUserId ?? "")
-    || accountData?.isSuperAdmin
+  // Authorization is resolved by the server from controlled configuration.
+  const isAdmin = accountData?.isSuperAdmin
     || accountData?.isAdminUser;
   const basePath = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const selectedProvider = getProviderProfile(institution);

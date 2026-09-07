@@ -20,7 +20,7 @@ async function initStripeIfAvailable() {
     if (!databaseUrl) return;
 
     logger.info("Initializing Stripe schema…");
-    await runMigrations({ databaseUrl, schema: "stripe" });
+    await runMigrations({ databaseUrl });
 
     const stripeSync = await getStripeSync();
 
@@ -71,18 +71,10 @@ await migrateTrialWarningTracking();
 // upserts them into admin_users so the button works even if the secret is stale.
 // Also includes a hardcoded fallback so production never loses access.
 async function bootstrapSuperAdmins() {
-  const HARDCODED_SUPER_ADMINS = [
-    "user_3HyQAQQh8oexrrANO8yBOIYm2m8", // dev Clerk ID
-    "user_3HpG4wWADUbnkJS3D2aGQspgGFP",  // production facility-owner account
-    "user_3HxczU4Qjnwl3L2O5a8TssjtfON",  // actual production admin Clerk ID ✓ confirmed
-  ];
-
-  const fromEnv = (process.env.ADMIN_CLERK_USER_IDS ?? "")
+  const ids = (process.env.ADMIN_CLERK_USER_IDS ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.startsWith("user_")); // only real Clerk IDs
-
-  const ids = Array.from(new Set([...HARDCODED_SUPER_ADMINS, ...fromEnv]));
 
   for (const clerkUserId of ids) {
     await db.execute(sql`
