@@ -508,6 +508,63 @@ test("accepts workflow symlinks that resolve inside the repository", async (t) =
   assert.deepEqual(failures({ workflowConfigs }), []);
 });
 
+test("scans converging file aliases once and keeps the first checked-in location for diagnostics", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  await mkdir(join(rootDirectory, "ci"), { recursive: true });
+  await writeFile(
+    join(rootDirectory, "ci", "canvas.yml"),
+    "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+  );
+  await symlink("ci/canvas.yml", join(rootDirectory, ".gitlab-ci.yml"));
+  await symlink("ci/canvas.yml", join(rootDirectory, "bitbucket-pipelines.yml"));
+
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
+
+  assert.deepEqual(workflowConfigs, [
+    {
+      path: ".gitlab-ci.yml",
+      text: "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+    },
+  ]);
+  const result = failures({ workflowConfigs }).join("\n");
+  assert.match(result, /\.gitlab-ci\.yml:1/);
+  assert.doesNotMatch(result, /bitbucket-pipelines\.yml/);
+});
+
+test("scans converging directory aliases once and keeps the first sorted checked-in location for diagnostics", async (t) => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
+  t.after(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  await mkdir(join(rootDirectory, ".github", "workflows"), { recursive: true });
+  await mkdir(join(rootDirectory, "ci", "shared"), { recursive: true });
+  await writeFile(
+    join(rootDirectory, "ci", "shared", "canvas.yml"),
+    "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+  );
+  await symlink(
+    "../../ci/shared",
+    join(rootDirectory, ".github", "workflows", "z-alias"),
+  );
+  await symlink(
+    "../../ci/shared",
+    join(rootDirectory, ".github", "workflows", "a-alias"),
+  );
+
+  const workflowConfigs = await readCheckedInWorkflowConfigs(rootDirectory);
+
+  assert.deepEqual(workflowConfigs, [
+    {
+      path: ".github/workflows/a-alias/canvas.yml",
+      text: "CANVAS_RELEASE_CHANGED_PATHS: unsafe",
+    },
+  ]);
+  const result = failures({ workflowConfigs }).join("\n");
+  assert.match(result, /\.github\/workflows\/a-alias\/canvas\.yml:1/);
+  assert.doesNotMatch(result, /\.github\/workflows\/z-alias\/canvas\.yml/);
+});
+
 test("discovers nested workflow symlinks that resolve inside the repository", async (t) => {
   const rootDirectory = await mkdtemp(join(tmpdir(), "canvas-contract-"));
   t.after(() => rm(rootDirectory, { recursive: true, force: true }));

@@ -307,6 +307,9 @@ async function filesBelow(
     if (error.code === "ENOENT") return [];
     throw error;
   }
+  entries.sort((first, second) =>
+    first.name < second.name ? -1 : first.name > second.name ? 1 : 0,
+  );
 
   const nestedAncestors = new Set(ancestorDirectories).add(resolvedDirectory);
   const files = [];
@@ -365,12 +368,15 @@ export async function readCheckedInWorkflowConfigs(rootDirectory) {
   }
 
   const configs = [];
+  const seenResolvedPaths = new Set();
   for (const path of candidates) {
     try {
       const resolvedPath = await realpath(path);
       if (!isPathContainedBy(resolvedRootDirectory, resolvedPath)) {
         throw externalWorkflowLocationError(rootDirectory, path);
       }
+      if (seenResolvedPaths.has(resolvedPath)) continue;
+      seenResolvedPaths.add(resolvedPath);
       configs.push({
         path: relative(rootDirectory, path),
         text: await readFile(resolvedPath, "utf8"),
