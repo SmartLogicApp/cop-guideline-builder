@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 
 import {
@@ -10,6 +13,39 @@ const rootDirectory = new URL("..", import.meta.url).pathname;
 
 test("accepts checked-in validation scripts", async () => {
   assert.deepEqual(await checkArtifactDiscoveryContract(rootDirectory), []);
+});
+
+test("rejects raw artifact discovery in an imported shared utility", async (t) => {
+  const repository = await mkdtemp(
+    join(tmpdir(), "artifact-discovery-contract-"),
+  );
+  t.after(() => rm(repository, { recursive: true, force: true }));
+  await mkdir(join(repository, "scripts"), { recursive: true });
+  await writeFile(
+    join(repository, "scripts/check-fixture.mjs"),
+    'import { discoverArtifacts } from "./shared-discovery.mjs";\nvoid discoverArtifacts;\n',
+  );
+  await writeFile(
+    join(repository, "scripts/shared-discovery.mjs"),
+    `
+      import { readdir } from "node:fs/promises";
+      import { resolve } from "node:path";
+
+      export async function discoverArtifacts(root) {
+        const artifactsDirectory = resolve(root, "artifacts");
+        try {
+          return await readdir(artifactsDirectory);
+        } catch (error) {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        }
+      }
+    `,
+  );
+
+  assert.deepEqual(await checkArtifactDiscoveryContract(repository), [
+    "scripts/shared-discovery.mjs:8 lists the top-level artifacts directory without an approved discovery helper or actionable error handling",
+  ]);
 });
 
 test("rejects raw non-ENOENT artifact directory failures", () => {

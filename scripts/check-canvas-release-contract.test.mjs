@@ -32,21 +32,30 @@ import {
 const [
   replitConfig,
   packageJsonText,
+  artifactDiscoveryContractSource,
   releaseContractSource,
   changedPathGuardText,
   documentationText,
 ] = await Promise.all([
-    readFile(new URL("../.replit", import.meta.url), "utf8"),
-    readFile(new URL("../package.json", import.meta.url), "utf8"),
-    readFile(new URL("./check-canvas-release-contract.mjs", import.meta.url), "utf8"),
-    readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
-    readFile(
-      new URL("../docs/canvas-release-gate.md", import.meta.url),
-      "utf8",
-    ),
-  ]);
+  readFile(new URL("../.replit", import.meta.url), "utf8"),
+  readFile(new URL("../package.json", import.meta.url), "utf8"),
+  readFile(
+    new URL("./check-artifact-discovery-contract.mjs", import.meta.url),
+    "utf8",
+  ),
+  readFile(
+    new URL("./check-canvas-release-contract.mjs", import.meta.url),
+    "utf8",
+  ),
+  readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../docs/canvas-release-gate.md", import.meta.url), "utf8"),
+]);
 
 const releaseCheckEntryPoints = [
+  {
+    path: "scripts/check-artifact-discovery-contract.mjs",
+    text: artifactDiscoveryContractSource,
+  },
   {
     path: "scripts/check-canvas-release-contract.mjs",
     text: releaseContractSource,
@@ -118,10 +127,7 @@ test("accepts the protected Canvas release configuration", () => {
 test("automatically inventoried repository path scanners pass their declared audits", async () => {
   const rootDirectory = new URL("..", import.meta.url).pathname;
   const inventoried = await readReleaseCheckEntryPoints(rootDirectory);
-  assert.deepEqual(
-    releasePathScannerAuditFailures(inventoried),
-    [],
-  );
+  assert.deepEqual(releasePathScannerAuditFailures(inventoried), []);
 });
 
 test("adding an unaudited release path scanner fails with registry guidance", () => {
@@ -131,15 +137,20 @@ test("adding an unaudited release path scanner fails with registry guidance", ()
       ...releaseCheckEntryPoints,
       {
         path: scannerPath,
-        text:
-          'execFileSync("git", ["diff", "--name-only", "HEAD^", "HEAD"]);',
+        text: 'execFileSync("git", ["diff", "--name-only", "HEAD^", "HEAD"]);',
       },
     ],
   }).join("\n");
 
-  assert.match(result, new RegExp(`release path scanner "${scannerPath}" is unaudited`));
+  assert.match(
+    result,
+    new RegExp(`release path scanner "${scannerPath}" is unaudited`),
+  );
   assert.match(result, /add it to releasePathScannerRegistry/);
-  assert.match(result, /"ascii-only" semantics or document and register its intentional Unicode semantics/);
+  assert.match(
+    result,
+    /"ascii-only" semantics or document and register its intentional Unicode semantics/,
+  );
 });
 
 test("provider path filters and shell find scanners require a portability audit", () => {
@@ -158,8 +169,7 @@ test("provider path filters and shell find scanners require a portability audit"
     },
     {
       path: ".github/workflows/canvas.yml",
-      text:
-        "'on':\n  'pull_request':\n    'paths-ignore':\n      - 'docs/**'",
+      text: "'on':\n  'pull_request':\n    'paths-ignore':\n      - 'docs/**'",
     },
     {
       path: ".github/workflows/canvas.yml",
@@ -191,8 +201,7 @@ test("provider path filters and shell find scanners require a portability audit"
     },
     {
       path: "bitbucket-pipelines.yml",
-      text:
-        "pipelines: { default: [{ step: { condition: { changesets: { includePaths: [artifacts/**] } } } }] }",
+      text: "pipelines: { default: [{ step: { condition: { changesets: { includePaths: [artifacts/**] } } } }] }",
     },
     {
       path: "Jenkinsfile",
@@ -200,8 +209,7 @@ test("provider path filters and shell find scanners require a portability audit"
     },
     {
       path: "Jenkinsfile",
-      text:
-        "when { changeset pattern: 'artifacts/**', comparator: 'GLOB' }",
+      text: "when { changeset pattern: 'artifacts/**', comparator: 'GLOB' }",
     },
     {
       path: "Jenkinsfile",
@@ -213,8 +221,7 @@ test("provider path filters and shell find scanners require a portability audit"
     },
     {
       path: ".circleci/config.yml",
-      text:
-        "orbs:\n  paths: circleci/path-filtering@1.2.0\nworkflows:\n  setup:\n    jobs:\n      - paths/filter:",
+      text: "orbs:\n  paths: circleci/path-filtering@1.2.0\nworkflows:\n  setup:\n    jobs:\n      - paths/filter:",
     },
     {
       path: ".buildkite/pipeline.yml",
@@ -256,38 +263,31 @@ test("provider path filters inherited through YAML anchors require a portability
   const fixtures = [
     {
       path: ".github/workflows/canvas.yml",
-      text:
-        "path-filter: &path.filter\n  paths:\n    - artifacts/**\non:\n  push:\n    <<: *path.filter",
+      text: "path-filter: &path.filter\n  paths:\n    - artifacts/**\non:\n  push:\n    <<: *path.filter",
     },
     {
       path: ".gitlab-ci.yml",
-      text:
-        ".path-rule: &path-rule\n  changes:\n    - artifacts/**/*\nrelease:\n  rules:\n    - *path-rule",
+      text: ".path-rule: &path-rule\n  changes:\n    - artifacts/**/*\nrelease:\n  rules:\n    - *path-rule",
     },
     {
       path: ".gitlab-ci.yml",
-      text:
-        ".path-rules:\n  - &path/rule\n    changes:\n      - artifacts/**/*\nrelease:\n  rules:\n    - *path/rule",
+      text: ".path-rules:\n  - &path/rule\n    changes:\n      - artifacts/**/*\nrelease:\n  rules:\n    - *path/rule",
     },
     {
       path: ".gitlab-ci.yml",
-      text:
-        ".path-rule: &path-rule { changes: [artifacts/**/*] }\nrelease:\n  rules:\n    - *path-rule",
+      text: ".path-rule: &path-rule { changes: [artifacts/**/*] }\nrelease:\n  rules:\n    - *path-rule",
     },
     {
       path: "bitbucket-pipelines.yml",
-      text:
-        "path-condition: &path.condition/filter\n  changesets:\n    includePaths:\n      - artifacts/**\npipelines:\n  default:\n    - step:\n        condition: *path.condition/filter",
+      text: "path-condition: &path.condition/filter\n  changesets:\n    includePaths:\n      - artifacts/**\npipelines:\n  default:\n    - step:\n        condition: *path.condition/filter",
     },
     {
       path: ".circleci/config.yml",
-      text:
-        "filter-job: &filter-job\n  path-filtering/filter:\n    mapping: |\n      artifacts/.* build true\nworkflows:\n  setup:\n    jobs:\n      - *filter-job",
+      text: "filter-job: &filter-job\n  path-filtering/filter:\n    mapping: |\n      artifacts/.* build true\nworkflows:\n  setup:\n    jobs:\n      - *filter-job",
     },
     {
       path: ".buildkite/pipeline.yml",
-      text:
-        "path-plugin: &path-plugin\n  monorepo-diff#v1.5.0:\n    watch:\n      - path: artifacts/**\nsteps:\n  - plugins:\n      - *path-plugin",
+      text: "path-plugin: &path-plugin\n  monorepo-diff#v1.5.0:\n    watch:\n      - path: artifacts/**\nsteps:\n  - plugins:\n      - *path-plugin",
     },
   ];
 
@@ -304,20 +304,21 @@ test("provider path filters inherited through YAML anchors require a portability
 test("anchored provider path filters pass only with declared path semantics", () => {
   const entryPoint = {
     path: ".github/workflows/canvas.yml",
-    text:
-      "path-filter: &path-filter\n  paths-ignore:\n    - docs/**\non:\n  pull_request: *path-filter",
+    text: "path-filter: &path-filter\n  paths-ignore:\n    - docs/**\non:\n  pull_request: *path-filter",
   };
 
   assert.deepEqual(
-    releasePathScannerAuditFailures([entryPoint], [
-      { path: entryPoint.path, semantics: "documented-unicode" },
-    ]),
+    releasePathScannerAuditFailures(
+      [entryPoint],
+      [{ path: entryPoint.path, semantics: "documented-unicode" }],
+    ),
     [],
   );
   assert.match(
-    releasePathScannerAuditFailures([entryPoint], [
-      { path: entryPoint.path },
-    ]).join("\n"),
+    releasePathScannerAuditFailures(
+      [entryPoint],
+      [{ path: entryPoint.path }],
+    ).join("\n"),
     /must declare "ascii-only" or "documented-unicode" semantics/,
   );
 });
@@ -355,8 +356,7 @@ test("ordinary provider workflow configuration is not mistaken for path filterin
     { path: ".github/workflows/canvas.yml", text: "env:\n  paths: output" },
     {
       path: ".github/workflows/canvas.yml",
-      text:
-        "on:\n  push:\njobs:\n  build:\n    env:\n      paths: ordinary-value",
+      text: "on:\n  push:\njobs:\n  build:\n    env:\n      paths: ordinary-value",
     },
     {
       path: ".github/workflows/canvas.yml",
@@ -377,8 +377,7 @@ test("ordinary provider workflow configuration is not mistaken for path filterin
     },
     {
       path: "bitbucket-pipelines.yml",
-      text:
-        "definitions:\n  changesets: ordinary-value\npipelines:\n  custom:\n    includePaths: ordinary-value",
+      text: "definitions:\n  changesets: ordinary-value\npipelines:\n  custom:\n    includePaths: ordinary-value",
     },
     {
       path: "bitbucket-pipelines.yml",
@@ -400,28 +399,23 @@ test("ordinary provider workflow configuration is not mistaken for path filterin
     },
     {
       path: ".github/workflows/canvas.yml",
-      text:
-        "shared-env: &shared-env\n  paths: ordinary-value\njobs:\n  build:\n    env: *shared-env",
+      text: "shared-env: &shared-env\n  paths: ordinary-value\njobs:\n  build:\n    env: *shared-env",
     },
     {
       path: ".gitlab-ci.yml",
-      text:
-        ".shared: &shared\n  changes: ordinary-value\nvariables:\n  <<: *shared",
+      text: ".shared: &shared\n  changes: ordinary-value\nvariables:\n  <<: *shared",
     },
     {
       path: "bitbucket-pipelines.yml",
-      text:
-        "shared: &shared\n  includePaths: ordinary-value\ndefinitions:\n  caches: *shared",
+      text: "shared: &shared\n  includePaths: ordinary-value\ndefinitions:\n  caches: *shared",
     },
     {
       path: ".circleci/config.yml",
-      text:
-        "shared: &shared\n  mapping: ordinary-value\njobs:\n  build: *shared",
+      text: "shared: &shared\n  mapping: ordinary-value\njobs:\n  build: *shared",
     },
     {
       path: ".buildkite/pipeline.yml",
-      text:
-        "shared: &shared\n  paths: ordinary-value\nsteps:\n  - env: *shared",
+      text: "shared: &shared\n  paths: ordinary-value\nsteps:\n  - env: *shared",
     },
     { path: "scripts/report.sh", text: "printf 'find ./artifacts'" },
     {
@@ -510,17 +504,13 @@ test("rejects composed, decomposed, and case-varied non-ASCII protected path dec
   ];
 
   for (const path of variants) {
-    const expectedFailure =
-      `protected Canvas path entry 1 must contain ASCII characters only; received ${JSON.stringify(path)}`;
+    const expectedFailure = `protected Canvas path entry 1 must contain ASCII characters only; received ${JSON.stringify(path)}`;
     assert.deepEqual(protectedCanvasPathDeclarationFailures([path]), [
       expectedFailure,
     ]);
     assert.match(
       failures({ executablePaths: [path] }).join("\n"),
-      new RegExp(
-        expectedFailure.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-        "u",
-      ),
+      new RegExp(expectedFailure.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"),
     );
   }
 });

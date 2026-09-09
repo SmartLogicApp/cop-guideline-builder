@@ -1,11 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
 
 const APPROVED_DISCOVERY_HELPERS = new Set(["findBrowserArtifactDirectories"]);
 const VALIDATION_SCRIPT = /^(?:check|validate)-.+\.mjs$/u;
+const LOCAL_SCRIPT_EXTENSIONS = [".mjs", ".js"];
 
 function functionName(node) {
   for (let current = node; current; current = current.parent) {
@@ -155,6 +156,64 @@ export function artifactDiscoveryFailures(path, source) {
   return failures;
 }
 
+function localImportSpecifiers(path, source) {
+  const sourceFile = ts.createSourceFile(
+    path,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const specifiers = new Set();
+
+  function addSpecifier(node) {
+    if (
+      node &&
+      ts.isStringLiteral(node) &&
+      (node.text.startsWith("./") || node.text.startsWith("../"))
+    ) {
+      specifiers.add(node.text);
+    }
+  }
+
+  function visit(node) {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      addSpecifier(node.moduleSpecifier);
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword
+    ) {
+      addSpecifier(node.arguments[0]);
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return [...specifiers];
+}
+
+async function resolveLocalScript(importingFile, specifier) {
+  const unresolved = resolve(dirname(importingFile), specifier);
+  const candidates = extname(unresolved)
+    ? [unresolved]
+    : [
+        ...LOCAL_SCRIPT_EXTENSIONS.map((extension) => unresolved + extension),
+        ...LOCAL_SCRIPT_EXTENSIONS.map((extension) =>
+          resolve(unresolved, `index${extension}`),
+        ),
+      ];
+
+  for (const candidate of candidates) {
+    try {
+      await readFile(candidate, "utf8");
+      return candidate;
+    } catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "EISDIR") throw error;
+    }
+  }
+  return undefined;
+}
+
 export async function checkArtifactDiscoveryContract(rootDirectory) {
   const scriptsDirectory = resolve(rootDirectory, "scripts");
   let entries;
@@ -167,6 +226,7 @@ export async function checkArtifactDiscoveryContract(rootDirectory) {
   }
 
   const failures = [];
+  const pendingFiles = [];
   for (const entry of entries) {
     if (
       !entry.isFile() ||
@@ -175,17 +235,37 @@ export async function checkArtifactDiscoveryContract(rootDirectory) {
     ) {
       continue;
     }
-    const path = `scripts/${entry.name}`;
+    pendingFiles.push(resolve(scriptsDirectory, entry.name));
+  }
+
+  const visitedFiles = new Set();
+  while (pendingFiles.length) {
+    const file = pendingFiles.pop();
+    if (visitedFiles.has(file)) continue;
+    visitedFiles.add(file);
+
+    const path = relative(rootDirectory, file).split("\\").join("/");
     let source;
     try {
-      source = await readFile(resolve(scriptsDirectory, entry.name), "utf8");
+      source = await readFile(file, "utf8");
     } catch (error) {
       failures.push(
-        `${path} could not be read: ${error.message}. Check file access for this validation script.`,
+        `${path} could not be read: ${error.message}. Check file access for this validation script or its local dependencies.`,
       );
       continue;
     }
     failures.push(...artifactDiscoveryFailures(path, source));
+
+    for (const specifier of localImportSpecifiers(path, source)) {
+      try {
+        const dependency = await resolveLocalScript(file, specifier);
+        if (dependency) pendingFiles.push(dependency);
+      } catch (error) {
+        failures.push(
+          `${path} could not inspect local dependency ${specifier}: ${error.message}. Check file access for this validation script dependency.`,
+        );
+      }
+    }
   }
   return failures.sort();
 }

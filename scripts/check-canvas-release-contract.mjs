@@ -49,6 +49,10 @@ export const supportedWorkflowLocations = [
 
 export const releasePathScannerRegistry = [
   {
+    path: "scripts/check-artifact-discovery-contract.mjs",
+    semantics: "ascii-only",
+  },
+  {
     path: "scripts/check-canvas-release-contract.mjs",
     semantics: "ascii-only",
   },
@@ -119,10 +123,7 @@ function flowYamlKeyContexts(source, initialAncestors = []) {
   }
 
   function skipPlainScalar() {
-    while (
-      index < source.length &&
-      ![",", "}", "]"].includes(source[index])
-    ) {
+    while (index < source.length && ![",", "}", "]"].includes(source[index])) {
       if (source[index] === '"' || source[index] === "'") {
         readQuotedScalar();
       } else if (source[index] === "#") {
@@ -241,9 +242,7 @@ function resolveYamlBlockAliases(text) {
     const mergeAlias = line.match(
       /^(\s*)<<\s*:\s*\*([^\s[\]{},]+)\s*(?:#.*)?$/u,
     );
-    const sequenceAlias = line.match(
-      /^(\s*)-\s*\*([^\s[\]{},]+)\s*(?:#.*)?$/u,
-    );
+    const sequenceAlias = line.match(/^(\s*)-\s*\*([^\s[\]{},]+)\s*(?:#.*)?$/u);
 
     if (mappingAlias && anchors.has(mappingAlias[3])) {
       const { rootIndent, children, inline } = anchors.get(mappingAlias[3]);
@@ -335,7 +334,9 @@ function yamlKeyContexts(text) {
     const valueText = line.slice(match[0].length).trimStart();
     if (valueText.startsWith("{") || valueText.startsWith("[")) {
       const valueOffset =
-        sourceOffset + match[0].length + line.slice(match[0].length).search(/\S/u);
+        sourceOffset +
+        match[0].length +
+        line.slice(match[0].length).search(/\S/u);
       contexts.push(
         ...flowYamlKeyContexts(text.slice(valueOffset), [...parentKeys, key]),
       );
@@ -423,9 +424,7 @@ function hasWorkflowPathFilter(path, text) {
 
 function hasFindPathScanner(text) {
   return (
-    /(?:^|[;&|]\s*|\$\()\s*(?:-\s*)?(?:command\s+)?find(?:\s|$)/mu.test(
-      text,
-    ) ||
+    /(?:^|[;&|]\s*|\$\()\s*(?:-\s*)?(?:command\s+)?find(?:\s|$)/mu.test(text) ||
     /^\s*(?:-\s*)?(?:run|script|command|commands)\s*:\s*(?:[>|][-+]?\s*)?(?:command\s+)?find(?:\s|$)/mu.test(
       text,
     ) ||
@@ -455,7 +454,9 @@ export function releasePathScannerAuditFailures(
 ) {
   const failures = [];
   const discovered = entryPoints.filter(looksLikeReleasePathScanner);
-  const discoveredByPath = new Map(discovered.map((entry) => [entry.path, entry]));
+  const discoveredByPath = new Map(
+    discovered.map((entry) => [entry.path, entry]),
+  );
   const registeredPaths = new Set();
 
   for (const [index, registration] of registry.entries()) {
@@ -545,10 +546,7 @@ function workflowPathFailure(value) {
 
 function normalizedWorkflowPath(value) {
   return (
-    posix
-      .normalize(value.replaceAll("\\", "/"))
-      .replace(/\/+$/, "")
-      || "/"
+    posix.normalize(value.replaceAll("\\", "/")).replace(/\/+$/, "") || "/"
   );
 }
 
@@ -578,7 +576,10 @@ export function workflowLocationShapeFailures(
       );
     }
     for (const field of ["path", "fixturePath"]) {
-      if (typeof location[field] !== "string" || location[field].trim() === "") {
+      if (
+        typeof location[field] !== "string" ||
+        location[field].trim() === ""
+      ) {
         failures.push(
           `${entry} field "${field}" must be a non-empty string; received ${JSON.stringify(location[field])}`,
         );
@@ -620,10 +621,7 @@ export function workflowLocationShapeFailures(
       );
     }
     if (location.type === "directory") {
-      const fixtureRelativePath = relative(
-        location.path,
-        location.fixturePath,
-      );
+      const fixtureRelativePath = relative(location.path, location.fixturePath);
       if (
         fixtureRelativePath === "" ||
         fixtureRelativePath === ".." ||
@@ -752,7 +750,10 @@ function isJsonArrayProducer(line) {
   if (value.startsWith("[")) {
     try {
       const parsed = JSON.parse(value);
-      return Array.isArray(parsed) && parsed.every((path) => typeof path === "string");
+      return (
+        Array.isArray(parsed) &&
+        parsed.every((path) => typeof path === "string")
+      );
     } catch {
       return false;
     }
@@ -892,8 +893,8 @@ async function filesBelow(
           rootDirectory,
           resolvedRootDirectory,
           nestedAncestors,
-           traversalCache,
-           readDirectory,
+          traversalCache,
+          readDirectory,
         )),
       );
     } else if (entry.isFile()) {
@@ -911,8 +912,8 @@ async function filesBelow(
             rootDirectory,
             resolvedRootDirectory,
             nestedAncestors,
-             traversalCache,
-             readDirectory,
+            traversalCache,
+            readDirectory,
           )),
         );
       } else if (target.isFile()) {
@@ -944,9 +945,9 @@ export async function readCheckedInWorkflowConfigs(
           absolutePath,
           rootDirectory,
           resolvedRootDirectory,
-           new Set(),
-           traversalCache,
-           readDirectory,
+          new Set(),
+          traversalCache,
+          readDirectory,
         )),
       );
     }
@@ -997,11 +998,7 @@ export async function readReleaseCheckEntryPoints(
       candidates.push(path);
     } else {
       candidates.push(
-        ...(await filesBelow(
-          path,
-          rootDirectory,
-          resolvedRootDirectory,
-        )),
+        ...(await filesBelow(path, rootDirectory, resolvedRootDirectory)),
       );
     }
   }
@@ -1014,9 +1011,11 @@ export async function readReleaseCheckEntryPoints(
     if (seenPaths.has(repositoryPath)) continue;
     seenPaths.add(repositoryPath);
     if (
-      repositoryPath.split("/").some((segment) =>
-        ["node_modules", ".git", "dist", "coverage"].includes(segment),
-      )
+      repositoryPath
+        .split("/")
+        .some((segment) =>
+          ["node_modules", ".git", "dist", "coverage"].includes(segment),
+        )
     ) {
       continue;
     }
@@ -1066,7 +1065,10 @@ export function checkCanvasReleaseContract(
     ...workflowLocationShapeFailures(workflowLocations),
     ...duplicateWorkflowLocationFailures(workflowLocations),
     ...overlappingWorkflowLocationFailures(workflowLocations),
-    ...releasePathScannerAuditFailures(releaseCheckEntryPoints, scannerRegistry),
+    ...releasePathScannerAuditFailures(
+      releaseCheckEntryPoints,
+      scannerRegistry,
+    ),
   ];
   const unsafeProducers = unsafeChangedPathProducers(workflowConfigs);
   if (unsafeProducers.length > 0) {
@@ -1122,7 +1124,9 @@ export function checkCanvasReleaseContract(
     );
   } else if (
     documentedPaths.length !== executableProtectedPaths.length ||
-    documentedPaths.some((path, index) => path !== executableProtectedPaths[index])
+    documentedPaths.some(
+      (path, index) => path !== executableProtectedPaths[index],
+    )
   ) {
     failures.push(
       "the documented protected paths do not match the executable protected paths (a trailing slash means directory-prefix matching; paths without one match exactly)",
@@ -1133,7 +1137,9 @@ export function checkCanvasReleaseContract(
   const contractCommand = scripts?.["test:canvas-release-contract"];
   if (
     typeof contractCommand !== "string" ||
-    !contractCommand.includes("scripts/check-canvas-release-contract.test.mjs") ||
+    !contractCommand.includes(
+      "scripts/check-canvas-release-contract.test.mjs",
+    ) ||
     !contractCommand.includes("scripts/validate-canvas-changes.test.mjs")
   ) {
     failures.push(
@@ -1201,17 +1207,19 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
     documentationText,
     workflowConfigs,
     releaseCheckEntryPoints,
-  ] =
-    await Promise.all([
-      readFile(new URL("../.replit", import.meta.url), "utf8"),
-      readFile(new URL("../package.json", import.meta.url), "utf8"),
-      readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
-      readFile(new URL("../docs/canvas-release-gate.md", import.meta.url), "utf8"),
-      workflowLocationFailures.length === 0
-        ? readCheckedInWorkflowConfigs(rootDirectory)
-        : Promise.resolve([]),
-      readReleaseCheckEntryPoints(rootDirectory),
-    ]);
+  ] = await Promise.all([
+    readFile(new URL("../.replit", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("./validate-canvas-changes.mjs", import.meta.url), "utf8"),
+    readFile(
+      new URL("../docs/canvas-release-gate.md", import.meta.url),
+      "utf8",
+    ),
+    workflowLocationFailures.length === 0
+      ? readCheckedInWorkflowConfigs(rootDirectory)
+      : Promise.resolve([]),
+    readReleaseCheckEntryPoints(rootDirectory),
+  ]);
   const failures = checkCanvasReleaseContract(
     replitConfig,
     packageJsonText,
@@ -1222,9 +1230,11 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
     supportedWorkflowLocations,
     releaseCheckEntryPoints,
   );
-  failures.push(...workflowLocationFailures.filter(
-    (failure) => !failures.includes(failure),
-  ));
+  failures.push(
+    ...workflowLocationFailures.filter(
+      (failure) => !failures.includes(failure),
+    ),
+  );
 
   if (failures.length > 0) {
     for (const failure of failures) {
