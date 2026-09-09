@@ -18,15 +18,8 @@ test("app-owned database schema is not mutated during API startup", () => {
   );
 });
 
-test("Stripe credentials are confirmed before its vendor migration runs", () => {
-  const connectorCheck = serverEntry.indexOf(
-    "const stripeSync = await getStripeSync();",
-  );
-  const vendorMigration = serverEntry.indexOf(
-    "await runMigrations({ databaseUrl });",
-  );
-
-  assert.notEqual(connectorCheck, -1);
-  assert.notEqual(vendorMigration, -1);
-  assert.ok(connectorCheck < vendorMigration);
+test("Stripe setup never blocks or mutates the database during API startup", () => {
+  assert.doesNotMatch(serverEntry, /\brunMigrations\b/);
+  assert.doesNotMatch(serverEntry, /\bfindOrCreateManagedWebhook\b/);
+  assert.doesNotMatch(serverEntry, /\bsyncBackfill\b/);
 });

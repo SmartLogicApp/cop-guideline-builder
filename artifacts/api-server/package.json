@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
-    "prebuild": "pnpm --dir ../.. run test:startup-probe-contract",
+    "prebuild": "pnpm --dir ../.. run test:startup-probe-contract && pnpm run test:startup-schema-safety",
     "build": "node ./build.mjs && pnpm --dir ../.. run test:api-readiness-smoke",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "test": "node --test src/**/*.test.ts",
+    "test:startup-schema-safety": "node --test src/lib/startup-schema-safety.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:cache": "node --experimental-transform-types --test src/lib/durable-cache.test.ts",
     "test:ccn": "node --experimental-transform-types --test src/lib/ccn-lookup.test.ts"

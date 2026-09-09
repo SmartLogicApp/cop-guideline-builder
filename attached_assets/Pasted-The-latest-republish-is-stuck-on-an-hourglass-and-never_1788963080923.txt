@@ -1,0 +1,45 @@
+The latest republish is stuck on an hourglass and never completes. Diagnose the hanging deployment before starting another publish.
+
+Project symptoms:
+- Previous publish failed with: “Failed to validate database migrations.”
+- The current publish remains stuck indefinitely.
+- The published app has also shown 404s when clicking Sign In or Free Trial.
+
+Tasks:
+
+1. Inspect the latest deployment/publishing logs and identify the last step that completed and the exact command currently hanging.
+2. Determine whether the hang is caused by:
+   - A database connection timeout
+   - A database migration lock
+   - A migration command waiting for interactive input
+   - A build command running in watch/dev mode
+   - A server process being started as part of the build
+   - Missing production environment variables
+   - An install or build process that never exits
+3. Do not start another publish until the cause is identified.
+4. Make migration execution production-safe:
+   - Use a noninteractive, one-shot migration command.
+   - Ensure it exits successfully after applying or validating migrations.
+   - Do not use watch mode.
+   - Do not reset, drop, truncate, or recreate the production database.
+   - Do not delete or rewrite existing migration history.
+   - If the database is locked or its state is ambiguous, stop and explain the safe repair needed instead of forcing it.
+5. Verify that the build command completes and that the production start command is separate from the build/migration command.
+6. Verify required production database secrets through the environment configuration without printing their values.
+7. Fix the frontend routing issue as well:
+   - Ensure Sign In and Free Trial/Sign Up do not navigate to unimplemented routes.
+   - Use the existing authentication implementation if available.
+   - Otherwise create honest non-404 placeholder routes or point the links to the correct existing destination.
+8. Run the build, tests, and migration validation locally or in the project environment.
+9. Only after the hanging process is fixed, perform one new publish.
+10. Smoke-test the published homepage, Sign In, Free Trial/Sign Up, Terms, Privacy, and a database-backed action.
+
+Report:
+- The exact command that was hanging.
+- The root cause.
+- Files and configuration changed.
+- Tests and validation results.
+- Whether the new publish completed successfully.
+- Any remaining limitation.
+
+Do not force-kill or reset the database, and do not start parallel publishes.

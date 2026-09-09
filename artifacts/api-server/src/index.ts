@@ -13,43 +13,6 @@ if (!Number.isFinite(shutdownGracePeriodMs) || shutdownGracePeriodMs <= 0) {
   throw new Error("API_SHUTDOWN_GRACE_PERIOD_MS must be a positive number.");
 }
 
-// ── Optional Stripe init ──────────────────────────────────────────────────────
-// Skips silently if the Stripe integration isn't connected yet.
-async function initStripeIfAvailable() {
-  try {
-    const { runMigrations }  = await import("stripe-replit-sync");
-    const { getStripeSync }  = await import("./stripeClient");
-
-    const databaseUrl = process.env.DATABASE_URL;
-    if (!databaseUrl) return;
-
-    // Confirm the connector is available before running the vendor-managed
-    // Stripe schema setup. Unconnected deployments must not mutate the DB.
-    const stripeSync = await getStripeSync();
-
-    logger.info("Initializing Stripe schema…");
-    await runMigrations({ databaseUrl });
-
-    const domains     = process.env.REPLIT_DOMAINS?.split(",") ?? [];
-    const webhookBase = `https://${domains[0]}`;
-    await stripeSync.findOrCreateManagedWebhook(`${webhookBase}/api/stripe/webhook`);
-
-    // Backfill runs in background — don't await so startup isn't blocked.
-    stripeSync.syncBackfill().catch((err) =>
-      logger.warn({ err }, "Stripe backfill failed (non-fatal)"),
-    );
-
-    logger.info("Stripe initialized");
-  } catch (err: any) {
-    // Not fatal — Stripe simply isn't connected yet.
-    logger.info({ msg: err?.message }, "Stripe not available (will enable when connected)");
-  }
-}
-
-if (!readinessSmokeTest) {
-  await initStripeIfAvailable();
-}
-
 // ── Bootstrap super-admins into the DB on every startup ──────────────────────
 // Reads valid Clerk user IDs from ADMIN_CLERK_USER_IDS (comma-separated) and
 // upserts them into admin_users so the button works even if the secret is stale.

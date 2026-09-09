@@ -81,8 +81,12 @@ export function startupProbeFailures({
   }
 
   const requiredCommand = "pnpm --dir ../.. run test:startup-probe-contract";
-  if (packagePrebuild(apiPackage) !== requiredCommand) {
-    failures.push("API production build must run the startup probe contract first");
+  const requiredApiPrebuild =
+    `${requiredCommand} && pnpm run test:startup-schema-safety`;
+  if (packagePrebuild(apiPackage) !== requiredApiPrebuild) {
+    failures.push(
+      "API production build must run the startup probe contract and startup schema safety first",
+    );
   }
   if (
     packageBuild(apiPackage) !==
