@@ -3,24 +3,16 @@ import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import bundleBoundaryEntries from './bundle-boundary-entries.cjs';
+
+const {
+  findChunk,
+  findPublicBundleBoundaryEntries,
+  normalize,
+} = bundleBoundaryEntries;
+
 export const PUBLIC_ENTRY_BUDGET_BYTES = 450 * 1024;
 export const PUBLIC_CSS_BUDGET_BYTES = 105 * 1024;
-
-function normalize(value) {
-  return value.replaceAll('\\', '/');
-}
-
-function findChunk(manifest, predicate, description) {
-  const matches = Object.entries(manifest).filter(([key, chunk]) =>
-    predicate(normalize(key), chunk),
-  );
-  assert.equal(
-    matches.length,
-    1,
-    `Expected exactly one ${description} chunk in the Vite manifest, found ${matches.length}`,
-  );
-  return matches[0];
-}
 
 function collectStaticImports(manifest, startKey) {
   const visited = new Set();
@@ -53,33 +45,11 @@ export async function checkPublicBundleBoundary({
 }) {
   const manifestPath = path.join(outDir, '.vite', 'manifest.json');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  const [publicKey, publicEntry] = findChunk(
-    manifest,
-    (_key, chunk) => chunk.isEntry && chunk.src === 'index.html',
-    'public entry',
-  );
-  const [workspaceKey, workspaceEntry] = findChunk(
-    manifest,
-    (key, chunk) =>
-      chunk.isDynamicEntry &&
-      (normalize(chunk.src ?? '').endsWith('/workspace-entry.tsx') ||
-        normalize(chunk.src ?? '') === 'src/workspace-entry.tsx' ||
-        key.endsWith('/workspace-entry.tsx') ||
-        key === 'src/workspace-entry.tsx'),
-    'private workspace',
-  );
-  const [authKey, authEntry] = findChunk(
-    manifest,
-    (key, chunk) =>
-      chunk.isDynamicEntry &&
-      (normalize(chunk.src ?? '').endsWith('/AuthenticatedApp.tsx') ||
-        normalize(chunk.src ?? '') === 'src/AuthenticatedApp.tsx' ||
-        normalize(chunk.src ?? '') === 'AuthenticatedApp.tsx' ||
-        key.endsWith('/AuthenticatedApp.tsx') ||
-        key === 'src/AuthenticatedApp.tsx' ||
-        key === 'AuthenticatedApp.tsx'),
-    'authenticated application',
-  );
+  const {
+    publicEntry: [publicKey, publicEntry],
+    workspaceEntry: [workspaceKey, workspaceEntry],
+    authEntry: [authKey, authEntry],
+  } = findPublicBundleBoundaryEntries(manifest);
   const authBoundaryMetadata = JSON.parse(
     await readFile(
       path.join(outDir, '.vite', 'auth-boundary-manifest.json'),
