@@ -32,6 +32,19 @@ function collectStaticImports(manifest, startKey) {
   return visited;
 }
 
+function assertNotPubliclyReachable({
+  eagerChunks,
+  forbiddenKey,
+  forbiddenEntry,
+  publicEntry,
+  description,
+}) {
+  assert.ok(
+    !eagerChunks.has(forbiddenKey),
+    `${description} chunk ${forbiddenEntry.file} is eagerly reachable from public entry ${publicEntry.file}`,
+  );
+}
+
 export async function checkPublicBundleBoundary({
   outDir,
   budgetBytes = PUBLIC_ENTRY_BUDGET_BYTES,
@@ -53,26 +66,88 @@ export async function checkPublicBundleBoundary({
         key === 'index.jsx'),
     'private workspace',
   );
+  const [authKey, authEntry] = findChunk(
+    manifest,
+    (key, chunk) =>
+      chunk.isDynamicEntry &&
+      (normalize(chunk.src ?? '').endsWith('/AuthenticatedApp.tsx') ||
+        normalize(chunk.src ?? '') === 'AuthenticatedApp.tsx' ||
+        key.endsWith('/AuthenticatedApp.tsx') ||
+        key === 'AuthenticatedApp.tsx'),
+    'authenticated application',
+  );
+  const authBoundaryMetadata = JSON.parse(
+    await readFile(
+      path.join(outDir, '.vite', 'auth-boundary-manifest.json'),
+      'utf8',
+    ),
+  );
+  assert.ok(
+    Array.isArray(authBoundaryMetadata.clerkChunks) &&
+      authBoundaryMetadata.clerkChunks.length > 0,
+    'Expected generated auth boundary metadata to identify at least one Clerk chunk',
+  );
+  const clerkEntries = authBoundaryMetadata.clerkChunks.map((clerkFile) =>
+    findChunk(
+      manifest,
+      (_key, chunk) => normalize(chunk.file ?? '') === normalize(clerkFile),
+      `Clerk authentication output ${clerkFile}`,
+    ),
+  );
 
   const eagerChunks = collectStaticImports(manifest, publicKey);
+  for (const [forbiddenKey, forbiddenEntry, description] of [
+    [authKey, authEntry, 'Authenticated application'],
+    ...clerkEntries.map(([key, entry]) => [
+      key,
+      entry,
+      'Clerk authentication',
+    ]),
+    [workspaceKey, workspaceEntry, 'Private workspace'],
+  ]) {
+    assertNotPubliclyReachable({
+      eagerChunks,
+      forbiddenKey,
+      forbiddenEntry,
+      publicEntry,
+      description,
+    });
+  }
   assert.ok(
-    !eagerChunks.has(workspaceKey),
-    `Private workspace chunk ${workspaceEntry.file} is eagerly referenced by public entry ${publicEntry.file}`,
+    (publicEntry.dynamicImports ?? []).includes(authKey),
+    `Public entry ${publicEntry.file} must dynamically import authenticated application chunk ${authEntry.file}`,
   );
+  const authChunks = collectStaticImports(manifest, authKey);
+  for (const [clerkKey, clerkEntry] of clerkEntries) {
+    assert.ok(
+      authChunks.has(clerkKey),
+      `Authenticated application chunk ${authEntry.file} must load Clerk chunk ${clerkEntry.file}`,
+    );
+  }
   assert.ok(
-    (publicEntry.dynamicImports ?? []).includes(workspaceKey),
-    `Public entry ${publicEntry.file} must dynamically import private workspace chunk ${workspaceEntry.file}`,
+    (authEntry.dynamicImports ?? []).includes(workspaceKey),
+    `Authenticated application chunk ${authEntry.file} must dynamically import private workspace chunk ${workspaceEntry.file}`,
   );
 
-  const workspaceChunks = [...collectStaticImports(manifest, workspaceKey)]
+  const privateChunks = new Set([
+    ...collectStaticImports(manifest, authKey),
+    ...collectStaticImports(manifest, workspaceKey),
+  ]);
+  const privateChunkFiles = [...privateChunks]
     .filter((key) => !eagerChunks.has(key))
-    .map((key) => manifest[key]?.file)
+    .flatMap((key) => {
+      const chunk = manifest[key];
+      return chunk
+        ? [chunk.file, ...(chunk.css ?? []), ...(chunk.assets ?? [])]
+        : [];
+    })
     .filter(Boolean);
+  const privateFiles = [...new Set(privateChunkFiles)];
   const html = await readFile(path.join(outDir, 'index.html'), 'utf8');
-  for (const workspaceFile of workspaceChunks) {
+  for (const privateFile of privateFiles) {
     assert.ok(
-      !html.includes(workspaceFile),
-      `Generated HTML must not reference or preload private workspace chunk ${workspaceFile}`,
+      !html.includes(privateFile),
+      `Generated HTML must not reference or preload private authentication chunk ${privateFile}`,
     );
   }
 
@@ -85,7 +160,7 @@ export async function checkPublicBundleBoundary({
   return {
     publicEntry: publicEntry.file,
     publicEntryBytes,
-    workspaceChunks,
+    privateChunks: privateFiles,
   };
 }
 
@@ -98,7 +173,7 @@ async function main() {
   );
   const result = await checkPublicBundleBoundary({ outDir });
   console.log(
-    `Bundle boundary verified: public entry ${result.publicEntry} (${result.publicEntryBytes} bytes); private workspace chunks ${result.workspaceChunks.join(', ')}.`,
+    `Bundle boundary verified: public entry ${result.publicEntry} (${result.publicEntryBytes} bytes); private authentication chunks ${result.privateChunks.join(', ')}.`,
   );
 }
 

@@ -7,8 +7,9 @@ import test from 'node:test';
 import { checkPublicBundleBoundary } from './check-public-bundle-boundary.mjs';
 
 async function fixture({
-  eagerWorkspace = false,
-  preloadWorkspace = false,
+  eagerPrivateChunk,
+  preloadPrivateChunk,
+  clerkFile = 'assets/clerk-auth.js',
   publicBytes = 20,
 } = {}) {
   const outDir = await mkdtemp(path.join(os.tmpdir(), 'bundle-boundary-'));
@@ -19,8 +20,19 @@ async function fixture({
       file: 'assets/public.js',
       src: 'index.html',
       isEntry: true,
-      imports: eagerWorkspace ? ['../../index.jsx'] : [],
+      imports: eagerPrivateChunk ? [eagerPrivateChunk] : [],
+      dynamicImports: ['src/AuthenticatedApp.tsx'],
+    },
+    'src/AuthenticatedApp.tsx': {
+      file: 'assets/authenticated-app.js',
+      src: 'src/AuthenticatedApp.tsx',
+      isDynamicEntry: true,
+      imports: ['_clerk-auth.js'],
       dynamicImports: ['../../index.jsx'],
+      css: ['assets/authenticated-app.css'],
+    },
+    '_clerk-auth.js': {
+      file: 'assets/clerk-auth.js',
     },
     '../../index.jsx': {
       file: 'assets/workspace.js',
@@ -33,43 +45,78 @@ async function fixture({
     JSON.stringify(manifest),
   );
   await writeFile(
+    path.join(outDir, '.vite', 'auth-boundary-manifest.json'),
+    JSON.stringify({ clerkChunks: [clerkFile] }),
+  );
+  await writeFile(
     path.join(outDir, 'index.html'),
-    preloadWorkspace
-      ? '<link rel="modulepreload" href="/suite/assets/workspace.js">'
+    preloadPrivateChunk
+      ? `<link rel="modulepreload" href="/suite/${preloadPrivateChunk}">`
       : '<script type="module" src="/suite/assets/public.js"></script>',
   );
   await writeFile(path.join(outDir, 'assets', 'public.js'), 'x'.repeat(publicBytes));
+  await writeFile(path.join(outDir, 'assets', 'authenticated-app.js'), 'authenticated');
+  await writeFile(path.join(outDir, 'assets', 'authenticated-app.css'), '.auth{}');
+  await writeFile(path.join(outDir, 'assets', 'clerk-auth.js'), 'clerk');
   await writeFile(path.join(outDir, 'assets', 'workspace.js'), 'workspace');
   return outDir;
 }
 
-test('accepts a separately loaded workspace within the public-entry budget', async () => {
+test('accepts separately loaded authentication and workspace chunks', async () => {
   const result = await checkPublicBundleBoundary({
     outDir: await fixture(),
     budgetBytes: 100,
   });
-  assert.deepEqual(result.workspaceChunks, ['assets/workspace.js']);
+  assert.deepEqual(result.privateChunks, [
+    'assets/authenticated-app.js',
+    'assets/authenticated-app.css',
+    'assets/clerk-auth.js',
+    'assets/workspace.js',
+  ]);
 });
 
-test('rejects a workspace eagerly imported by the public entry', async () => {
+test('rejects Clerk modules bundled into the public entry itself', async () => {
   await assert.rejects(
     checkPublicBundleBoundary({
-      outDir: await fixture({ eagerWorkspace: true }),
+      outDir: await fixture({ clerkFile: 'assets/public.js' }),
       budgetBytes: 100,
     }),
-    /eagerly referenced/,
+    /Clerk authentication chunk .* is eagerly reachable/,
   );
 });
 
-test('rejects workspace preload references in generated HTML', async () => {
-  await assert.rejects(
-    checkPublicBundleBoundary({
-      outDir: await fixture({ preloadWorkspace: true }),
-      budgetBytes: 100,
-    }),
-    /must not reference or preload/,
-  );
-});
+for (const [description, manifestKey] of [
+  ['authenticated application', 'src/AuthenticatedApp.tsx'],
+  ['Clerk authentication', '_clerk-auth.js'],
+  ['private workspace', '../../index.jsx'],
+]) {
+  test(`rejects an eagerly reachable ${description} chunk`, async () => {
+    await assert.rejects(
+      checkPublicBundleBoundary({
+        outDir: await fixture({ eagerPrivateChunk: manifestKey }),
+        budgetBytes: 100,
+      }),
+      /eagerly reachable/,
+    );
+  });
+}
+
+for (const privateFile of [
+  'assets/authenticated-app.js',
+  'assets/authenticated-app.css',
+  'assets/clerk-auth.js',
+  'assets/workspace.js',
+]) {
+  test(`rejects an HTML preload of ${privateFile}`, async () => {
+    await assert.rejects(
+      checkPublicBundleBoundary({
+        outDir: await fixture({ preloadPrivateChunk: privateFile }),
+        budgetBytes: 100,
+      }),
+      /must not reference or preload/,
+    );
+  });
+}
 
 test('rejects a public entry over budget', async () => {
   await assert.rejects(

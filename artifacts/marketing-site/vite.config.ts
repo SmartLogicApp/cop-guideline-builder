@@ -1,7 +1,7 @@
 import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 import { validateProductionClerkCredentials } from './scripts/validate-clerk-credentials.mjs';
@@ -22,6 +22,29 @@ if (Number.isNaN(port) || port <= 0) {
 
 const basePath = process.env.BASE_PATH;
 const buildOutDir = process.env.BUILD_OUT_DIR ?? 'dist/public';
+
+function authBoundaryBuildMetadata(): Plugin {
+  return {
+    name: 'auth-boundary-build-metadata',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const clerkChunks = Object.values(bundle).flatMap((output) =>
+        output.type === 'chunk' &&
+        Object.keys(output.modules).some((id) =>
+          id.replaceAll('\\', '/').includes('/node_modules/@clerk/'),
+        )
+          ? [output.fileName]
+          : [],
+      );
+
+      this.emitFile({
+        type: 'asset',
+        fileName: '.vite/auth-boundary-manifest.json',
+        source: JSON.stringify({ clerkChunks }, null, 2),
+      });
+    },
+  };
+}
 
 if (!basePath) {
   throw new Error(
@@ -45,6 +68,7 @@ export default defineConfig(async ({ command }) => {
     react(),
     tailwindcss({ optimize: false }),
     runtimeErrorOverlay(),
+    authBoundaryBuildMetadata(),
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined
       ? [
