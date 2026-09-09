@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion, type Transition, type Variants } from 'framer-motion';
 
 export const Logo = ({ className = "" }) => (
   <motion.img 
@@ -32,11 +32,11 @@ export const AnimatedPulse = () => (
   />
 );
 
-export const springSnappy = { type: "spring", stiffness: 400, damping: 30 };
-export const springBouncy = { type: "spring", stiffness: 300, damping: 15 };
-export const springSmooth = { type: "spring", stiffness: 120, damping: 25 };
+export const springSnappy: Transition = { type: "spring", stiffness: 400, damping: 30 };
+export const springBouncy: Transition = { type: "spring", stiffness: 300, damping: 15 };
+export const springSmooth: Transition = { type: "spring", stiffness: 120, damping: 25 };
 
-export const textVariants = {
+export const textVariants: Variants = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: springSnappy }
 };
