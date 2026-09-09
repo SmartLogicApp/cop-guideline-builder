@@ -96,7 +96,10 @@ export function effectiveLibraryNames(tsconfigPath) {
   };
 }
 
-export async function checkBrowserTsconfigContract(rootDirectory) {
+export async function checkBrowserTsconfigContract(
+  rootDirectory,
+  { readConfigFile = readFile } = {},
+) {
   const failures = [];
   let artifactDirectories;
   try {
@@ -115,7 +118,7 @@ export async function checkBrowserTsconfigContract(rootDirectory) {
     const tsconfigPath = join(artifactDirectory, "tsconfig.json");
 
     try {
-      await readFile(tsconfigPath, "utf8");
+      await readConfigFile(tsconfigPath, "utf8");
     } catch (error) {
       if (error?.code === "ENOENT") {
         failures.push(`${relativeDirectory} is missing tsconfig.json`);

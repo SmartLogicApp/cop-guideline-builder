@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import test from "node:test";
@@ -109,17 +115,27 @@ test("reports every inaccessible or invalid browser config deterministically", a
       "artifacts/zeta/.replit-artifact/artifact.toml": 'kind = "web"\n',
       "artifacts/zeta/tsconfig.json": "{",
       "artifacts/alpha/.replit-artifact/artifact.toml": 'kind = "web"\n',
+      "artifacts/alpha/tsconfig.json": "{}",
       "artifacts/middle/.replit-artifact/artifact.toml": 'kind = "slides"\n',
+      "artifacts/middle/tsconfig.json": "{}",
     },
     async (root) => {
-      await mkdir(join(root, "artifacts/alpha/tsconfig.json"), {
-        recursive: true,
-      });
-      await mkdir(join(root, "artifacts/middle/tsconfig.json"), {
-        recursive: true,
-      });
+      const inaccessibleConfigs = new Set([
+        join(root, "artifacts/alpha/tsconfig.json"),
+        join(root, "artifacts/middle/tsconfig.json"),
+      ]);
+      const readConfigFile = async (path, encoding) => {
+        if (inaccessibleConfigs.has(path)) {
+          const error = new Error("controlled access failure");
+          error.code = "EACCES";
+          throw error;
+        }
+        return readFile(path, encoding);
+      };
 
-      const failures = await checkBrowserTsconfigContract(root);
+      const failures = await checkBrowserTsconfigContract(root, {
+        readConfigFile,
+      });
       assert.equal(failures.length, 4);
       assert.match(
         failures[0],
