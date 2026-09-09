@@ -5,6 +5,10 @@ import { join, relative } from "node:path";
 import test from "node:test";
 
 import {
+  ARTIFACT_KINDS,
+  artifactRunsInBrowser,
+} from "./artifact-kind-runtime.mjs";
+import {
   checkBrowserTsconfigContract,
   findBrowserArtifactDirectories,
 } from "./check-browser-tsconfig-contract.mjs";
@@ -40,7 +44,6 @@ test("accepts every checked-in browser artifact", async () => {
   );
 });
 
-
 test("rejects a non-Vite browser artifact with server-only libraries", async () => {
   await withFixture(
     {
@@ -49,7 +52,8 @@ test("rejects a non-Vite browser artifact with server-only libraries", async () 
       }),
       "artifacts/browser/.replit-artifact/artifact.toml": 'kind = "web"\n',
       "artifacts/browser/webpack.config.js": "export default {};\n",
-      "artifacts/browser/src/index.ts": "document.body.dataset.ready = 'true';\n",
+      "artifacts/browser/src/index.ts":
+        "document.body.dataset.ready = 'true';\n",
       "artifacts/browser/tsconfig.json": JSON.stringify({
         extends: "../../tsconfig.base.json",
       }),
@@ -57,7 +61,10 @@ test("rejects a non-Vite browser artifact with server-only libraries", async () 
     async (root) => {
       const failures = await checkBrowserTsconfigContract(root);
       assert.equal(failures.length, 1);
-      assert.match(failures[0], /missing lib\.dom\.d\.ts, lib\.dom\.iterable\.d\.ts/);
+      assert.match(
+        failures[0],
+        /missing lib\.dom\.d\.ts, lib\.dom\.iterable\.d\.ts/,
+      );
     },
   );
 });
@@ -109,6 +116,50 @@ test("excludes API and mobile-native artifacts", async () => {
       assert.deepEqual(await checkBrowserTsconfigContract(root), []);
     },
   );
+});
+
+test("classifies every supported artifact kind from the shared registry", () => {
+  const classifications = Object.entries(ARTIFACT_KINDS).map(
+    ([kind, { browserRuntime }]) => [
+      kind,
+      artifactRunsInBrowser(`kind = "${kind}"\n`),
+      browserRuntime,
+    ],
+  );
+
+  assert.ok(
+    classifications.some(([, actual]) => actual),
+    "registry must include a browser artifact kind",
+  );
+  assert.ok(
+    classifications.some(([, actual]) => !actual),
+    "registry must include a non-browser artifact kind",
+  );
+  for (const [kind, actual, expected] of classifications) {
+    assert.equal(
+      actual,
+      expected,
+      `runtime classification drifted for ${kind}`,
+    );
+  }
+});
+
+test("enforces registry classifications for explicit runtime metadata", () => {
+  for (const [kind, { browserRuntime }] of Object.entries(ARTIFACT_KINDS)) {
+    assert.equal(
+      artifactRunsInBrowser(
+        `kind = "${kind}"\nbrowserRuntime = ${browserRuntime}\n`,
+      ),
+      browserRuntime,
+    );
+    assert.throws(
+      () =>
+        artifactRunsInBrowser(
+          `kind = "${kind}"\nbrowserRuntime = ${!browserRuntime}\n`,
+        ),
+      /contradictory runtime metadata/,
+    );
+  }
 });
 
 test("rejects missing and malformed runtime classification", async () => {
@@ -168,10 +219,31 @@ test("rejects unknown artifact kinds", async () => {
     },
     async (root) => {
       assert.deepEqual(await checkBrowserTsconfigContract(root), [
-        'artifacts/browser/.replit-artifact/artifact.toml uses unknown artifact kind "website" (expected one of: design, slides, video, web, api, mobile). Repair the root-level artifact runtime metadata in this manifest.',
+        'artifacts/browser/.replit-artifact/artifact.toml uses unknown artifact kind "website" (expected one of: api, design, design-system, mobile, slides, video, web). Repair the root-level artifact runtime metadata in this manifest.',
       ]);
     },
   );
+});
+
+test("rejects artifact kinds inherited from the registry prototype", async () => {
+  for (const kind of ["__proto__", "constructor", "toString"]) {
+    const manifest = `kind = "${kind}"\n`;
+    assert.throws(() => artifactRunsInBrowser(manifest), {
+      message: new RegExp(`uses unknown artifact kind "${kind}"`, "u"),
+    });
+
+    await withFixture(
+      {
+        "artifacts/browser/.replit-artifact/artifact.toml": manifest,
+      },
+      async (root) => {
+        const failures = await checkBrowserTsconfigContract(root);
+        assert.equal(failures.length, 1);
+        assert.match(failures[0], /uses unknown artifact kind/u);
+        assert.match(failures[0], new RegExp(`"${kind}"`, "u"));
+      },
+    );
+  }
 });
 
 test("rejects runtime metadata that contradicts the artifact kind", async () => {
