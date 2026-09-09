@@ -3,8 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
 
-const SIGN_UP_URL = "/sign-up";
-const SIGN_IN_URL = "/sign-in";
+const siteUrl = (path: string) =>
+  `${import.meta.env.BASE_URL}${path.replace(/^\//, "")}`;
+const SIGN_UP_URL = siteUrl("/sign-up");
+const SIGN_IN_URL = siteUrl("/sign-in");
+const TERMS_URL = siteUrl("/terms");
+const PRIVACY_URL = siteUrl("/privacy");
 const CONTACT_URL = "mailto:CMSComplianceGaurdian@outlook.com?subject=Enterprise%20Inquiry";
 
 const fadeIn = {
@@ -259,9 +263,9 @@ export default function LandingPage() {
             <div className="flex flex-col items-start md:items-end gap-1">
               <p>&copy; {new Date().getFullYear()} CMS Compliance Suite. All rights reserved.</p>
               <nav className="flex flex-wrap justify-start gap-x-4 gap-y-1 md:justify-end" aria-label="Legal and support">
-                <a href="/terms" className="hover:text-slate-900">Terms of Service</a>
-                <a href="/privacy" className="hover:text-slate-900">Privacy Policy</a>
-                <a href="/terms#billing" className="hover:text-slate-900">Billing &amp; Cancellation</a>
+                <a href={TERMS_URL} className="hover:text-slate-900">Terms of Service</a>
+                <a href={PRIVACY_URL} className="hover:text-slate-900">Privacy Policy</a>
+                <a href={`${TERMS_URL}#billing`} className="hover:text-slate-900">Billing &amp; Cancellation</a>
                 <a href="mailto:CMSComplianceGaurdian@outlook.com" className="hover:text-slate-900">Support</a>
               </nav>
             </div>

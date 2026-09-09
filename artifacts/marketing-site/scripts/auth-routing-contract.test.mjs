@@ -59,8 +59,8 @@ test('signed-out visitors to the protected app are sent to sign-in', () => {
 });
 
 test('homepage sign-in and free-trial CTAs target the registered auth routes', () => {
-  assert.match(landingSource, /const SIGN_IN_URL = ["']\/sign-in["'];/);
-  assert.match(landingSource, /const SIGN_UP_URL = ["']\/sign-up["'];/);
+  assert.match(landingSource, /const SIGN_IN_URL = siteUrl\(["']\/sign-in["']\);/);
+  assert.match(landingSource, /const SIGN_UP_URL = siteUrl\(["']\/sign-up["']\);/);
   assert.match(
     landingSource,
     /<a href=\{SIGN_IN_URL\}[^>]*>\s*Sign In\s*<\/a>/,
@@ -73,7 +73,13 @@ test('homepage sign-in and free-trial CTAs target the registered auth routes', (
   );
 });
 
-test('homepage legal links target registered legal pages', () => {
-  assert.match(landingSource, /<a href="\/terms"[^>]*>Terms of Service<\/a>/);
-  assert.match(landingSource, /<a href="\/privacy"[^>]*>Privacy Policy<\/a>/);
+test('homepage links preserve the configured site base path', () => {
+  assert.match(
+    landingSource,
+    /const siteUrl = \(path: string\) =>\s*`\$\{import\.meta\.env\.BASE_URL\}\$\{path\.replace\(/,
+  );
+  assert.match(landingSource, /const TERMS_URL = siteUrl\(["']\/terms["']\);/);
+  assert.match(landingSource, /const PRIVACY_URL = siteUrl\(["']\/privacy["']\);/);
+  assert.match(landingSource, /<a href=\{TERMS_URL\}[^>]*>Terms of Service<\/a>/);
+  assert.match(landingSource, /<a href=\{PRIVACY_URL\}[^>]*>Privacy Policy<\/a>/);
 });

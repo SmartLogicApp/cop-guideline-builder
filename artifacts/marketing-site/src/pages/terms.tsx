@@ -3,6 +3,8 @@ import { termsV1 } from '@/legal/terms-v1';
 import type { ReactNode } from 'react';
 
 const supportEmail = 'CMSComplianceGaurdian@outlook.com';
+const siteUrl = (path: string) =>
+  `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 
 function renderInline(text: string): ReactNode[] {
   return text.split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) =>
@@ -71,9 +73,9 @@ export default function TermsPage() {
       <footer className="border-t bg-white py-8">
         <div className="container mx-auto flex max-w-4xl flex-col gap-4 px-4 text-sm text-slate-600 sm:px-6">
           <nav className="flex flex-wrap gap-x-6 gap-y-2" aria-label="Legal and support">
-            <a href="/terms" className="font-semibold text-teal-800">Terms of Service</a>
-            <a href="/privacy" className="hover:text-slate-950">Privacy Policy</a>
-            <a href="/terms#billing" className="hover:text-slate-950">Billing &amp; Cancellation</a>
+            <a href={siteUrl('/terms')} className="font-semibold text-teal-800">Terms of Service</a>
+            <a href={siteUrl('/privacy')} className="hover:text-slate-950">Privacy Policy</a>
+            <a href={`${siteUrl('/terms')}#billing`} className="hover:text-slate-950">Billing &amp; Cancellation</a>
             <a href={`mailto:${supportEmail}`} className="hover:text-slate-950">Support</a>
           </nav>
           <p>© {new Date().getFullYear()} CMS Compliance Guardian LLC.</p>

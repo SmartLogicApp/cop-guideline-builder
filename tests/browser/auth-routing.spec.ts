@@ -130,3 +130,90 @@ test.describe("built marketing site auth routing", () => {
     ).toBeVisible();
   });
 });
+
+test.describe("built marketing site public routing", () => {
+  test("prefixed public pages and assets stay within the site prefix", async ({
+    page,
+    baseURL,
+  }) => {
+    const siteBaseURL = new URL(baseURL!);
+    const prefix = siteBaseURL.pathname.replace(/\/$/, "");
+    const escapedPrefix = escapedBasePath(baseURL!);
+    test.skip(!prefix, "Root-mounted build has no nested prefix to enforce");
+
+    const escapedRequests: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (
+        url.origin === siteBaseURL.origin &&
+        !url.pathname.startsWith(`${prefix}/`)
+      ) {
+        escapedRequests.push(`${request.resourceType()}: ${url.pathname}`);
+      }
+    });
+
+    for (const [path, heading] of [
+      ["/", /^Navigate healthcare compliance with absolute confidence\.$/],
+      ["/terms", /terms of service/i],
+      ["/privacy", /^Privacy Policy$/],
+    ] as const) {
+      const response = await page.goto(routeUrl(baseURL!, path));
+      expect(response?.status(), `${path} should load`).toBe(200);
+      await expect(
+        page.getByRole("heading", { name: heading }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: notFoundHeading }),
+      ).toHaveCount(0);
+
+      const pageLinks = await page.locator("a[href]").evaluateAll((links) =>
+        links.map((link) => (link as HTMLAnchorElement).href),
+      );
+      for (const linkUrl of pageLinks) {
+        const url = new URL(linkUrl);
+        if (url.origin === siteBaseURL.origin) {
+          expect(url.pathname, `${path} link escaped the site prefix`).toMatch(
+            new RegExp(`^${escapedPrefix}(?:/|$)`),
+          );
+        }
+      }
+    }
+
+    const documentAssets = await page
+      .locator('script[src], link[rel="stylesheet"]')
+      .evaluateAll((elements) =>
+        elements.map((element) => ({
+          tagName: element.tagName,
+          url:
+            (element as HTMLScriptElement).src ||
+            (element as HTMLLinkElement).href,
+        })),
+      );
+    const sameOriginAssets = documentAssets.filter(
+      ({ url }) => new URL(url).origin === siteBaseURL.origin,
+    );
+    expect(
+      sameOriginAssets.some(({ tagName }) => tagName === "SCRIPT"),
+      "the document should load a same-origin JavaScript bundle",
+    ).toBeTruthy();
+    expect(
+      sameOriginAssets.some(({ tagName }) => tagName === "LINK"),
+      "the document should load a same-origin stylesheet",
+    ).toBeTruthy();
+    for (const { url: assetUrl } of sameOriginAssets) {
+      expect(new URL(assetUrl).pathname).toMatch(
+        new RegExp(`^${escapedPrefix}/`),
+      );
+      const response = await page.request.get(assetUrl);
+      expect(response.ok(), assetUrl).toBeTruthy();
+    }
+
+    for (const assetPath of ["/logo.svg", "/favicon.svg", "/og-image.png"]) {
+      const assetUrl = routeUrl(baseURL!, assetPath);
+      const response = await page.request.get(assetUrl);
+      expect(response.ok(), assetUrl).toBeTruthy();
+    }
+
+    expect(escapedRequests).toEqual([]);
+  });
+});

@@ -1,5 +1,8 @@
 import { Link } from 'wouter';
 
+const siteUrl = (path: string) =>
+  `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+
 const sections = [
   ['1. Overview', 'This Privacy Policy explains how CMS Compliance Guardian LLC handles information in CMS Compliance Suite. We collect only information reasonably necessary to operate, secure, and support the Service.'],
   ['2. Account information', 'Clerk handles registration and authentication and may process your email address, name, hashed credentials, authentication tokens, and session metadata. We receive a Clerk user identifier but do not receive your plaintext password.'],
@@ -39,9 +42,9 @@ export default function PrivacyPage() {
       </main>
       <footer className="border-t bg-white py-8">
         <nav className="container mx-auto flex max-w-4xl flex-wrap gap-x-6 gap-y-2 px-4 text-sm text-slate-600 sm:px-6" aria-label="Legal and support">
-          <a href="/terms" className="hover:text-slate-950">Terms of Service</a>
-          <a href="/privacy" className="font-semibold text-teal-800">Privacy Policy</a>
-          <a href="/terms#billing" className="hover:text-slate-950">Billing &amp; Cancellation</a>
+          <a href={siteUrl('/terms')} className="hover:text-slate-950">Terms of Service</a>
+          <a href={siteUrl('/privacy')} className="font-semibold text-teal-800">Privacy Policy</a>
+          <a href={`${siteUrl('/terms')}#billing`} className="hover:text-slate-950">Billing &amp; Cancellation</a>
           <a href="mailto:CMSComplianceGaurdian@outlook.com" className="hover:text-slate-950">Support</a>
         </nav>
       </footer>
