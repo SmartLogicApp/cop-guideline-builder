@@ -3,8 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
 
-const SIGN_UP_URL = "https://cop-guideline-builder--SmartAppLogic.replit.app/sign-up";
-const SIGN_IN_URL = "https://cop-guideline-builder--SmartAppLogic.replit.app/sign-in";
+const SIGN_UP_URL = "/sign-up";
+const SIGN_IN_URL = "/sign-in";
 const CONTACT_URL = "mailto:CMSComplianceGaurdian@outlook.com?subject=Enterprise%20Inquiry";
 
 const fadeIn = {
@@ -36,11 +36,11 @@ export default function LandingPage() {
             <a href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
           </nav>
           <div className="flex items-center gap-4">
-            <a href={SIGN_IN_URL} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-muted-foreground hover:text-foreground hidden sm:block">
+            <a href={SIGN_IN_URL} className="text-sm font-medium text-muted-foreground hover:text-foreground hidden sm:block">
               Sign In
             </a>
             <Button asChild variant="default">
-              <a href={SIGN_UP_URL} target="_blank" rel="noopener noreferrer">Free Trial</a>
+              <a href={SIGN_UP_URL}>Free Trial</a>
             </Button>
           </div>
         </div>
@@ -64,7 +64,7 @@ export default function LandingPage() {
               </motion.p>
               <motion.div variants={fadeIn} className="mt-10 flex items-center justify-center gap-x-6">
                 <Button size="lg" className="h-12 px-8 text-base shadow-lg" asChild>
-                  <a href={SIGN_UP_URL} target="_blank" rel="noopener noreferrer">
+                  <a href={SIGN_UP_URL}>
                     Start 30-Day Free Trial
                   </a>
                 </Button>
@@ -228,7 +228,7 @@ export default function LandingPage() {
                 </CardContent>
                 <CardFooter className="flex flex-col gap-4 mt-auto pt-8">
                   <Button className="w-full h-12 text-base" asChild>
-                    <a href={SIGN_UP_URL} target="_blank" rel="noopener noreferrer">Start Free Trial</a>
+                    <a href={SIGN_UP_URL}>Start Free Trial</a>
                   </Button>
                   <p className="text-xs text-center text-slate-500">30-day free trial · No credit card required</p>
                 </CardFooter>
@@ -246,8 +246,8 @@ export default function LandingPage() {
               <span className="text-lg font-bold tracking-tight text-slate-900">CMS Compliance Suite</span>
             </div>
             <div className="flex gap-6 text-sm text-slate-500">
-              <a href={SIGN_IN_URL} target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 transition-colors">Sign In</a>
-              <a href={SIGN_UP_URL} target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 transition-colors">Sign Up</a>
+              <a href={SIGN_IN_URL} className="hover:text-slate-900 transition-colors">Sign In</a>
+              <a href={SIGN_UP_URL} className="hover:text-slate-900 transition-colors">Sign Up</a>
               <a href={CONTACT_URL} target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 transition-colors">Contact</a>
             </div>
           </div>
@@ -260,7 +260,7 @@ export default function LandingPage() {
               <p>&copy; {new Date().getFullYear()} CMS Compliance Suite. All rights reserved.</p>
               <nav className="flex flex-wrap justify-start gap-x-4 gap-y-1 md:justify-end" aria-label="Legal and support">
                 <a href="/terms" className="hover:text-slate-900">Terms of Service</a>
-                <a href="/terms#privacy" className="hover:text-slate-900">Privacy Policy</a>
+                <a href="/privacy" className="hover:text-slate-900">Privacy Policy</a>
                 <a href="/terms#billing" className="hover:text-slate-900">Billing &amp; Cancellation</a>
                 <a href="mailto:CMSComplianceGaurdian@outlook.com" className="hover:text-slate-900">Support</a>
               </nav>

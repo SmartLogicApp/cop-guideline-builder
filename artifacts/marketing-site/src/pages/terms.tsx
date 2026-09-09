@@ -72,7 +72,7 @@ export default function TermsPage() {
         <div className="container mx-auto flex max-w-4xl flex-col gap-4 px-4 text-sm text-slate-600 sm:px-6">
           <nav className="flex flex-wrap gap-x-6 gap-y-2" aria-label="Legal and support">
             <a href="/terms" className="font-semibold text-teal-800">Terms of Service</a>
-            <a href="/terms#privacy" className="hover:text-slate-950">Privacy Policy</a>
+            <a href="/privacy" className="hover:text-slate-950">Privacy Policy</a>
             <a href="/terms#billing" className="hover:text-slate-950">Billing &amp; Cancellation</a>
             <a href={`mailto:${supportEmail}`} className="hover:text-slate-950">Support</a>
           </nav>
