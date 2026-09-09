@@ -13,6 +13,10 @@ function packagePrebuild(packageText) {
   return String(JSON.parse(packageText).scripts?.prebuild ?? "");
 }
 
+function packageBuild(packageText) {
+  return String(JSON.parse(packageText).scripts?.build ?? "");
+}
+
 export function startupProbeFailures({
   apiApp,
   apiManifest,
@@ -79,6 +83,12 @@ export function startupProbeFailures({
   const requiredCommand = "pnpm --dir ../.. run test:startup-probe-contract";
   if (packagePrebuild(apiPackage) !== requiredCommand) {
     failures.push("API production build must run the startup probe contract first");
+  }
+  if (
+    packageBuild(apiPackage) !==
+    "node ./build.mjs && pnpm --dir ../.. run test:api-readiness-smoke"
+  ) {
+    failures.push("API production build must smoke test the compiled readiness endpoint");
   }
   if (packagePrebuild(mobilePackage) !== requiredCommand) {
     failures.push("mobile production build must run the startup probe contract first");

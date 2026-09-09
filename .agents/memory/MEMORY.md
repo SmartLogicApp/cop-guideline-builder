@@ -11,3 +11,4 @@
 - [Clerk ticket-test redirects](clerk-ticket-test-redirects.md) — programmatic ticket sign-in establishes a session but does not run the mounted sign-in form's completion redirect.
 - [Nested-prefix browser checks](nested-prefix-browser-checks.md) — audit same-origin requests and link destinations separately; exclude external assets from prefix assertions.
 - [Lazy bundle ownership checks](lazy-bundle-ownership-checks.md) — identify sensitive modules with build metadata; do not force vendor chunks solely so release checks can find them.
+- [Build-time smoke isolation](build-time-smoke-isolation.md) — compiled-server smoke checks must use a minimal, secret-free environment and explicitly suppress mutating startup integrations.

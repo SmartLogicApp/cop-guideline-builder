@@ -59,6 +59,18 @@ test("rejects production builds that skip the contract", () => {
   );
 });
 
+test("rejects API production builds that skip the compiled readiness smoke test", () => {
+  const apiPackage = JSON.parse(fixtures.apiPackage);
+  apiPackage.scripts.build = "node ./build.mjs";
+  assert.match(
+    startupProbeFailures({
+      ...fixtures,
+      apiPackage: JSON.stringify(apiPackage),
+    }).join("\n"),
+    /smoke test the compiled readiness endpoint/,
+  );
+});
+
 async function mobileReadiness(withManifests) {
   const staticRoot = await mkdtemp(join(tmpdir(), "mobile-readiness-"));
   try {

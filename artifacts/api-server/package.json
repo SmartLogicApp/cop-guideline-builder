@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "prebuild": "pnpm --dir ../.. run test:startup-probe-contract",
-    "build": "node ./build.mjs",
+    "build": "node ./build.mjs && pnpm --dir ../.. run test:api-readiness-smoke",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "test": "node --test src/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

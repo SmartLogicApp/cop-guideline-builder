@@ -7,6 +7,7 @@ const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
 const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${rawPort}"`);
+const readinessSmokeTest = process.env.API_READINESS_SMOKE === "1";
 
 // ── Optional Stripe init ──────────────────────────────────────────────────────
 // Skips silently if the Stripe integration isn't connected yet.
@@ -41,7 +42,9 @@ async function initStripeIfAvailable() {
   }
 }
 
-await initStripeIfAvailable();
+if (!readinessSmokeTest) {
+  await initStripeIfAvailable();
+}
 
 // ── Bootstrap super-admins into the DB on every startup ──────────────────────
 // Reads valid Clerk user IDs from ADMIN_CLERK_USER_IDS (comma-separated) and
@@ -64,7 +67,9 @@ async function bootstrapSuperAdmins() {
   logger.info({ count: ids.length }, "Super-admin bootstrap complete");
 }
 
-await bootstrapSuperAdmins();
+if (!readinessSmokeTest) {
+  await bootstrapSuperAdmins();
+}
 
 app.listen(port, (err) => {
   if (err) { logger.error({ err }, "Error listening on port"); process.exit(1); }
