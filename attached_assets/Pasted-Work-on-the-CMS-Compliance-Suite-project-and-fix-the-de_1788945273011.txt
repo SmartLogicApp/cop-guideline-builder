@@ -1,0 +1,50 @@
+Work on the CMS Compliance Suite project and fix the deployment and routing issues end-to-end.
+
+Published URL:
+https://cop-guideline-builder--smartapplogic.replit.app/
+
+Current symptoms:
+1. The homepage loads, but clicking Sign In, Free Trial, or other interactive links can display a 404.
+2. Republish/deployment reports: “Failed to validate database migrations.”
+
+Investigate first; do not guess or apply destructive database changes.
+
+Tasks:
+
+1. Inspect the project structure, package.json scripts, database schema, migration files, ORM configuration, deployment configuration, and application router.
+2. Determine which migration system is being used, such as Drizzle, Prisma, Sequelize, or another tool.
+3. Inspect the latest deployment/publishing logs and identify the first real migration error behind “Failed to validate database migrations.”
+4. Verify that the production deployment has the required database environment variables/secrets. Never print secret values and never ask me to paste credentials into chat.
+5. Fix the migration problem safely:
+   - Generate or add any missing migration files.
+   - Correct the migration command or deployment configuration if needed.
+   - Preserve existing migration history.
+   - Do not drop tables, reset the database, delete migration history, or run a destructive schema push.
+   - If the database state is ambiguous or a production migration could destroy data, stop before that step and explain exactly what requires approval.
+6. Inspect the frontend routes and every link/button on the homepage. The deployed app appears to define only `/`, `/terms`, and `/privacy`, while Sign In and Free Trial appear to point to `/sign-in` and `/sign-up`.
+7. Fix the 404 routing issue:
+   - Use the project’s existing authentication implementation or configured auth provider if one exists.
+   - Add working `/sign-in` and `/sign-up` routes if they are intended to be part of this app.
+   - If authentication has not been implemented, create clear non-404 placeholder pages or update the links to the correct existing destination. Do not pretend that authentication works if it does not.
+   - Preserve the existing visual design and avoid unrelated UI changes.
+8. Run the project’s available type checks, tests, build, and migration validation commands.
+9. Redeploy the application after the fixes.
+10. Smoke-test the published URL, including:
+    - Homepage
+    - Sign In
+    - Free Trial/Sign Up
+    - Learn More
+    - Terms
+    - Privacy
+    - Any API or database-backed action
+11. Confirm that the deployment is serving the new version and not an older failed release.
+
+At the end, report:
+- The root cause of the migration validation failure.
+- The root cause of the 404 behavior.
+- Files changed.
+- Commands/tests run and their results.
+- Whether the redeployment succeeded.
+- The final published URL and any remaining limitation.
+
+Do not stop at describing the problem—make the safe fixes and redeploy them.

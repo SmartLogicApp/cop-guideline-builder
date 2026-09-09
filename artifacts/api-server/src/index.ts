@@ -1,7 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { db } from "@workspace/db";
-import { adminUsers } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 const rawPort = process.env["PORT"];
@@ -19,10 +18,12 @@ async function initStripeIfAvailable() {
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) return;
 
+    // Confirm the connector is available before running the vendor-managed
+    // Stripe schema setup. Unconnected deployments must not mutate the DB.
+    const stripeSync = await getStripeSync();
+
     logger.info("Initializing Stripe schema…");
     await runMigrations({ databaseUrl });
-
-    const stripeSync = await getStripeSync();
 
     const domains     = process.env.REPLIT_DOMAINS?.split(",") ?? [];
     const webhookBase = `https://${domains[0]}`;
@@ -41,30 +42,6 @@ async function initStripeIfAvailable() {
 }
 
 await initStripeIfAvailable();
-
-async function migrateEcfrCache() {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS ecfr_cache_entries (
-      institution_value text PRIMARY KEY,
-      text text NOT NULL,
-      fetch_date text NOT NULL,
-      source text NOT NULL,
-      expires_at timestamptz NOT NULL,
-      updated_at timestamptz NOT NULL DEFAULT now()
-    )
-  `);
-}
-
-await migrateEcfrCache();
-
-async function migrateTrialWarningTracking() {
-  await db.execute(sql`
-    ALTER TABLE accounts
-    ADD COLUMN IF NOT EXISTS trial_warning_email_sent_at timestamptz
-  `);
-}
-
-await migrateTrialWarningTracking();
 
 // ── Bootstrap super-admins into the DB on every startup ──────────────────────
 // Reads valid Clerk user IDs from ADMIN_CLERK_USER_IDS (comma-separated) and
