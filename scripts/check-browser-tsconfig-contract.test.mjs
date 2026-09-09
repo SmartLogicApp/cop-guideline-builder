@@ -277,23 +277,30 @@ test("reports every malformed manifest deterministically with repair guidance", 
 test("reports unreadable manifests alongside malformed metadata", async () => {
   await withFixture(
     {
+      "artifacts/alpha/.replit-artifact/artifact.toml": 'kind = "web"\n',
       "artifacts/zeta/.replit-artifact/artifact.toml": "kind = web\n",
     },
     async (root) => {
-      await mkdir(
-        join(root, "artifacts/alpha/.replit-artifact/artifact.toml"),
-        { recursive: true },
+      const inaccessibleManifest = join(
+        root,
+        "artifacts/alpha/.replit-artifact/artifact.toml",
       );
+      const readManifestFile = async (path, encoding) => {
+        if (path === inaccessibleManifest) {
+          const error = new Error("controlled manifest access failure");
+          error.code = "EACCES";
+          throw error;
+        }
+        return readFile(path, encoding);
+      };
 
-      const failures = await checkBrowserTsconfigContract(root);
+      const failures = await checkBrowserTsconfigContract(root, {
+        readManifestFile,
+      });
       assert.equal(failures.length, 2);
-      assert.match(
+      assert.equal(
         failures[0],
-        /^artifacts\/alpha\/\.replit-artifact\/artifact\.toml could not be read:/,
-      );
-      assert.match(
-        failures[0],
-        /Check file access for this manifest\.$/,
+        "artifacts/alpha/.replit-artifact/artifact.toml could not be read: controlled manifest access failure. Check file access for this manifest.",
       );
       assert.equal(
         failures[1],

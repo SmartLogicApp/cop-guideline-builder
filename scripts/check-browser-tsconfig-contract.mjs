@@ -12,7 +12,10 @@ function formatDiagnostic(diagnostic) {
   return ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
 }
 
-export async function findBrowserArtifactDirectories(rootDirectory) {
+export async function findBrowserArtifactDirectories(
+  rootDirectory,
+  { readManifestFile = readFile } = {},
+) {
   const artifactsDirectory = join(rootDirectory, "artifacts");
   const entries = await readdir(artifactsDirectory, { withFileTypes: true });
   const results = await Promise.all(
@@ -31,7 +34,7 @@ export async function findBrowserArtifactDirectories(rootDirectory) {
           .replaceAll("\\", "/");
         let manifest;
         try {
-          manifest = await readFile(manifestPath, "utf8");
+          manifest = await readManifestFile(manifestPath, "utf8");
         } catch (error) {
           if (error?.code === "ENOENT") {
             return {};
@@ -98,12 +101,14 @@ export function effectiveLibraryNames(tsconfigPath) {
 
 export async function checkBrowserTsconfigContract(
   rootDirectory,
-  { readConfigFile = readFile } = {},
+  { readConfigFile = readFile, readManifestFile = readFile } = {},
 ) {
   const failures = [];
   let artifactDirectories;
   try {
-    artifactDirectories = await findBrowserArtifactDirectories(rootDirectory);
+    artifactDirectories = await findBrowserArtifactDirectories(rootDirectory, {
+      readManifestFile,
+    });
   } catch (error) {
     if (error instanceof AggregateError) {
       return error.errors.map((manifestError) => manifestError.message);
