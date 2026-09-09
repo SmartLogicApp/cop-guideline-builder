@@ -177,13 +177,46 @@ test("rejects artifact discovery through default filesystem imports", () => {
   }
 });
 
+test("rejects artifact discovery through TypeScript import-equals bindings", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-import-equals-fs.ts",
+      source: `
+        import fs = require("node:fs");
+        import path = require("node:path");
+
+        function discover(root: string) {
+          return fs.readdirSync(path.resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-import-equals-fs-promises.ts",
+      source: `
+        import fs = require("node:fs/promises");
+        import path = require("node:path");
+
+        async function discover(root: string) {
+          return fs.readdir(path.resolve(root, "artifacts"));
+        }
+      `,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:6 lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
 test("accepts equivalent actionable artifact discovery handling", () => {
   const source = `
-    import fs from "node:fs/promises";
-    import { resolve } from "node:path";
+    import fs = require("node:fs/promises");
+    import path = require("node:path");
 
-    async function discover(root) {
-      const directory = resolve(root, "artifacts");
+    async function discover(root: string) {
+      const directory = path.resolve(root, "artifacts");
       try {
         return await fs.readdir(directory);
       } catch (error) {

@@ -82,6 +82,18 @@ function directoryReaderBindings(sourceFile) {
   const namespaces = new Set();
   for (const statement of sourceFile.statements) {
     if (
+      ts.isImportEqualsDeclaration(statement) &&
+      ts.isExternalModuleReference(statement.moduleReference) &&
+      statement.moduleReference.expression &&
+      ts.isStringLiteral(statement.moduleReference.expression) &&
+      ["node:fs", "node:fs/promises"].includes(
+        statement.moduleReference.expression.text,
+      )
+    ) {
+      namespaces.add(statement.name.text);
+      continue;
+    }
+    if (
       ts.isVariableStatement(statement) &&
       statement.declarationList.declarations.length
     ) {
