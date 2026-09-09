@@ -12,3 +12,4 @@
 - [Nested-prefix browser checks](nested-prefix-browser-checks.md) — audit same-origin requests and link destinations separately; exclude external assets from prefix assertions.
 - [Lazy bundle ownership checks](lazy-bundle-ownership-checks.md) — identify sensitive modules with build metadata; do not force vendor chunks solely so release checks can find them.
 - [Build-time smoke isolation](build-time-smoke-isolation.md) — compiled-server smoke checks must use a minimal, secret-free environment and explicitly suppress mutating startup integrations.
+- [Process-wide graceful shutdown](process-wide-graceful-shutdown.md) — shutdown deadlines must bound every resource and handle keep-alive sockets that become idle after draining begins.

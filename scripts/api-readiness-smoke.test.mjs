@@ -45,6 +45,34 @@ async function stopProcess(child) {
   }
 }
 
+function collectOutput(child) {
+  let output = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    output += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    output += chunk;
+  });
+  return () => output;
+}
+
+function spawnApi(port, extraEnv = {}) {
+  return spawn(process.execPath, [serverEntry], {
+    cwd: rootDirectory,
+    env: {
+      NODE_ENV: "production",
+      PORT: String(port),
+      API_READINESS_SMOKE: "1",
+      DATABASE_URL:
+        "postgresql://readiness-smoke:readiness-smoke@127.0.0.1:1/readiness_smoke",
+      ...extraEnv,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
 async function requestReadiness(url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   let lastError;
@@ -71,34 +99,98 @@ async function requestReadiness(url, timeoutMs) {
 
 test("compiled API serves its unauthenticated readiness endpoint", async () => {
   const port = await availablePort();
-  const child = spawn(process.execPath, [serverEntry], {
-    cwd: rootDirectory,
-    env: {
-      NODE_ENV: "production",
-      PORT: String(port),
-      API_READINESS_SMOKE: "1",
-      DATABASE_URL:
-        "postgresql://readiness-smoke:readiness-smoke@127.0.0.1:1/readiness_smoke",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let output = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
+  const child = spawnApi(port);
+  const getOutput = collectOutput(child);
 
   try {
     await Promise.race([
       requestReadiness(`http://127.0.0.1:${port}/api/healthz`, 20_000),
       once(child, "exit").then(() => {
-        assert.fail(`compiled API exited before becoming ready\n${output}`);
+        assert.fail(`compiled API exited before becoming ready\n${getOutput()}`);
       }),
     ]);
+  } finally {
+    await stopProcess(child);
+  }
+});
+
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  test(`${signal} lets an active request finish and exits cleanly`, async () => {
+    const port = await availablePort();
+    const child = spawnApi(port, {
+      API_SHUTDOWN_GRACE_PERIOD_MS: "1000",
+      API_SHUTDOWN_SMOKE_RESPONSE_DELAY_MS: "250",
+      API_SHUTDOWN_SMOKE_LINGERING_TIMER: "1",
+    });
+    const getOutput = collectOutput(child);
+
+    try {
+      await Promise.race([
+        requestReadiness(`http://127.0.0.1:${port}/api/healthz`, 20_000),
+        once(child, "exit").then(() => {
+          assert.fail(`compiled API exited before becoming ready\n${getOutput()}`);
+        }),
+      ]);
+
+      const activeResponse = await fetch(
+        `http://127.0.0.1:${port}/api/shutdown-smoke`,
+        { signal: AbortSignal.timeout(2_000) },
+      );
+      const responseBody = activeResponse.text();
+
+      const startedAt = Date.now();
+      child.kill(signal);
+      await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+      await assert.rejects(fetch(`http://127.0.0.1:${port}/api/healthz`));
+
+      assert.deepEqual(JSON.parse(await responseBody), { status: "finished" });
+      const [exitCode, exitSignal] = await Promise.race([
+        once(child, "exit"),
+        new Promise((_, rejectTimeout) =>
+          setTimeout(() => rejectTimeout(new Error(`shutdown timed out\n${getOutput()}`)), 2_000),
+        ),
+      ]);
+
+      assert.equal(exitSignal, null);
+      assert.equal(exitCode, 0, getOutput());
+      assert.ok(Date.now() - startedAt < 1_000);
+      assert.match(getOutput(), /Graceful shutdown started/);
+    } finally {
+      await stopProcess(child);
+    }
+  });
+}
+
+test("shutdown forcibly exits when database cleanup stalls", async () => {
+  const port = await availablePort();
+  const child = spawnApi(port, {
+    API_SHUTDOWN_GRACE_PERIOD_MS: "300",
+    API_SHUTDOWN_SMOKE_STALL_POOL: "1",
+    API_SHUTDOWN_SMOKE_LINGERING_TIMER: "1",
+  });
+  const getOutput = collectOutput(child);
+
+  try {
+    await Promise.race([
+      requestReadiness(`http://127.0.0.1:${port}/api/healthz`, 20_000),
+      once(child, "exit").then(() => {
+        assert.fail(`compiled API exited before becoming ready\n${getOutput()}`);
+      }),
+    ]);
+
+    const startedAt = Date.now();
+    child.kill("SIGTERM");
+    const [exitCode, exitSignal] = await Promise.race([
+      once(child, "exit"),
+      new Promise((_, rejectTimeout) => {
+        setTimeout(() => rejectTimeout(new Error(`shutdown timed out\n${getOutput()}`)), 1_500);
+      }),
+    ]);
+
+    assert.equal(exitSignal, null);
+    assert.equal(exitCode, 1);
+    assert.ok(Date.now() - startedAt < 1_500);
+    assert.match(getOutput(), /Graceful shutdown deadline reached/);
   } finally {
     await stopProcess(child);
   }

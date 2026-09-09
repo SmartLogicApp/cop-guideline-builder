@@ -27,6 +27,15 @@ app.get("/api/healthz", (_req, res) => {
   res.json(HealthCheckResponse.parse({ status: "ok" }));
 });
 
+if (process.env.API_READINESS_SMOKE === "1") {
+  app.get("/api/shutdown-smoke", (_req, res) => {
+    const delayMs = Number(process.env.API_SHUTDOWN_SMOKE_RESPONSE_DELAY_MS ?? "200");
+    res.setHeader("Content-Type", "application/json");
+    res.flushHeaders();
+    setTimeout(() => res.end('{"status":"finished"}'), delayMs);
+  });
+}
+
 // ── Logging ──────────────────────────────────────────────────────────────────
 app.use(
   pinoHttp({

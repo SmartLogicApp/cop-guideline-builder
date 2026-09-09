@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 const rawPort = process.env["PORT"];
@@ -8,6 +8,10 @@ if (!rawPort) throw new Error("PORT environment variable is required but was not
 const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${rawPort}"`);
 const readinessSmokeTest = process.env.API_READINESS_SMOKE === "1";
+const shutdownGracePeriodMs = Number(process.env.API_SHUTDOWN_GRACE_PERIOD_MS ?? "10000");
+if (!Number.isFinite(shutdownGracePeriodMs) || shutdownGracePeriodMs <= 0) {
+  throw new Error("API_SHUTDOWN_GRACE_PERIOD_MS must be a positive number.");
+}
 
 // ── Optional Stripe init ──────────────────────────────────────────────────────
 // Skips silently if the Stripe integration isn't connected yet.
@@ -71,7 +75,68 @@ if (!readinessSmokeTest) {
   await bootstrapSuperAdmins();
 }
 
-app.listen(port, (err) => {
+if (readinessSmokeTest) {
+  if (process.env.API_SHUTDOWN_SMOKE_LINGERING_TIMER === "1") {
+    setInterval(() => undefined, 60_000);
+  }
+}
+
+const server = app.listen(port, (err) => {
   if (err) { logger.error({ err }, "Error listening on port"); process.exit(1); }
   logger.info({ port }, "Server listening");
 });
+
+let shutdownStarted = false;
+let activeRequests = 0;
+
+server.on("request", (_request, response) => {
+  activeRequests += 1;
+  let requestFinished = false;
+  const finishRequest = () => {
+    if (requestFinished) return;
+    requestFinished = true;
+    activeRequests -= 1;
+    if (shutdownStarted && activeRequests === 0) {
+      server.closeIdleConnections();
+    }
+  };
+  response.once("finish", finishRequest);
+  response.once("close", finishRequest);
+});
+
+async function shutdown(signal: NodeJS.Signals) {
+  if (shutdownStarted) {
+    logger.warn({ signal }, "Shutdown already in progress");
+    return;
+  }
+  shutdownStarted = true;
+  logger.info(
+    { signal, gracePeriodMs: shutdownGracePeriodMs, activeRequests },
+    "Graceful shutdown started",
+  );
+
+  const deadline = setTimeout(() => {
+    logger.error("Graceful shutdown deadline reached; closing remaining connections");
+    server.closeAllConnections();
+    process.exit(1);
+  }, shutdownGracePeriodMs);
+
+  try {
+    await new Promise<void>((resolveClose, rejectClose) => {
+      server.close((error) => error ? rejectClose(error) : resolveClose());
+    });
+    if (process.env.API_SHUTDOWN_SMOKE_STALL_POOL === "1") {
+      await new Promise<never>(() => undefined);
+    } else {
+      await pool.end();
+    }
+    logger.info("Graceful shutdown complete");
+    process.exit(0);
+  } catch (err) {
+    logger.error({ err }, "Graceful shutdown failed");
+    process.exit(1);
+  }
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
