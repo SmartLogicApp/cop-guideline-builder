@@ -5,12 +5,22 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const REQUIRED_DOM_LIBRARIES = ["lib.dom.d.ts", "lib.dom.iterable.d.ts"];
+const BROWSER_ARTIFACT_KINDS = new Set(["design", "slides", "video", "web"]);
+
+function artifactRunsInBrowser(manifest) {
+  const kind = manifest.match(/^\s*kind\s*=\s*"([^"]+)"/mu)?.[1];
+  const browserRuntime =
+    manifest.match(/^\s*browserRuntime\s*=\s*(true|false)\s*(?:#.*)?$/mu)?.[1] ===
+    "true";
+
+  return browserRuntime || BROWSER_ARTIFACT_KINDS.has(kind);
+}
 
 function formatDiagnostic(diagnostic) {
   return ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
 }
 
-export async function findViteArtifactDirectories(rootDirectory) {
+export async function findBrowserArtifactDirectories(rootDirectory) {
   const artifactsDirectory = join(rootDirectory, "artifacts");
   const entries = await readdir(artifactsDirectory, { withFileTypes: true });
   const artifactDirectories = [];
@@ -20,8 +30,22 @@ export async function findViteArtifactDirectories(rootDirectory) {
       .filter((entry) => entry.isDirectory())
       .map(async (entry) => {
         const directory = join(artifactsDirectory, entry.name);
-        const files = await readdir(directory);
-        if (files.some((file) => /^vite\.config\.[cm]?[jt]s$/u.test(file))) {
+        const manifestPath = join(
+          directory,
+          ".replit-artifact",
+          "artifact.toml",
+        );
+        let manifest;
+        try {
+          manifest = await readFile(manifestPath, "utf8");
+        } catch (error) {
+          if (error?.code === "ENOENT") {
+            return;
+          }
+          throw error;
+        }
+
+        if (artifactRunsInBrowser(manifest)) {
           artifactDirectories.push(directory);
         }
       }),
@@ -62,7 +86,7 @@ export function effectiveLibraryNames(tsconfigPath) {
 export async function checkBrowserTsconfigContract(rootDirectory) {
   const failures = [];
   const artifactDirectories =
-    await findViteArtifactDirectories(rootDirectory);
+    await findBrowserArtifactDirectories(rootDirectory);
 
   for (const artifactDirectory of artifactDirectories) {
     const relativeDirectory = artifactDirectory

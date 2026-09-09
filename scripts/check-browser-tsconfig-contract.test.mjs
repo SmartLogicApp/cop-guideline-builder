@@ -6,7 +6,7 @@ import test from "node:test";
 
 import {
   checkBrowserTsconfigContract,
-  findViteArtifactDirectories,
+  findBrowserArtifactDirectories,
 } from "./check-browser-tsconfig-contract.mjs";
 
 const rootDirectory = new URL("..", import.meta.url).pathname;
@@ -25,10 +25,10 @@ async function withFixture(files, assertion) {
   }
 }
 
-test("accepts every checked-in Vite browser artifact", async () => {
+test("accepts every checked-in browser artifact", async () => {
   assert.deepEqual(await checkBrowserTsconfigContract(rootDirectory), []);
   assert.deepEqual(
-    (await findViteArtifactDirectories(rootDirectory)).map((directory) =>
+    (await findBrowserArtifactDirectories(rootDirectory)).map((directory) =>
       relative(rootDirectory, directory).replaceAll("\\", "/"),
     ),
     [
@@ -40,13 +40,16 @@ test("accepts every checked-in Vite browser artifact", async () => {
   );
 });
 
-test("rejects a Vite artifact that inherits a server-only library set", async () => {
+
+test("rejects a non-Vite browser artifact with server-only libraries", async () => {
   await withFixture(
     {
       "tsconfig.base.json": JSON.stringify({
         compilerOptions: { lib: ["ES2022"] },
       }),
-      "artifacts/browser/vite.config.ts": "export default {};\n",
+      "artifacts/browser/.replit-artifact/artifact.toml": 'kind = "web"\n',
+      "artifacts/browser/webpack.config.js": "export default {};\n",
+      "artifacts/browser/src/index.ts": "document.body.dataset.ready = 'true';\n",
       "artifacts/browser/tsconfig.json": JSON.stringify({
         extends: "../../tsconfig.base.json",
       }),
@@ -67,6 +70,7 @@ test("uses the effective inherited library configuration", async () => {
           lib: ["ES2022", "DOM", "DOM.Iterable"],
         },
       }),
+      "artifacts/browser/.replit-artifact/artifact.toml": 'kind = "slides"\n',
       "artifacts/browser/vite.config.mts": "export default {};\n",
       "artifacts/browser/tsconfig.json": JSON.stringify({
         extends: "../../tsconfig.base.json",
@@ -78,15 +82,31 @@ test("uses the effective inherited library configuration", async () => {
   );
 });
 
-test("rejects a discovered Vite artifact without a tsconfig", async () => {
+test("rejects an explicitly marked browser artifact without a tsconfig", async () => {
   await withFixture(
     {
-      "artifacts/new-browser/vite.config.js": "export default {};\n",
+      "artifacts/new-browser/.replit-artifact/artifact.toml":
+        'kind = "custom"\nbrowserRuntime = true\n',
     },
     async (root) => {
       assert.deepEqual(await checkBrowserTsconfigContract(root), [
         "artifacts/new-browser is missing tsconfig.json",
       ]);
+    },
+  );
+});
+
+test("excludes API and mobile-native artifacts", async () => {
+  await withFixture(
+    {
+      "artifacts/api/.replit-artifact/artifact.toml": 'kind = "api"\n',
+      "artifacts/api/vite.config.ts": "export default {};\n",
+      "artifacts/mobile/.replit-artifact/artifact.toml": 'kind = "mobile"\n',
+      "artifacts/mobile/vite.config.ts": "export default {};\n",
+    },
+    async (root) => {
+      assert.deepEqual(await findBrowserArtifactDirectories(root), []);
+      assert.deepEqual(await checkBrowserTsconfigContract(root), []);
     },
   );
 });
