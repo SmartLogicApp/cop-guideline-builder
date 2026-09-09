@@ -125,6 +125,13 @@ function serveStaticFile(urlPath, res) {
 
 const landingPageTemplate = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 const appName = getAppName();
+const requiredBuildFiles = [
+  path.join(STATIC_ROOT, 'ios', 'manifest.json'),
+  path.join(STATIC_ROOT, 'android', 'manifest.json'),
+];
+const buildIsReady = requiredBuildFiles.every((filePath) =>
+  fs.existsSync(filePath),
+);
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
@@ -132,6 +139,13 @@ const server = http.createServer((req, res) => {
 
   if (basePath && pathname.startsWith(basePath)) {
     pathname = pathname.slice(basePath.length) || '/';
+  }
+
+  if (pathname === '/readyz') {
+    const statusCode = buildIsReady ? 200 : 503;
+    res.writeHead(statusCode, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ status: buildIsReady ? 'ok' : 'not_ready' }));
+    return;
   }
 
   if (pathname === '/' || pathname === '/manifest') {

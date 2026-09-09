@@ -8,6 +8,7 @@ import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from "./mid
 import { WebhookHandlers } from "./webhookHandlers";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { HealthCheckResponse } from "@workspace/api-zod";
 
 const app: Express = express();
 
@@ -18,6 +19,13 @@ app.set("trust proxy", 1);
 // Disable ETags globally — prevents browsers from caching API responses
 // via If-None-Match / 304, which was causing stale isSuperAdmin=false results.
 app.set("etag", false);
+
+// Production starts listening only after startup dependencies have initialized,
+// so a response here means the API is ready to receive traffic. Keep this route
+// ahead of Clerk and all authenticated API routing.
+app.get("/api/healthz", (_req, res) => {
+  res.json(HealthCheckResponse.parse({ status: "ok" }));
+});
 
 // ── Logging ──────────────────────────────────────────────────────────────────
 app.use(
