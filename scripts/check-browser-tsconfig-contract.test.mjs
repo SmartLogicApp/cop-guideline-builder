@@ -103,6 +103,53 @@ test("rejects an explicitly marked browser artifact without a tsconfig", async (
   );
 });
 
+test("reports every inaccessible or invalid browser config deterministically", async () => {
+  await withFixture(
+    {
+      "artifacts/zeta/.replit-artifact/artifact.toml": 'kind = "web"\n',
+      "artifacts/zeta/tsconfig.json": "{",
+      "artifacts/alpha/.replit-artifact/artifact.toml": 'kind = "web"\n',
+      "artifacts/middle/.replit-artifact/artifact.toml": 'kind = "slides"\n',
+    },
+    async (root) => {
+      await mkdir(join(root, "artifacts/alpha/tsconfig.json"), {
+        recursive: true,
+      });
+      await mkdir(join(root, "artifacts/middle/tsconfig.json"), {
+        recursive: true,
+      });
+
+      const failures = await checkBrowserTsconfigContract(root);
+      assert.equal(failures.length, 4);
+      assert.match(
+        failures[0],
+        /^artifacts\/alpha\/tsconfig\.json could not be read:/,
+      );
+      assert.match(
+        failures[0],
+        /Check file access for this config\.$/,
+      );
+      assert.match(
+        failures[1],
+        /^artifacts\/middle\/tsconfig\.json could not be read:/,
+      );
+      assert.match(
+        failures[1],
+        /Check file access for this config\.$/,
+      );
+      assert.match(
+        failures[2],
+        /^artifacts\/zeta\/tsconfig\.json:/,
+      );
+      assert.match(failures[2], /No inputs were found in config file/u);
+      assert.match(
+        failures[3],
+        /^artifacts\/zeta\/tsconfig\.json effective compilerOptions\.lib is missing /,
+      );
+    },
+  );
+});
+
 test("excludes API and mobile-native artifacts", async () => {
   await withFixture(
     {

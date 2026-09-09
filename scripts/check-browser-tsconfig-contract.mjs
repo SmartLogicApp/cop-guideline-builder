@@ -121,7 +121,10 @@ export async function checkBrowserTsconfigContract(rootDirectory) {
         failures.push(`${relativeDirectory} is missing tsconfig.json`);
         continue;
       }
-      throw error;
+      failures.push(
+        `${relativeDirectory}/tsconfig.json could not be read: ${error.message}. Check file access for this config.`,
+      );
+      continue;
     }
 
     const result = effectiveLibraryNames(tsconfigPath);
