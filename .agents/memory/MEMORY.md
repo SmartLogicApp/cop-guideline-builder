@@ -8,3 +8,4 @@
 - [Vite optional peer alignment](vite-optional-peer-alignment.md) — unpeered Vite plugins must resolve the same optional-peer context as the consuming artifact to keep plugin types compatible.
 - [CI serialization contracts](ci-serialization-contracts.md) — static guards must prove the produced value's shape; serializer names alone are not evidence of safe output.
 - [CI path-filter parsing](ci-path-filter-parsing.md) — scanner discovery must understand quoted keys plus block and flow YAML without treating ordinary provider config as a filter.
+- [Clerk ticket-test redirects](clerk-ticket-test-redirects.md) — programmatic ticket sign-in establishes a session but does not run the mounted sign-in form's completion redirect.

@@ -103,6 +103,12 @@ importers:
         specifier: 'catalog:'
         version: 19.1.0
     devDependencies:
+      '@clerk/backend':
+        specifier: ^3.17.1
+        version: 3.17.1(react-dom@19.2.3(react@19.1.0))(react@19.1.0)
+      '@clerk/testing':
+        specifier: ^2.2.33
+        version: 2.2.33(@playwright/test@1.63.0)(react-dom@19.2.3(react@19.1.0))(react@19.1.0)
       '@playwright/test':
         specifier: ^1.55.0
         version: 1.63.0
@@ -1289,6 +1295,10 @@ packages:
     resolution: {integrity: sha512-tbsrGqw45ar7PDnEV3gwkHE/HM1EwRcYPPLyL3Hw9H0Ms5fG7hZ8+EJegPJ4DpKdfvOw5M+hYMeCVKwv3NxahA==}
     engines: {node: '>=20.9.0'}
 
+  '@clerk/backend@3.17.1':
+    resolution: {integrity: sha512-HDBknkYVTMknYsRNHeI0lUE+e4QfOty/LDzWKpbnaaKJUMzHZDUcVo9RQnLdg18XvhaBN7z1OoRiphJ82nimRA==}
+    engines: {node: '>=20.9.0'}
+
   '@clerk/express@2.1.52':
     resolution: {integrity: sha512-eDwz7ZwuT9NEJXhamXtOtVd/2Y7p4v1ExTJWrb8RM+faAR57EYvous1EEaIGhdfB9dH014L2+7pcZwsVsX2ijw==}
     engines: {node: '>=20.9.0'}
@@ -1336,6 +1346,18 @@ packages:
       react:
         optional: true
       react-dom:
+        optional: true
+
+  '@clerk/testing@2.2.33':
+    resolution: {integrity: sha512-+LzWrSwkU3j0jWylS4znQmbivDKmAPN7HuBcwFyBOU92Bp+/JHyylrzaR3RVOwex/Cea8Cztsl/Y+Ys4tXs4Ww==}
+    engines: {node: '>=20.9.0'}
+    peerDependencies:
+      '@playwright/test': ^1
+      cypress: ^13 || ^14 || ^15
+    peerDependenciesMeta:
+      '@playwright/test':
+        optional: true
+      cypress:
         optional: true
 
   '@clerk/themes@2.4.57':
@@ -3864,6 +3886,10 @@ packages:
 
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
+
+  dotenv@17.2.2:
+    resolution: {integrity: sha512-Sf2LSQP+bOlhKWWyhFsn0UsfdK/kCWRv1iuA2gXAwt3dyNabr6QSj00I2V10pidqz69soatm9ZwZvpQMTIOd5Q==}
+    engines: {node: '>=12'}
 
   draco3d@1.5.7:
     resolution: {integrity: sha512-m6WCKt/erDXcw+70IJXnG7M3awwQPAsZvJGX5zY7beBqpELw6RDGkYVU0W43AFxye4pDZ5i2Lbyc/NNGqwjUVQ==}
@@ -7151,6 +7177,15 @@ snapshots:
       - react
       - react-dom
 
+  '@clerk/backend@3.17.1(react-dom@19.2.3(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      '@clerk/shared': 4.31.0(react-dom@19.2.3(react@19.1.0))(react@19.1.0)
+      standardwebhooks: 1.0.0
+      tslib: 2.8.1
+    transitivePeerDependencies:
+      - react
+      - react-dom
+
   '@clerk/express@2.1.52(express@5.2.1)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
     dependencies:
       '@clerk/backend': 3.16.1(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -7199,6 +7234,27 @@ snapshots:
     optionalDependencies:
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
+
+  '@clerk/shared@4.31.0(react-dom@19.2.3(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      '@tanstack/query-core': 5.101.4
+      dequal: 2.0.3
+      glob-to-regexp: 0.4.1
+      js-cookie: 3.0.7
+    optionalDependencies:
+      react: 19.1.0
+      react-dom: 19.2.3(react@19.1.0)
+
+  '@clerk/testing@2.2.33(@playwright/test@1.63.0)(react-dom@19.2.3(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      '@clerk/backend': 3.17.1(react-dom@19.2.3(react@19.1.0))(react@19.1.0)
+      '@clerk/shared': 4.31.0(react-dom@19.2.3(react@19.1.0))(react@19.1.0)
+      dotenv: 17.2.2
+    optionalDependencies:
+      '@playwright/test': 1.63.0
+    transitivePeerDependencies:
+      - react
+      - react-dom
 
   '@clerk/themes@2.4.57(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
     dependencies:
@@ -10427,6 +10483,8 @@ snapshots:
       domelementtype: 2.3.0
       domhandler: 5.0.3
 
+  dotenv@17.2.2: {}
+
   draco3d@1.5.7: {}
 
   drizzle-kit@0.31.10:
@@ -12552,6 +12610,12 @@ snapshots:
     dependencies:
       react: 19.1.0
       scheduler: 0.26.0
+
+  react-dom@19.2.3(react@19.1.0):
+    dependencies:
+      react: 19.1.0
+      scheduler: 0.27.0
+    optional: true
 
   react-dom@19.2.3(react@19.2.3):
     dependencies:

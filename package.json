@@ -24,6 +24,8 @@
     "react": "catalog:"
   },
   "devDependencies": {
+    "@clerk/backend": "^3.17.1",
+    "@clerk/testing": "^2.2.33",
     "@playwright/test": "^1.55.0",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
