@@ -58,6 +58,23 @@ test('signed-out visitors to the protected app are sent to sign-in', () => {
   );
 });
 
+test('the private workspace is lazy-loaded behind clear loading and error states', () => {
+  assert.match(
+    appSource,
+    /const CoPGuidelineBuilder = lazy\(\(\) =>\s*[\s\S]*?import\(['"]\.\.\/\.\.\/\.\.\/index\.jsx['"]\)/,
+    'Expected the legacy workspace to use a dynamic import',
+  );
+  assert.doesNotMatch(
+    appSource,
+    /import CoPGuidelineBuilder from ['"]\.\.\/\.\.\/\.\.\/index\.jsx['"]/,
+    'Expected no eager workspace import in the public entry',
+  );
+
+  const workspace = componentBody(appSource, 'ComplianceWorkspace');
+  assert.match(workspace, /FallbackComponent=\{WorkspaceLoadError\}/);
+  assert.match(workspace, /<Suspense fallback=\{<WorkspaceLoading \/>\}>/);
+});
+
 test('homepage sign-in and free-trial CTAs target the registered auth routes', () => {
   assert.match(landingSource, /const SIGN_IN_URL = siteUrl\(["']\/sign-in["']\);/);
   assert.match(landingSource, /const SIGN_UP_URL = siteUrl\(["']\/sign-up["']\);/);

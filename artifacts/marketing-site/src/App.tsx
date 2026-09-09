@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   ClerkProvider,
@@ -18,8 +18,6 @@ import NotFound from '@/pages/not-found';
 import LandingPage from '@/pages/landing';
 import TermsPage from '@/pages/terms';
 import PrivacyPage from '@/pages/privacy';
-// @ts-expect-error The legacy compliance workspace is a JavaScript component.
-import CoPGuidelineBuilder from '../../../index.jsx';
 import {
   Redirect,
   Route,
@@ -27,6 +25,11 @@ import {
   useLocation,
   Router as WouterRouter,
 } from 'wouter';
+
+const CoPGuidelineBuilder = lazy(() =>
+  // @ts-expect-error The legacy compliance workspace is a JavaScript component.
+  import('../../../index.jsx'),
+);
 
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -146,6 +149,48 @@ function SignUpPage() {
   );
 }
 
+function WorkspaceLoading() {
+  return (
+    <div
+      className="flex min-h-[100dvh] items-center justify-center bg-slate-50 px-4"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="text-center">
+        <div
+          className="mx-auto size-8 animate-spin rounded-full border-4 border-slate-200 border-t-teal-700"
+          aria-hidden="true"
+        />
+        <p className="mt-4 text-sm font-medium text-slate-700">
+          Loading your compliance workspace…
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceLoadError() {
+  return (
+    <div className="flex min-h-[100dvh] items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-lg text-center">
+        <h1 className="text-xl font-semibold text-slate-950">
+          We couldn’t load your workspace
+        </h1>
+        <p className="mt-2 text-sm text-slate-600">
+          Check your connection, then reload the page to try again.
+        </p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-5 rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-900"
+        >
+          Reload workspace
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ComplianceWorkspace() {
   const { user } = useUser();
   const { signOut } = useClerk();
@@ -153,10 +198,14 @@ function ComplianceWorkspace() {
   return (
     <>
       <Show when="signed-in">
-        <CoPGuidelineBuilder
-          clerkUserId={user?.id}
-          onSignOut={() => signOut({ redirectUrl: basePath || '/' })}
-        />
+        <ErrorBoundary FallbackComponent={WorkspaceLoadError}>
+          <Suspense fallback={<WorkspaceLoading />}>
+            <CoPGuidelineBuilder
+              clerkUserId={user?.id}
+              onSignOut={() => signOut({ redirectUrl: basePath || '/' })}
+            />
+          </Suspense>
+        </ErrorBoundary>
       </Show>
       <Show when="signed-out"><RedirectToSignIn /></Show>
     </>
