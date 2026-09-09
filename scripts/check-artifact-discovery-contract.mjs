@@ -9,6 +9,12 @@ const VALIDATION_SCRIPT = /^(?:check|validate)-.+\.(?:c?js|mjs|m?ts)$/u;
 const TEST_SCRIPT = /\.test\.(?:c?js|mjs|m?ts)$/u;
 const CONTRACT_SCRIPT_BASENAME = "check-artifact-discovery-contract";
 const LOCAL_SCRIPT_EXTENSIONS = [".mjs", ".js", ".cjs", ".ts", ".mts"];
+const FILESYSTEM_MODULE_SPECIFIERS = new Set([
+  "fs",
+  "fs/promises",
+  "node:fs",
+  "node:fs/promises",
+]);
 
 function isScannableValidationScript(name) {
   const basename = name.slice(0, name.lastIndexOf("."));
@@ -86,9 +92,7 @@ function directoryReaderBindings(sourceFile) {
       ts.isExternalModuleReference(statement.moduleReference) &&
       statement.moduleReference.expression &&
       ts.isStringLiteral(statement.moduleReference.expression) &&
-      ["node:fs", "node:fs/promises"].includes(
-        statement.moduleReference.expression.text,
-      )
+      FILESYSTEM_MODULE_SPECIFIERS.has(statement.moduleReference.expression.text)
     ) {
       namespaces.add(statement.name.text);
       continue;
@@ -106,9 +110,7 @@ function directoryReaderBindings(sourceFile) {
           initializer.expression.text !== "require" ||
           initializer.arguments.length !== 1 ||
           !ts.isStringLiteral(initializer.arguments[0]) ||
-          !["node:fs", "node:fs/promises"].includes(
-            initializer.arguments[0].text,
-          )
+          !FILESYSTEM_MODULE_SPECIFIERS.has(initializer.arguments[0].text)
         ) {
           continue;
         }
@@ -132,7 +134,7 @@ function directoryReaderBindings(sourceFile) {
     if (
       !ts.isImportDeclaration(statement) ||
       !ts.isStringLiteral(statement.moduleSpecifier) ||
-      !["node:fs", "node:fs/promises"].includes(statement.moduleSpecifier.text)
+      !FILESYSTEM_MODULE_SPECIFIERS.has(statement.moduleSpecifier.text)
     ) {
       continue;
     }

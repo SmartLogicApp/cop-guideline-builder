@@ -243,6 +243,83 @@ test("rejects artifact discovery through static filesystem element access", () =
   }
 });
 
+test("rejects legacy filesystem module specifiers through supported bindings", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-legacy-named-fs.mjs",
+      source: `
+        import { readdirSync as listDirectory } from "fs";
+        import { resolve } from "node:path";
+
+        function discover(root) {
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-legacy-default-fs-promises.mjs",
+      source: `
+        import fs from "fs/promises";
+        import { resolve } from "node:path";
+
+        async function discover(root) {
+          return fs.readdir(resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-legacy-require-fs.cjs",
+      source: `
+        const fs = require("fs");
+        const path = require("node:path");
+
+        function discover(root) {
+          return fs.readdirSync(path.resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-legacy-require-fs-promises.cjs",
+      source: `
+        const { readdir: listDirectory } = require("fs/promises");
+        const path = require("node:path");
+
+        async function discover(root) {
+          return listDirectory(path.resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-legacy-import-equals-fs.ts",
+      source: `
+        import fs = require("fs");
+        import path = require("node:path");
+
+        function discover(root: string) {
+          return fs.readdirSync(path.resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-legacy-import-equals-fs-promises.ts",
+      source: `
+        import fs = require("fs/promises");
+        import path = require("node:path");
+
+        async function discover(root: string) {
+          return fs.readdir(path.resolve(root, "artifacts"));
+        }
+      `,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:6 lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
 test("ignores dynamic and unrelated filesystem element access", () => {
   const source = `
     import fs from "node:fs/promises";
@@ -279,7 +356,7 @@ test("ignores unrelated dynamic imports", () => {
 
 test("accepts equivalent actionable artifact discovery handling", () => {
   const source = `
-    import fs = require("node:fs/promises");
+    import fs = require("fs/promises");
     import path = require("node:path");
 
     async function discover(root: string) {
