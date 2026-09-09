@@ -11,6 +11,8 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "check:canvas-release-contract": "node scripts/check-canvas-release-contract.mjs",
     "test:canvas-release-contract": "node --test scripts/check-canvas-release-contract.test.mjs scripts/validate-canvas-changes.test.mjs && pnpm run check:canvas-release-contract",
+    "check:marketing-build-credential-contract": "node scripts/check-marketing-build-credential-contract.mjs",
+    "test:marketing-build-credential-contract": "node --test scripts/check-marketing-build-credential-contract.test.mjs && pnpm run check:marketing-build-credential-contract",
     "test:canvas-paths": "node --test scripts/validate-canvas-changes.test.mjs",
     "validate:canvas": "pnpm install --frozen-lockfile && pnpm --filter @workspace/mockup-sandbox run typecheck && PORT=4173 BASE_PATH=/__mockup NODE_ENV=production pnpm --filter @workspace/mockup-sandbox run build",
     "validate:canvas:changed": "node scripts/validate-canvas-changes.mjs"
