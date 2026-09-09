@@ -4,6 +4,7 @@ import { accounts, accountUsers, tokenUsage } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
 import { requireAuth } from "./accounts";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription";
+import { isPaymentAcceptanceEnabled } from "../lib/payment-config";
 
 const router: IRouter = Router();
 
@@ -28,6 +29,7 @@ async function getUserAccount(clerkUserId: string) {
 
 // GET /api/billing/subscription
 router.get("/subscription", requireAuth, async (req, res) => {
+  const paymentAcceptanceEnabled = isPaymentAcceptanceEnabled();
   const access = await getSubscriptionAccess((req as any).clerkUserId);
   const account = access.account;
   if (!account) {
@@ -35,6 +37,7 @@ router.get("/subscription", requireAuth, async (req, res) => {
       subscription: null,
       isActive: access.isActive,
       accessSource: access.accessSource,
+      paymentAcceptanceEnabled,
     });
   }
 
@@ -56,11 +59,19 @@ router.get("/subscription", requireAuth, async (req, res) => {
         ? Math.ceil((account.trialEndsAt!.getTime() - now.getTime()) / 86_400_000)
         : 0,
     },
+    paymentAcceptanceEnabled,
   });
 });
 
 // POST /api/billing/checkout  { priceId }
 router.post("/checkout", requireAuth, async (req, res) => {
+  if (!isPaymentAcceptanceEnabled()) {
+    return res.status(503).json({
+      error: "Payment acceptance is not enabled yet.",
+      code: "PAYMENTS_DISABLED",
+    });
+  }
+
   const stripe = await getStripeOptional();
   if (!stripe) {
     return res.status(503).json({ error: "Payment processing is not yet configured." });
@@ -103,6 +114,13 @@ router.post("/checkout", requireAuth, async (req, res) => {
 
 // GET /api/billing/portal
 router.get("/portal", requireAuth, async (req, res) => {
+  if (!isPaymentAcceptanceEnabled()) {
+    return res.status(503).json({
+      error: "Payment acceptance is not enabled yet.",
+      code: "PAYMENTS_DISABLED",
+    });
+  }
+
   const stripe = await getStripeOptional();
   if (!stripe) {
     return res.status(503).json({ error: "Payment processing is not yet configured." });

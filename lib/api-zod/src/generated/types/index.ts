@@ -7,7 +7,10 @@
  */
 
 export * from './errorResponse';
+export * from './gapHistoryEntry';
+export * from './gapHistoryEntryResult';
 export * from './generateInput';
 export * from './generateResponse';
 export * from './generateResponseContentItem';
+export * from './generationDataSource';
 export * from './healthStatus';

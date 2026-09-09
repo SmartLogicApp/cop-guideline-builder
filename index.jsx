@@ -11,6 +11,14 @@ import {
   getProvidersByCategory,
   isProviderContentAvailable,
 } from "@workspace/cms-compliance-data";
+import {
+  parseGapAnalysisResult,
+  parseGeneratedJson,
+  parseGuidelinesResult,
+  parseInspectionResult,
+  parsePolicyTemplateResult,
+  requestGeneration,
+} from "./generation-client.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -867,84 +875,39 @@ const BODIES = [
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function repairJson(raw) {
-  const s = raw.replace(/```json\n?|```/g, "").trim();
-  try { return JSON.parse(s); } catch {}
-
-  const stack = [];
-  let inStr = false, esc = false, lastSafe = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (esc) { esc = false; continue; }
-    if (c === "\\" && inStr) { esc = true; continue; }
-    if (c === '"') { inStr = !inStr; continue; }
-    if (inStr) continue;
-    if (c === "{" || c === "[") stack.push(c === "{" ? "}" : "]");
-    else if (c === "}" || c === "]") { stack.pop(); if (!stack.length) lastSafe = i + 1; }
-  }
-
-  const close = stack.slice().reverse().join("");
-  const stripped = s
-    .replace(/,\s*"[^"]*"\s*:\s*(?:"[^"]*)?$/, "")
-    .replace(/,\s*"[^"]*"\s*:?\s*$/, "");
-  try { return JSON.parse(stripped + close); } catch {}
-  if (lastSafe > 0) { try { return JSON.parse(s.slice(0, lastSafe)); } catch {} }
-  throw new Error("Response was not valid JSON — please try again");
-}
-
-async function callApi(systemPrompt, userContent, maxTokens) {
-  const startRes = await fetch("/api/generate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ systemPrompt, userContent, maxTokens }),
-  });
-  if (!startRes.ok) {
-    const err = await startRes.json().catch(() => ({}));
-    throw new Error(err.error || `Server error (${startRes.status})`);
-  }
-  const { jobId } = await startRes.json();
-  if (!jobId) throw new Error("Server did not return a job ID");
-
-  for (let i = 0; i < 90; i++) {
-    await sleep(2000);
-    const poll = await fetch(`/api/generate/result?jobId=${jobId}`);
-    const job = await poll.json();
-    if (job.status === "error") throw new Error(job.error);
-    if (job.status === "done") return job.content?.[0]?.text ?? "";
-  }
-  throw new Error("Request timed out — please try again");
+async function callApi(systemPrompt, userContent, maxTokens, signal) {
+  const result = await requestGeneration(
+    { systemPrompt, userContent, maxTokens },
+    { signal },
+  );
+  return result.text;
 }
 
 /** Like callApi but passes institutionValue so the server can pre-fetch live eCFR text.
  *  Returns { text, dataSource } where dataSource is { kind: "ecfr", fetchDate } or { kind: "ai" }. */
-async function callApiWithSource(systemPrompt, userContent, maxTokens, institutionValue) {
-  const startRes = await fetch("/api/generate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ systemPrompt, userContent, maxTokens, institutionValue }),
-  });
-  if (!startRes.ok) {
-    const err = await startRes.json().catch(() => ({}));
-    throw new Error(err.error || `Server error (${startRes.status})`);
-  }
-  const { jobId } = await startRes.json();
-  if (!jobId) throw new Error("Server did not return a job ID");
+async function callApiWithSource(systemPrompt, userContent, maxTokens, institutionValue, signal) {
+  return requestGeneration(
+    { systemPrompt, userContent, maxTokens, institutionValue },
+    { signal },
+  );
+}
 
-  for (let i = 0; i < 90; i++) {
-    await sleep(2000);
-    const poll = await fetch(`/api/generate/result?jobId=${jobId}`);
-    const job = await poll.json();
-    if (job.status === "error") throw new Error(job.error);
-    if (job.status === "done") {
-      return {
-        text: job.content?.[0]?.text ?? "",
-        dataSource: job.dataSource ?? { kind: "ai" },
-      };
-    }
-  }
-  throw new Error("Request timed out — please try again");
+function useGenerationController(resetKey) {
+  const controllerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+    };
+  }, [resetKey]);
+
+  return () => {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    return controller.signal;
+  };
 }
 
 // ─── Excel helpers ────────────────────────────────────────────────────────────
@@ -1820,6 +1783,7 @@ function OnboardingBanner() {
 // ─── Guidelines Tab ──────────────────────────────────────────────────────────
 
 function GuidelinesTab({ institution }) {
+  const startGenerationRequest = useGenerationController(institution);
   const instUnits = INSTITUTION_UNITS[institution] || null;
   const topics = getInstitutionTopics(institution);
   const verifiedRequirements = getRequirementsForProvider(institution);
@@ -1844,6 +1808,8 @@ function GuidelinesTab({ institution }) {
 
   useEffect(() => {
     const iu = INSTITUTION_UNITS[institution] || null;
+    setLoading(false);
+    setError(null);
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
     setTopic(getInstitutionTopics(institution)[0]);
     setCustomTopic("");
@@ -1852,6 +1818,7 @@ function GuidelinesTab({ institution }) {
   }, [institution]);
 
   async function generate() {
+    const signal = startGenerationRequest();
     const topicFinal = customTopic.trim() || topic;
     setLoading(true); setError(null); setResult(null); setDataSource(null);
 
@@ -1927,13 +1894,19 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
     const userContent = `Institution: ${inst.label} (${inst.cfr})\n${unitLine}\nCompliance Topic: ${topicFinal}${citationLine}${contractedNote}`;
 
     try {
-      const { text, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 3000, institution);
-      setResult(repairJson(text));
+      const { text, dataSource: ds } = await callApiWithSource(
+        systemPrompt,
+        userContent,
+        4500,
+        institution,
+        signal,
+      );
+      setResult(parseGuidelinesResult(text));
       setDataSource(ds);
     } catch (e) {
-      setError(e.message);
+      if (!signal.aborted) setError(e.message);
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }
 
@@ -2157,6 +2130,7 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
 // ─── Policy Tab ──────────────────────────────────────────────────────────────
 
 function PolicyTab({ institution }) {
+  const startGenerationRequest = useGenerationController(institution);
   const instUnits = INSTITUTION_UNITS[institution] || null;
   const topics = getInstitutionTopics(institution);
   const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
@@ -2169,6 +2143,7 @@ function PolicyTab({ institution }) {
 
   useEffect(() => {
     const iu = INSTITUTION_UNITS[institution] || null;
+    setLoading(false);
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
     setTopic(getInstitutionTopics(institution)[0]);
     setCustomTopic("");
@@ -2181,6 +2156,7 @@ function PolicyTab({ institution }) {
   const isContractedUnit = unit.endsWith("(Contracted)");
 
   async function generate() {
+    const signal = startGenerationRequest();
     const topicFinal = customTopic.trim() || topic;
     setLoading(true); setError(null); setResult(null); setDataSource(null);
 
@@ -2219,6 +2195,8 @@ Exact regulatory citations: CMS CFR, Joint Commission standard codes, DNV NIAHO 
 DOCUMENT HISTORY
 Version table.
 
+Keep the complete template concise: 1,500-2,000 words total, 6-10 procedure steps, 3-6 definitions, and 3-6 role entries. Finish every required section before adding detail.
+
 Output as plain text only (no JSON, no markdown headers with #).`;
 
     const unitLine = instUnits ? `${instUnits.label}: ${unit}` : `Department: ${unit}`;
@@ -2228,13 +2206,19 @@ Output as plain text only (no JSON, no markdown headers with #).`;
     const userContent = `Institution: ${inst.label} (${inst.cfr})\n${unitLine}\nPolicy Topic: ${topicFinal}${contractedNote}`;
 
     try {
-      const { text, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 4000, institution);
-      setResult(text.replace(/```[\w]*\n?|```/g, "").trim());
+      const { text, dataSource: ds } = await callApiWithSource(
+        systemPrompt,
+        userContent,
+        5000,
+        institution,
+        signal,
+      );
+      setResult(parsePolicyTemplateResult(text));
       setDataSource(ds);
     } catch (e) {
-      setError(e.message);
+      if (!signal.aborted) setError(e.message);
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }
 
@@ -2330,6 +2314,7 @@ Output as plain text only (no JSON, no markdown headers with #).`;
 const INSPECTION_DRAFT_KEY = "cms-compliance-inspection-draft";
 
 function InspectionTab({ institution }) {
+  const startGenerationRequest = useGenerationController(institution);
   const instUnits = INSTITUTION_UNITS[institution] || null;
   const firstDept = instUnits ? instUnits.units[0] : DEPARTMENTS[0];
 
@@ -2364,6 +2349,7 @@ function InspectionTab({ institution }) {
   // Reset selection whenever institution type changes
   useEffect(() => {
     const iu = INSTITUTION_UNITS[institution] || null;
+    setLoading(false);
     setDept(iu ? iu.units[0] : DEPARTMENTS[0]);
     setError(null);
     let saved = null;
@@ -2422,6 +2408,7 @@ function InspectionTab({ institution }) {
   const isContracted = dept.endsWith("(Contracted)");
 
   async function generate() {
+    const signal = startGenerationRequest();
     localStorage.removeItem(INSPECTION_DRAFT_KEY);
     setLoading(true);
     setError(null);
@@ -2462,9 +2449,14 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
 
     try {
       const instValue = govBodies.cms ? institution : undefined;
-      const { text: raw, dataSource: ds } = await callApiWithSource(systemPrompt, userContent, 3000, instValue);
-      const data = repairJson(raw);
-      const items = data.items || data;
+      const { text: raw, dataSource: ds } = await callApiWithSource(
+        systemPrompt,
+        userContent,
+        4500,
+        instValue,
+        signal,
+      );
+      const items = parseInspectionResult(raw);
       const entry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         institution,
@@ -2483,9 +2475,9 @@ Generate exactly 12 items. Cover these areas proportionally: Documentation, Poli
       setLoadedEntryId(entry.id);
       setHistory(saveInspectionEntry(entry));
     } catch (e) {
-      setError(e.message);
+      if (!signal.aborted) setError(e.message);
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }
 
@@ -3003,6 +2995,7 @@ function GapComparisonView({ entryA, entryB, onClose }) {
 // ─── Gap Scanner Tab ─────────────────────────────────────────────────────────
 
 function GapScannerTab({ institution, historyOwnerId }) {
+  const startGenerationRequest = useGenerationController(institution);
   const instUnits = INSTITUTION_UNITS[institution] || null;
   const topics = getInstitutionTopics(institution);
   const [initialSession] = useState(() => loadGapSession());
@@ -3062,6 +3055,8 @@ function GapScannerTab({ institution, historyOwnerId }) {
       return;
     }
     const iu = INSTITUTION_UNITS[institution] || null;
+    setLoading(false);
+    setActionPlanLoading(false);
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
     setTopic(getInstitutionTopics(institution)[0]);
     setCustomTopic("");
@@ -3130,6 +3125,7 @@ function GapScannerTab({ institution, historyOwnerId }) {
       setActionPlanLoading(false);
       return;
     }
+    const signal = startGenerationRequest();
 
     const systemPrompt = `You are a healthcare compliance remediation expert. Given a list of regulatory gaps, produce a concise, prioritized one-page remediation action plan that a compliance team can execute immediately.
 
@@ -3167,8 +3163,8 @@ Rules:
     const userContent = `Institution: ${effectiveInst.label} (${effectiveInst.cfr})\nTopic: ${effectiveTopic}\n\nGAPS TO REMEDIATE:\n${gapLines}`;
 
     try {
-      const raw = await callApi(systemPrompt, userContent, 3000);
-      const parsed = repairJson(raw);
+      const raw = await callApi(systemPrompt, userContent, 4500, signal);
+      const parsed = parseGeneratedJson(raw);
       const generatedPlan = parsed.actions || parsed;
       setActionPlan(generatedPlan);
       saveGapActionPlan(loadedEntryId, generatedPlan);
@@ -3186,9 +3182,9 @@ Rules:
         }
       }
     } catch (e) {
-      setActionPlanError(e.message);
+      if (!signal.aborted) setActionPlanError(e.message);
     } finally {
-      setActionPlanLoading(false);
+      if (!signal.aborted) setActionPlanLoading(false);
     }
   }
 
@@ -3197,6 +3193,7 @@ Rules:
       setError("Please paste policy text or upload a document before analyzing.");
       return;
     }
+    const signal = startGenerationRequest();
     setLoading(true); setError(null); setResult(null); setActionPlan(null); setActionPlanError(null);
 
     const systemPrompt = `You are a senior healthcare regulatory compliance auditor with expert knowledge of CMS Conditions of Participation, Joint Commission, DNV NIAHO, and ISO 9001:2015.
@@ -3262,8 +3259,13 @@ Rules:
         const sectionNote = chunks.length > 1
           ? `\n[This is section ${i + 1} of ${chunks.length} of the full policy document.]`
           : "";
-        const raw = await callApi(systemPrompt, header + chunks[i] + sectionNote, 4000);
-        chunkResults.push(repairJson(raw));
+        const raw = await callApi(
+          systemPrompt,
+          header + chunks[i] + sectionNote,
+          5000,
+          signal,
+        );
+        chunkResults.push(parseGapAnalysisResult(raw));
       }
 
       const parsed = chunks.length === 1 ? chunkResults[0] : mergeGapResults(chunkResults);
@@ -3289,10 +3291,12 @@ Rules:
         // The entry remains in the local cache and will be visible offline.
       }
     } catch (e) {
-      setError(e.message);
+      if (!signal.aborted) setError(e.message);
     } finally {
-      setLoading(false);
-      setLoadingMsg("Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…");
+      if (!signal.aborted) {
+        setLoading(false);
+        setLoadingMsg("Comparing policy against CMS, Joint Commission, DNV, and ISO 9001 standards…");
+      }
     }
   }
 
@@ -4081,8 +4085,9 @@ function Footer({ onTerms, onPrivacy }) {
 const TRIAL_END_PLANS = [
   {
     name: "CMS Compliance Suite",
-    price: "$299",
-    description: "One plan for every compliance professional and organization",
+    price: "Coming soon",
+    priceSuffix: "",
+    description: "Paid subscriptions are not active yet. Review your billing status or contact support for access help.",
     features: ["Unlimited staff users", "1 facility / CCN", "All compliance tools", "AI gap scanning", "Priority support"],
     highlight: true,
   },
@@ -4106,10 +4111,10 @@ function TrialEndedScreen({ billingUrl, onSignOut }) {
             Trial complete
           </div>
           <h1 style={{ margin: "0 0 12px", fontSize: "clamp(28px, 5vw, 44px)", lineHeight: 1.12, letterSpacing: "-1px" }}>
-            Your 30-day trial has ended — subscribe to continue
+            Your 30-day trial has ended
           </h1>
           <p style={{ margin: 0, color: "rgba(255,255,255,0.72)", fontSize: "16px", lineHeight: 1.6 }}>
-            Continue with the single $299/month plan to restore access to your compliance workspace.
+            Paid checkout is not active yet. Review your account status and contact support if you need continued access.
           </p>
         </div>
 
@@ -4131,7 +4136,7 @@ function TrialEndedScreen({ billingUrl, onSignOut }) {
               )}
               <h2 style={{ margin: "0 0 8px", fontSize: "20px" }}>{plan.name}</h2>
               <div style={{ fontSize: "38px", fontWeight: 900, lineHeight: 1, color: plan.highlight ? "#0B3D8E" : "#fff" }}>
-                {plan.price}<span style={{ fontSize: "14px", fontWeight: 500, opacity: 0.65 }}>/month</span>
+                {plan.price}{plan.priceSuffix && <span style={{ fontSize: "14px", fontWeight: 500, opacity: 0.65 }}>{plan.priceSuffix}</span>}
               </div>
               <p style={{ minHeight: "44px", margin: "12px 0 18px", fontSize: "13px", lineHeight: 1.55, opacity: 0.72 }}>
                 {plan.description}
@@ -4144,7 +4149,7 @@ function TrialEndedScreen({ billingUrl, onSignOut }) {
                 padding: "12px 16px", fontSize: "14px", fontWeight: 800,
                 background: plan.highlight ? "#0B3D8E" : "#fff",
                 color: plan.highlight ? "#fff" : "#0B3D8E",
-              }}>Continue for $299/month →</a>
+              }}>View billing and access options →</a>
             </section>
           ))}
         </div>
@@ -4275,9 +4280,9 @@ function AdminQuickPanel({ basePath, onClose }) {
             </div>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <a href={`${basePath}/admin`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "7px 16px", background: "#F5C542", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, fontSize: "12px", textDecoration: "none", whiteSpace: "nowrap" }}>
-              Full Dashboard →
-            </a>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "7px 16px", background: "#F5C542", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, fontSize: "12px", whiteSpace: "nowrap" }}>
+              Admin tools
+            </span>
             <button onClick={onClose} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "6px", color: "rgba(255,255,255,0.55)", fontSize: "16px", lineHeight: 1, padding: "4px 11px", cursor: "pointer" }}>×</button>
           </div>
         </div>
@@ -4310,10 +4315,10 @@ function AdminQuickPanel({ basePath, onClose }) {
             </button>
           ))}
           <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.22)", margin: "0 2px" }}>·</span>
-          <a href={`${basePath}/admin`} style={{ fontSize: "12px", color: "rgba(255,255,255,0.45)", textDecoration: "none", fontWeight: 600 }}>Manage clients · Team access · Email reports →</a>
+          <a href="#admin-access" style={{ fontSize: "12px", color: "rgba(255,255,255,0.6)", textDecoration: "none", fontWeight: 600 }}>Manage complimentary access below ↓</a>
         </div>
 
-        <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+        <div id="admin-access" style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
           <div style={{ color: "#fff", fontWeight: 800, fontSize: "13px" }}>Complimentary workspace access</div>
           <div style={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", margin: "3px 0 10px" }}>
             Selected users receive full workspace access without payment. This does not grant admin privileges.
@@ -4396,14 +4401,16 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
     let cancelled = false;
     let requestGeneration = 0;
 
-    async function resolveIdentity() {
+    async function resolveIdentity({ showLoading = false } = {}) {
       const generation = ++requestGeneration;
-      setIdentityState({
-        requestKey: explicitOwnerId,
-        ownerId: clerkUserId || undefined,
-        accountData: null,
-        status: "loading",
-      });
+      if (showLoading) {
+        setIdentityState({
+          requestKey: explicitOwnerId,
+          ownerId: clerkUserId || undefined,
+          accountData: null,
+          status: "loading",
+        });
+      }
       try {
         const response = await fetch("/api/accounts/me", {
           credentials: "include",
@@ -4442,7 +4449,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
       }
     }
 
-    void resolveIdentity();
+    void resolveIdentity({ showLoading: true });
     const handleFocus = () => { void resolveIdentity(); };
     const handleVisibility = () => {
       if (document.visibilityState === "visible") void resolveIdentity();

@@ -25,6 +25,11 @@ export interface GenerateInput {
      * @maximum 8192
      */
   maxTokens: number;
+  /**
+     * Optional institution key (e.g. "hospital"). When provided the server pre-fetches the live eCFR regulatory text and injects it into the system prompt.
+     * @maxLength 50
+     */
+  institutionValue?: string;
 }
 
 export type GenerateResponseContentItem = {
@@ -32,11 +37,40 @@ export type GenerateResponseContentItem = {
   text: string;
 };
 
+export type GenerationDataSource = {
+  kind: 'ecfr';
+  fetchDate: string;
+} | {
+  kind: 'ai';
+};
+
 export interface GenerateResponse {
   content: GenerateResponseContentItem[];
+  dataSource: GenerationDataSource;
 }
 
 export interface ErrorResponse {
   error: string;
+}
+
+export type GapHistoryEntryResult = { [key: string]: unknown };
+
+export interface GapHistoryEntry {
+  /** @maxLength 100 */
+  id: string;
+  /** @maxLength 100 */
+  institution: string;
+  /** @maxLength 200 */
+  institutionLabel: string;
+  /** @maxLength 300 */
+  topic: string;
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  score: number | null;
+  timestamp: string;
+  result: GapHistoryEntryResult;
 }
 

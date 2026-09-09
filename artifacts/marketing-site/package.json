@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
-    "prebuild": "pnpm run test:routing && pnpm run test:clerk-credentials && pnpm run test:bundle-boundary",
+    "prebuild": "pnpm run test:routing && pnpm run test:clerk-credentials && pnpm run test:bundle-boundary && pnpm run test:generation",
     "build": "vite build --config vite.config.ts && pnpm run check:bundle-boundary",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "test:routing": "node --test scripts/auth-routing-contract.test.mjs",
     "test:clerk-credentials": "node --test scripts/clerk-credential-validation.test.mjs",
     "test:bundle-boundary": "node --test scripts/public-bundle-boundary.test.mjs",
+    "test:generation": "node --test ../../generation-client.test.mjs",
     "check:bundle-boundary": "node scripts/check-public-bundle-boundary.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

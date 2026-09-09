@@ -42,11 +42,15 @@ paths:
               $ref: "#/components/schemas/GenerateInput"
       responses:
         "200":
-          description: Anthropic response content
+          description: |
+            Server-Sent Event stream. Each event contains a JSON data object.
+            Progress events keep the request active; the terminal event is
+            either `result` with GenerateResponse fields or `error` with an
+            ErrorResponse field.
           content:
-            application/json:
+            text/event-stream:
               schema:
-                $ref: "#/components/schemas/GenerateResponse"
+                type: string
         "400":
           description: Invalid generation request
           content:
@@ -55,6 +59,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "502":
           description: Upstream generation service error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "504":
+          description: Upstream generation service timeout
           content:
             application/json:
               schema:
@@ -151,8 +161,32 @@ components:
             required:
               - type
               - text
+        dataSource:
+          $ref: "#/components/schemas/GenerationDataSource"
       required:
         - content
+        - dataSource
+    GenerationDataSource:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              const: ecfr
+            fetchDate:
+              type: string
+          required:
+            - kind
+            - fetchDate
+        - type: object
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              const: ai
+          required:
+            - kind
     ErrorResponse:
       type: object
       properties:
@@ -177,9 +211,10 @@ components:
           type: string
           maxLength: 300
         score:
-          type: [integer, "null"]
+          type: [number, "null"]
           minimum: 0
           maximum: 100
+          multipleOf: 1
         timestamp:
           type: string
           format: date-time

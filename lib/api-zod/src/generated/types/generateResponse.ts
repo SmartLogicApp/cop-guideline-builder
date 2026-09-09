@@ -6,7 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { GenerateResponseContentItem } from './generateResponseContentItem';
+import type { GenerationDataSource } from './generationDataSource';
 
 export interface GenerateResponse {
   content: GenerateResponseContentItem[];
+  dataSource: GenerationDataSource;
 }

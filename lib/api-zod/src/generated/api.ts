@@ -27,21 +27,108 @@ export const generateWithAnthropicBodyUserContentMax = 30000;
 
 export const generateWithAnthropicBodyMaxTokensMax = 8192;
 
+export const generateWithAnthropicBodyInstitutionValueMax = 50;
+
 
 
 export const GenerateWithAnthropicBody = zod.object({
   "systemPrompt": zod.string().min(1).max(generateWithAnthropicBodySystemPromptMax),
   "userContent": zod.string().min(1).max(generateWithAnthropicBodyUserContentMax),
   "maxTokens": zod.number().min(1).max(generateWithAnthropicBodyMaxTokensMax),
-  /** Optional: institution key (e.g. "hospital") triggers live eCFR data fetch */
-  "institutionValue": zod.string().optional(),
+  "institutionValue": zod.string().max(generateWithAnthropicBodyInstitutionValueMax).optional().describe('Optional institution key (e.g. \"hospital\"). When provided the server pre-fetches the live eCFR regulatory text and injects it into the system prompt.')
 })
 
-export const GenerateWithAnthropicResponse = zod.object({
-  "content": zod.array(zod.object({
-  "type": zod.string(),
-  "text": zod.string()
-}))
+export const GenerateWithAnthropicResponse = zod.unknown()
+
+
+/**
+ * @summary List gap analysis history
+ */
+export const listGapHistoryResponseIdMax = 100;
+
+export const listGapHistoryResponseInstitutionMax = 100;
+
+export const listGapHistoryResponseInstitutionLabelMax = 200;
+
+export const listGapHistoryResponseTopicMax = 300;
+
+export const listGapHistoryResponseScoreMin = 0;
+export const listGapHistoryResponseScoreMax = 100;
+export const listGapHistoryResponseScoreMultipleOf = 1;
+
+
+
+export const ListGapHistoryResponseItem = zod.object({
+  "id": zod.string().max(listGapHistoryResponseIdMax),
+  "institution": zod.string().max(listGapHistoryResponseInstitutionMax),
+  "institutionLabel": zod.string().max(listGapHistoryResponseInstitutionLabelMax),
+  "topic": zod.string().max(listGapHistoryResponseTopicMax),
+  "score": zod.number().min(listGapHistoryResponseScoreMin).max(listGapHistoryResponseScoreMax).multipleOf(listGapHistoryResponseScoreMultipleOf).nullable(),
+  "timestamp": zod.coerce.date(),
+  "result": zod.record(zod.string(), zod.unknown())
 })
+export const ListGapHistoryResponse = zod.array(ListGapHistoryResponseItem)
+
+
+/**
+ * @summary Save a gap analysis entry
+ */
+export const createGapHistoryBodyIdMax = 100;
+
+export const createGapHistoryBodyInstitutionMax = 100;
+
+export const createGapHistoryBodyInstitutionLabelMax = 200;
+
+export const createGapHistoryBodyTopicMax = 300;
+
+export const createGapHistoryBodyScoreMin = 0;
+export const createGapHistoryBodyScoreMax = 100;
+export const createGapHistoryBodyScoreMultipleOf = 1;
+
+
+
+export const CreateGapHistoryBody = zod.object({
+  "id": zod.string().max(createGapHistoryBodyIdMax),
+  "institution": zod.string().max(createGapHistoryBodyInstitutionMax),
+  "institutionLabel": zod.string().max(createGapHistoryBodyInstitutionLabelMax),
+  "topic": zod.string().max(createGapHistoryBodyTopicMax),
+  "score": zod.number().min(createGapHistoryBodyScoreMin).max(createGapHistoryBodyScoreMax).multipleOf(createGapHistoryBodyScoreMultipleOf).nullable(),
+  "timestamp": zod.coerce.date(),
+  "result": zod.record(zod.string(), zod.unknown())
+})
+
+export const createGapHistoryResponseIdMax = 100;
+
+export const createGapHistoryResponseInstitutionMax = 100;
+
+export const createGapHistoryResponseInstitutionLabelMax = 200;
+
+export const createGapHistoryResponseTopicMax = 300;
+
+export const createGapHistoryResponseScoreMin = 0;
+export const createGapHistoryResponseScoreMax = 100;
+export const createGapHistoryResponseScoreMultipleOf = 1;
+
+
+
+export const CreateGapHistoryResponse = zod.object({
+  "id": zod.string().max(createGapHistoryResponseIdMax),
+  "institution": zod.string().max(createGapHistoryResponseInstitutionMax),
+  "institutionLabel": zod.string().max(createGapHistoryResponseInstitutionLabelMax),
+  "topic": zod.string().max(createGapHistoryResponseTopicMax),
+  "score": zod.number().min(createGapHistoryResponseScoreMin).max(createGapHistoryResponseScoreMax).multipleOf(createGapHistoryResponseScoreMultipleOf).nullable(),
+  "timestamp": zod.coerce.date(),
+  "result": zod.record(zod.string(), zod.unknown())
+})
+
+
+/**
+ * @summary Delete a gap analysis entry
+ */
+export const DeleteGapHistoryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteGapHistoryResponse = zod.void()
 
 

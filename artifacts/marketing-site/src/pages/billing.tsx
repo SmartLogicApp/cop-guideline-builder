@@ -1,0 +1,277 @@
+import { useCallback, useEffect, useState } from 'react';
+import { useAuth } from '@clerk/react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  CircleDollarSign,
+  FileClock,
+  LoaderCircle,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
+
+type SubscriptionData = {
+  subscription: null | {
+    status: string | null;
+    trialEndsAt: string | null;
+    isActive: boolean;
+    accessSource: 'admin' | 'complimentary' | 'subscription';
+    hasComplimentaryAccess: boolean;
+    daysLeftInTrial: number;
+  };
+  isActive?: boolean;
+  accessSource?: 'admin' | 'complimentary' | 'subscription';
+  paymentAcceptanceEnabled: boolean;
+};
+
+type TokenUsageData = {
+  currentMonth: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    requestCount: number;
+    totalAdditionalChargeUsd: number;
+    monthLabel: string;
+  };
+};
+
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+const workspaceUrl = `${basePath}/app`;
+const supportEmail = 'CMSComplianceGaurdian@outlook.com';
+
+function formatNumber(value: number) {
+  return value.toLocaleString('en-US');
+}
+
+function formatCharge(value: number) {
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+}
+
+function subscriptionLabel(data: SubscriptionData | null) {
+  if (!data) return 'Unavailable';
+  const subscription = data.subscription;
+  const source = subscription?.accessSource ?? data.accessSource;
+
+  if (source === 'admin') return 'Administrative access';
+  if (source === 'complimentary') return 'Complimentary access';
+  if (subscription?.status === 'trial' && subscription.daysLeftInTrial > 0) {
+    return `Free trial · ${subscription.daysLeftInTrial} day${subscription.daysLeftInTrial === 1 ? '' : 's'} left`;
+  }
+  if (subscription?.isActive || data.isActive) return 'Active';
+  return 'No active plan';
+}
+
+export default function BillingPage() {
+  const { getToken } = useAuth();
+  const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
+  const [usage, setUsage] = useState<TokenUsageData['currentMonth'] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const paymentAcceptanceEnabled = subscription?.paymentAcceptanceEnabled === true;
+
+  const loadBilling = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Your secure session is unavailable. Please sign in again.');
+
+      const headers = { Authorization: `Bearer ${token}` };
+      const [subscriptionResponse, usageResponse] = await Promise.all([
+        fetch('/api/billing/subscription', { headers, cache: 'no-store' }),
+        fetch('/api/billing/token-usage', { headers, cache: 'no-store' }),
+      ]);
+
+      if (!subscriptionResponse.ok || !usageResponse.ok) {
+        throw new Error('We could not load your billing details. Please try again.');
+      }
+
+      const [subscriptionBody, usageBody] = await Promise.all([
+        subscriptionResponse.json() as Promise<SubscriptionData>,
+        usageResponse.json() as Promise<TokenUsageData>,
+      ]);
+      setSubscription(subscriptionBody);
+      setUsage(usageBody.currentMonth);
+    } catch (loadError) {
+      setError(loadError instanceof Error
+        ? loadError.message
+        : 'We could not load your billing details. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getToken]);
+
+  useEffect(() => {
+    void loadBilling();
+  }, [loadBilling]);
+
+  return (
+    <main className="min-h-[100dvh] bg-slate-50 px-4 py-8 sm:px-6 sm:py-12">
+      <div className="mx-auto max-w-5xl">
+        <a
+          href={workspaceUrl}
+          className="inline-flex items-center gap-2 text-sm font-semibold text-teal-800 hover:text-teal-950"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Back to compliance workspace
+        </a>
+
+        <div className="mt-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-teal-700">
+              Account
+            </p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
+              Billing and usage
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Review your current access and monthly AI activity.
+            </p>
+          </div>
+          {!isLoading && !error && (
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800">
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+              {subscriptionLabel(subscription)}
+            </div>
+          )}
+        </div>
+
+        {isLoading && (
+          <div
+            className="mt-8 flex min-h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white"
+            role="status"
+            aria-live="polite"
+          >
+            <LoaderCircle className="mr-3 size-5 animate-spin text-teal-700" aria-hidden="true" />
+            <span className="text-sm font-medium text-slate-700">Loading billing details…</span>
+          </div>
+        )}
+
+        {!isLoading && error && (
+          <section
+            className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-6"
+            role="alert"
+          >
+            <div className="flex gap-3">
+              <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-700" aria-hidden="true" />
+              <div>
+                <h2 className="font-semibold text-red-950">Billing details unavailable</h2>
+                <p className="mt-1 text-sm leading-6 text-red-800">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadBilling()}
+                  className="mt-4 rounded-lg bg-red-800 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900"
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!isLoading && !error && (
+          <>
+            <section className="mt-8 grid gap-4 sm:grid-cols-3">
+              <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <ShieldCheck className="size-5 text-teal-700" aria-hidden="true" />
+                <p className="mt-4 text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Current access
+                </p>
+                <p className="mt-1 text-lg font-bold text-slate-950">
+                  {subscriptionLabel(subscription)}
+                </p>
+              </article>
+              <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <Sparkles className="size-5 text-teal-700" aria-hidden="true" />
+                <p className="mt-4 text-xs font-bold uppercase tracking-wider text-slate-500">
+                  AI requests
+                </p>
+                <p className="mt-1 text-lg font-bold text-slate-950">
+                  {formatNumber(usage?.requestCount ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">{usage?.monthLabel ?? 'This month'}</p>
+              </article>
+              <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <FileClock className="size-5 text-teal-700" aria-hidden="true" />
+                <p className="mt-4 text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Total tokens
+                </p>
+                <p className="mt-1 text-lg font-bold text-slate-950">
+                  {formatNumber(usage?.totalTokens ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {formatNumber(usage?.inputTokens ?? 0)} input · {formatNumber(usage?.outputTokens ?? 0)} output
+                </p>
+              </article>
+            </section>
+
+            <section
+              className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 sm:p-8"
+              data-payment-acceptance={paymentAcceptanceEnabled ? 'enabled' : 'disabled'}
+            >
+              <div className="flex flex-col gap-5 sm:flex-row">
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-100">
+                  <CircleDollarSign className="size-6 text-amber-800" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-amber-950">
+                    {paymentAcceptanceEnabled
+                      ? 'Payment setup is enabled, but no purchase options are available'
+                      : 'Paid billing is not active yet'}
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-amber-900">
+                    {paymentAcceptanceEnabled
+                      ? 'No checkout action is available for this account. A payment method will only be requested after plans, payment processing, and updated billing terms are fully configured.'
+                      : 'Stripe checkout, automatic renewals, and payment collection are not currently enabled. No payment method will be requested and no charge will be created from this page. Updated pricing and billing terms will be presented before paid subscriptions launch.'}
+                  </p>
+                  <button
+                    type="button"
+                    disabled
+                    className="mt-5 cursor-not-allowed rounded-lg border border-amber-300 bg-amber-100 px-4 py-2 text-sm font-bold text-amber-800 opacity-80"
+                  >
+                    {paymentAcceptanceEnabled
+                      ? 'No payment plans available'
+                      : 'Payment acceptance not enabled'}
+                  </button>
+                  <p className="mt-4 text-sm text-amber-900">
+                    Need help with access?{' '}
+                    <a
+                      href={`mailto:${supportEmail}?subject=CMS%20Compliance%20Suite%20billing%20support`}
+                      className="font-bold underline underline-offset-4 hover:text-amber-950"
+                    >
+                      Contact support
+                    </a>
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-950">AI usage estimate</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    This is an activity estimate only. Usage is not currently invoiced.
+                  </p>
+                </div>
+                <div className="text-left sm:text-right">
+                  <p className="text-3xl font-bold text-slate-950">
+                    ${formatCharge(usage?.totalAdditionalChargeUsd ?? 0)}
+                  </p>
+                  <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Estimated additional usage
+                  </p>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}

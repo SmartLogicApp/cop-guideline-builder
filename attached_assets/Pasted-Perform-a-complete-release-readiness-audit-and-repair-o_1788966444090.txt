@@ -1,0 +1,220 @@
+Perform a complete release-readiness audit and repair of this web application.
+
+Project:
+CMS Compliance Suite
+
+Live URL:
+https://cop-guideline-builder--smartapplogic.replit.app/
+
+The goal is to make the application reliable both in Replit Preview and on the published live URL. Do not only inspect the code or confirm that the build succeeds. Test the actual user experience in a browser and verify that important actions work after deployment.
+
+Known problems:
+- Compliance Guidelines does not generate a result.
+- Policy Templates does not generate a result.
+- Inspection Readiness does not generate a result.
+- Policy Gap Scanner does not generate a result.
+- Clicking Billing currently shows a 404.
+- Previous publishes reported “Failed to validate database migrations.”
+- A recent republish appeared to remain stuck on an hourglass.
+
+Work autonomously through the full audit. Do not stop after finding the first bug.
+
+## Phase 1: Inventory the application
+
+Inspect the entire project and create an internal inventory of:
+
+- All frontend routes and pages.
+- All backend/API routes.
+- All navigation links.
+- All buttons, tabs, cards, dropdowns, forms, and clickable controls.
+- All database operations and migration files.
+- All external services and AI-generation providers.
+- All authentication and authorization flows.
+- All billing/subscription flows.
+- All deployment, build, and start commands.
+- All required environment variables and secrets.
+
+Search the codebase for:
+- TODO, FIXME, placeholder, mock, fake, disabled, coming soon, and unimplemented code.
+- Empty click handlers.
+- Buttons without handlers.
+- Links pointing to routes that do not exist.
+- API calls to localhost or development-only URLs.
+- API calls that do not have loading/error handling.
+- Routes that return 404 or are only implemented in Preview.
+
+## Phase 2: Test Replit Preview
+
+Use the application in Replit Preview like a real user.
+
+Test every discoverable navigation path and interactive control, including:
+
+- Homepage navigation.
+- Compliance Guidelines.
+- Policy Templates.
+- Inspection Readiness.
+- Policy Gap Scanner.
+- Billing.
+- Sign In.
+- Sign Up or Free Trial.
+- Terms.
+- Privacy.
+- Contact links.
+- Settings/account pages.
+- Logout.
+- Any download, export, save, edit, delete, search, filter, or submit actions.
+
+For every test, inspect:
+
+- Browser console errors.
+- Failed network requests.
+- HTTP status codes.
+- Request payloads.
+- Response payloads.
+- Loading states.
+- Error states.
+- Whether the expected result appears in the UI.
+- Whether the URL and browser history behave correctly.
+- Whether refreshing the page keeps the route working.
+
+Do not consider a tab functional merely because it changes color or opens a panel.
+
+## Phase 3: Fix the four core generation features
+
+The following four features must perform real end-to-end operations:
+
+1. Compliance Guidelines
+2. Policy Templates
+3. Inspection Readiness
+4. Policy Gap Scanner
+
+For each feature:
+
+- Verify the trigger button/form has a working event handler.
+- Verify required inputs are collected and validated.
+- Verify a real request is sent.
+- Verify the request reaches a registered backend route.
+- Verify the backend calls the intended generation service.
+- Verify the response is valid JSON or the expected response type.
+- Verify the result is rendered in the UI.
+- Add a visible loading state.
+- Add a visible error state.
+- Prevent duplicate submissions.
+- Do not return hardcoded or fake success data.
+- Do not silently swallow errors.
+
+If these features share a broken API client, provider, database connection, or generation service, repair the shared cause instead of adding four unrelated patches.
+
+Use the existing AI/provider integration if one exists. If a required secret is missing, use Replit’s environment/secrets configuration without printing the secret value or asking me to paste credentials into chat.
+
+## Phase 4: Fix Billing completely
+
+Investigate the Billing 404 specifically.
+
+- Identify the exact URL/path opened by the Billing click.
+- Confirm whether that route exists in the frontend router.
+- Confirm whether the corresponding backend/API route exists.
+- Check whether the link is pointing to an outdated, misspelled, or placeholder route.
+- Check browser and server logs for the exact failure.
+- Fix the route and its destination.
+- If billing is not implemented yet, do not pretend it is functional. Create a clear non-404 billing page or connect the link to the intended existing billing flow.
+- If a payment provider is configured, use test/sandbox mode only.
+- Do not create real charges, real subscriptions, refunds, or destructive billing actions during testing.
+- Do not expose payment credentials in the frontend.
+
+Test:
+- Opening Billing directly.
+- Reaching Billing from every navigation location.
+- Refreshing the Billing page.
+- Returning to Billing after signing in.
+- Any available test-mode subscription or plan-selection flow.
+
+## Phase 5: Diagnose database migrations and deployment
+
+Inspect the deployment logs and identify the first real error behind:
+
+“Failed to validate database migrations.”
+
+Determine whether the cause is:
+
+- Missing production database environment variables.
+- Database connection failure or timeout.
+- Migration history mismatch.
+- Missing migration files.
+- Modified or deleted applied migrations.
+- A migration lock.
+- A migration command waiting for interactive input.
+- A migration command that never exits.
+- Incorrect deployment configuration.
+
+Fix the issue safely:
+
+- Use a noninteractive, one-shot migration command.
+- Ensure the build command finishes.
+- Ensure migrations finish and exit successfully.
+- Ensure the production start command is separate from build and migration commands.
+- Do not use watch mode during deployment.
+- Do not reset, drop, truncate, or recreate the production database.
+- Do not delete or rewrite previously applied migration history.
+- Do not run destructive schema changes without stopping and explaining the exact risk.
+
+If the production database state is ambiguous, preserve the data and report the safe repair required instead of forcing a reset.
+
+## Phase 6: Test the live deployment
+
+After fixing the code and deployment configuration, publish one new deployment.
+
+Do not start multiple simultaneous publishes. If a publish hangs, diagnose the exact hanging command before trying again.
+
+After the deployment completes, test the live URL directly—not only Replit Preview:
+
+https://cop-guideline-builder--smartapplogic.replit.app/
+
+Verify:
+
+- The live deployment is serving the new version.
+- The homepage loads.
+- Every navigation link works.
+- No important route returns 404.
+- Billing works or displays an honest, functional unavailable state.
+- Sign In and Sign Up/Free Trial do not lead to unimplemented routes.
+- Compliance Guidelines generates a real result.
+- Policy Templates generates a real result.
+- Inspection Readiness generates a real result.
+- Policy Gap Scanner generates a real result.
+- Database-backed actions work.
+- API requests use production-safe URLs.
+- No browser console errors remain on critical flows.
+- No failed network requests remain on critical flows.
+- Refreshing each important route works.
+- Error messages are visible and useful when invalid input is submitted.
+- The application works at common mobile and desktop widths.
+
+Use safe test/sample data only. Do not send real customer information, PHI, payment details, or production secrets.
+
+## Completion criteria
+
+Do not say the task is complete because the app builds or because the tabs open.
+
+The task is complete only when:
+
+- All four generation features produce and display real results.
+- Billing no longer produces an unexplained 404.
+- Preview and the live URL both pass the critical-flow tests.
+- The database migration validation succeeds.
+- The deployment completes normally.
+- No critical browser console or network errors remain.
+- Any blocked test is documented with the exact reason.
+
+At the end, provide a report containing:
+
+- Root cause of the four generation failures.
+- Root cause of the Billing 404.
+- Root cause of the migration/deployment problem.
+- Files changed.
+- Routes and API endpoints tested.
+- Tests and commands run.
+- Preview results.
+- Live deployment results.
+- Any missing environment configuration, without revealing secret values.
+- Any remaining limitations.

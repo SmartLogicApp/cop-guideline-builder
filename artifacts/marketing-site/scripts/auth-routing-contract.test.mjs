@@ -7,6 +7,8 @@ const authenticatedAppSource = await readFile(new URL('../src/AuthenticatedApp.t
 const globalStyles = await readFile(new URL('../src/index.css', import.meta.url), 'utf8');
 const authStyles = await readFile(new URL('../src/auth.css', import.meta.url), 'utf8');
 const landingSource = await readFile(new URL('../src/pages/landing.tsx', import.meta.url), 'utf8');
+const billingSource = await readFile(new URL('../src/pages/billing.tsx', import.meta.url), 'utf8');
+const workspaceSource = await readFile(new URL('../../../index.jsx', import.meta.url), 'utf8');
 
 function componentBody(source, functionName) {
   const start = source.indexOf(`function ${functionName}(`);
@@ -50,11 +52,35 @@ test('Clerk and authenticated routes stay behind a dynamic import', () => {
   assert.match(authenticatedAppSource, /<Route path="\/sign-in\/\*\?" component=\{SignInPage\} \/>/);
   assert.match(authenticatedAppSource, /<Route path="\/sign-up\/\*\?" component=\{SignUpPage\} \/>/);
   assert.match(authenticatedAppSource, /<Route path="\/app" component=\{ComplianceWorkspace\} \/>/);
+  assert.match(authenticatedAppSource, /<Route path="\/billing" component=\{Billing\} \/>/);
   assert.match(authenticatedAppSource, /<ClerkLoading>\s*<ClerkLoadingState \/>/);
   assert.match(authenticatedAppSource, /<ClerkLoaded>\s*<QueryClientProvider/);
   assert.doesNotMatch(globalStyles, /@clerk\/themes/);
   assert.match(authStyles, /@clerk\/themes\/shadcn\.css/);
   assert.match(authenticatedAppSource, /import ['"]\.\/auth\.css['"]/);
+});
+
+test('billing is an authenticated route with an honest pre-launch state', () => {
+  const routeBoundary = componentBody(appSource, 'RouteBoundary');
+  const billing = componentBody(authenticatedAppSource, 'Billing');
+
+  assert.match(routeBoundary, /normalizedLocation === ['"]\/billing['"]/);
+  assert.match(billing, /<Show when="signed-in">\s*<BillingPage \/>/);
+  assert.match(billing, /<Show when="signed-out"><RedirectToSignIn \/><\/Show>/);
+  assert.match(billingSource, /\/api\/billing\/subscription/);
+  assert.match(billingSource, /\/api\/billing\/token-usage/);
+  assert.match(billingSource, /Paid billing is not active yet/);
+  assert.match(
+    billingSource,
+    /subscription\?\.paymentAcceptanceEnabled === true/,
+  );
+  assert.match(billingSource, /data-payment-acceptance=/);
+  assert.match(billingSource, /Payment acceptance not enabled/);
+  assert.doesNotMatch(billingSource, /\/api\/billing\/checkout/);
+  assert.doesNotMatch(billingSource, /\/api\/billing\/portal/);
+  assert.doesNotMatch(workspaceSource, /href=\{`\$\{basePath\}\/admin`\}/);
+  assert.doesNotMatch(workspaceSource, /Continue for \$299\/month/);
+  assert.match(workspaceSource, /View billing and access options/);
 });
 
 test('Clerk path routing keeps callback subpaths and post-auth app redirects valid', () => {

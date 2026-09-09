@@ -17,6 +17,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
+import BillingPage from '@/pages/billing';
 import { Route, Switch, useLocation } from 'wouter';
 import './auth.css';
 
@@ -180,12 +181,24 @@ function ComplianceWorkspace() {
   );
 }
 
+function Billing() {
+  return (
+    <>
+      <Show when="signed-in">
+        <BillingPage />
+      </Show>
+      <Show when="signed-out"><RedirectToSignIn /></Show>
+    </>
+  );
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/sign-in/*?" component={SignInPage} />
       <Route path="/sign-up/*?" component={SignUpPage} />
       <Route path="/app" component={ComplianceWorkspace} />
+      <Route path="/billing" component={Billing} />
       <Route component={NotFound} />
     </Switch>
   );

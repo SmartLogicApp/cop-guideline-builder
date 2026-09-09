@@ -21,8 +21,8 @@ import type {
 
 import type {
   ErrorResponse,
+  GapHistoryEntry,
   GenerateInput,
-  GenerateResponse,
   HealthStatus
 } from './api.schemas';
 
@@ -143,9 +143,9 @@ export const getGenerateWithAnthropicUrl = () => {
  * Proxies a structured generation request to Anthropic without exposing credentials to the browser.
  * @summary Generate structured compliance content
  */
-export const generateWithAnthropic = async (generateInput: GenerateInput, options?: Parameters<typeof customFetch>[1]): Promise<GenerateResponse> => {
+export const generateWithAnthropic = async (generateInput: GenerateInput, options?: Parameters<typeof customFetch>[1]): Promise<string> => {
 
-  return customFetch<GenerateResponse>(getGenerateWithAnthropicUrl(),
+  return customFetch<string>(getGenerateWithAnthropicUrl(),
   {
     ...options,
     method: 'POST',
@@ -201,5 +201,224 @@ export const useGenerateWithAnthropic = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getGenerateWithAnthropicMutationOptions(options));
+    }
+
+export const getListGapHistoryUrl = () => {
+
+
+
+
+  return `/api/gap-history`
+}
+
+/**
+ * @summary List gap analysis history
+ */
+export const listGapHistory = async ( options?: Parameters<typeof customFetch>[1]): Promise<GapHistoryEntry[]> => {
+
+  return customFetch<GapHistoryEntry[]>(getListGapHistoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGapHistoryQueryKey = () => {
+    return [
+    `/api/gap-history`
+    ] as const;
+    }
+
+
+export const getListGapHistoryQueryOptions = <TData = Awaited<ReturnType<typeof listGapHistory>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGapHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGapHistoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGapHistory>>> = ({ signal }) => listGapHistory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGapHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGapHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof listGapHistory>>>
+export type ListGapHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List gap analysis history
+ */
+
+export function useListGapHistory<TData = Awaited<ReturnType<typeof listGapHistory>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGapHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGapHistoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateGapHistoryUrl = () => {
+
+
+
+
+  return `/api/gap-history`
+}
+
+/**
+ * @summary Save a gap analysis entry
+ */
+export const createGapHistory = async (gapHistoryEntry: GapHistoryEntry, options?: Parameters<typeof customFetch>[1]): Promise<GapHistoryEntry> => {
+
+  return customFetch<GapHistoryEntry>(getCreateGapHistoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(gapHistoryEntry)
+  }
+);}
+
+
+
+
+
+export const getCreateGapHistoryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGapHistory>>, TError,{data: BodyType<GapHistoryEntry>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createGapHistory>>, TError,{data: BodyType<GapHistoryEntry>}, TContext> => {
+
+const mutationKey = ['createGapHistory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGapHistory>>, {data: BodyType<GapHistoryEntry>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createGapHistory(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateGapHistoryMutationResult = NonNullable<Awaited<ReturnType<typeof createGapHistory>>>
+    export type CreateGapHistoryMutationBody = BodyType<GapHistoryEntry>
+    export type CreateGapHistoryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Save a gap analysis entry
+ */
+export const useCreateGapHistory = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGapHistory>>, TError,{data: BodyType<GapHistoryEntry>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createGapHistory>>,
+        TError,
+        {data: BodyType<GapHistoryEntry>},
+        TContext
+      > => {
+      return useMutation(getCreateGapHistoryMutationOptions(options));
+    }
+
+export const getDeleteGapHistoryUrl = (id: string,) => {
+
+
+
+
+  return `/api/gap-history/${id}`
+}
+
+/**
+ * @summary Delete a gap analysis entry
+ */
+export const deleteGapHistory = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteGapHistoryUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteGapHistoryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGapHistory>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteGapHistory>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteGapHistory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteGapHistory>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteGapHistory(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteGapHistoryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteGapHistory>>>
+
+    export type DeleteGapHistoryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a gap analysis entry
+ */
+export const useDeleteGapHistory = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGapHistory>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteGapHistory>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteGapHistoryMutationOptions(options));
     }
 

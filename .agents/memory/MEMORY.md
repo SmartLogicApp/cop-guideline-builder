@@ -14,3 +14,5 @@
 - [Build-time smoke isolation](build-time-smoke-isolation.md) — compiled-server smoke checks must use a minimal, secret-free environment and explicitly suppress mutating startup integrations.
 - [Process-wide graceful shutdown](process-wide-graceful-shutdown.md) — shutdown deadlines must bound every resource and handle keep-alive sockets that become idle after draining begins.
 - [Production schema ownership](production-schema-ownership.md) — request-serving processes must never run schema migrations; managed schema changes belong to Replit Publish.
+- [Long generation transport](long-generation-transport.md) — keep long AI work on one authenticated SSE request, and never unmount active tools during background access refreshes.
+- [OpenAPI codegen compatibility](openapi-codegen-compatibility.md) — preserve the workspace’s Orval/YAML/Zod compatibility constraints when changing schemas or package overrides.

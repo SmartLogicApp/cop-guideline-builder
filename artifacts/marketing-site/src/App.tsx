@@ -26,6 +26,7 @@ function RouteBoundary() {
     ? location.replace(/\/+$/, '')
     : location;
   const needsAuth = normalizedLocation === '/app'
+    || normalizedLocation === '/billing'
     || normalizedLocation === '/sign-in'
     || normalizedLocation.startsWith('/sign-in/')
     || normalizedLocation === '/sign-up'

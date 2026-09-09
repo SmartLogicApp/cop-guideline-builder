@@ -1,0 +1,117 @@
+Fix the four core generation features in the CMS Compliance Suite. Do not focus only on the Policy Gap Scanner.
+
+The following four functions must all work end-to-end:
+
+1. Compliance Guidelines
+2. Policy Templates
+3. Inspection Readiness
+4. Policy Gap Scanner
+
+Current behavior:
+- The tabs/buttons are visible and clickable.
+- Clicking them does not generate or display anything.
+- The Policy Gap Scanner is visually selected in the UI, but no result appears.
+- The other three generation features have the same problem.
+- The app has also reported “Failed to validate database migrations,” and the latest republish became stuck on an hourglass.
+
+Published URL:
+https://cop-guideline-builder--smartapplogic.replit.app/
+
+Treat this as a production functionality bug, not a styling issue.
+
+Investigation:
+
+1. Inspect the project and identify the components, forms, buttons, event handlers, API clients, backend routes, AI/service integrations, and database operations for all four features.
+2. Build a feature matrix showing, for each feature:
+   - Frontend component
+   - Trigger button or form
+   - Expected request URL and HTTP method
+   - Backend route/controller
+   - Required request body
+   - Generation service used
+   - Expected response format
+   - UI component that should render the result
+3. Reproduce each feature and inspect browser console and network logs.
+4. Identify the shared root cause if all four features depend on the same broken API client, backend route, environment variable, AI provider, database connection, or deployment process.
+5. Do not assume that changing the selected tab is enough. Each feature must send a real request or perform its intended generation operation.
+
+Implementation requirements:
+
+1. Wire every button and form to a real handler:
+   - Compliance Guidelines must generate and display compliance guidance.
+   - Policy Templates must generate and display a usable policy template.
+   - Inspection Readiness must generate and display a readiness checklist/assessment.
+   - Policy Gap Scanner must analyze submitted policy content and display identified gaps and recommendations.
+2. Ensure every frontend request uses a valid production API path or relative URL. Remove any localhost or development-only API URLs.
+3. Ensure every backend route:
+   - Is registered by the server.
+   - Accepts the expected request body.
+   - Validates required inputs.
+   - Calls the intended generation service.
+   - Returns valid JSON.
+   - Handles errors with an appropriate HTTP status and useful message.
+4. Ensure the frontend:
+   - Shows a loading state while generating.
+   - Prevents duplicate submissions while loading.
+   - Displays the generated result on success.
+   - Displays a visible error message on failure.
+   - Does not silently ignore rejected or failed requests.
+5. If the four features share a generation service, create or repair that shared service instead of duplicating four fragile implementations.
+6. Use the project’s existing AI/provider integration if one exists.
+7. If a required API key or provider configuration is missing:
+   - Check Replit environment/secrets configuration without printing secret values.
+   - Do not hardcode credentials.
+   - Do not fake generated results.
+   - Clearly identify the missing configuration and configure it using the proper secrets flow.
+8. If the generation features depend on a database:
+   - Diagnose the migration validation failure from the deployment logs.
+   - Make migrations production-safe and noninteractive.
+   - Preserve existing migration history.
+   - Do not reset, drop, truncate, or recreate the production database.
+   - Do not edit previously applied migration files.
+9. Diagnose the stuck republish before starting another one. Find the exact command or process that is hanging and fix it first.
+10. Do not make unrelated visual or marketing changes.
+
+Testing requirements:
+
+Create or use representative sample inputs and test all four workflows:
+
+- Compliance Guidelines: generate a sample guideline.
+- Policy Templates: generate a sample policy for a selected facility or organization type.
+- Inspection Readiness: generate a sample survey-readiness checklist.
+- Policy Gap Scanner: analyze sample policy text and return gaps.
+
+For each feature verify:
+
+1. The click/form event fires.
+2. A network request is sent.
+3. The request reaches a valid backend route.
+4. The backend returns a successful response.
+5. The result is rendered in the UI.
+6. A failed request produces a visible error.
+7. Refreshing the page does not break the route.
+8. The production build completes without errors.
+
+Before publishing:
+
+- Run the project’s type checks, tests, build, and migration validation.
+- Confirm the production start command is separate from the build and migration commands.
+- Confirm no command runs in watch mode during deployment.
+- Confirm required production environment variables exist without exposing their values.
+- Do not start multiple simultaneous publishes.
+
+Only publish after all four generation workflows pass locally or in the project environment.
+
+After publishing, smoke-test the live application and verify all four features generate real results in production.
+
+Report at the end:
+
+- The shared root cause, if one exists.
+- Any feature-specific causes.
+- The exact files changed.
+- The API routes used for all four features.
+- Any missing environment configuration, without exposing secrets.
+- The migration/deployment fix.
+- Tests performed and their results.
+- Confirmation that all four features generate and display results in the published app.
+- Any remaining limitation.

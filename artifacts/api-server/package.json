@@ -9,7 +9,8 @@
     "build": "node ./build.mjs && pnpm --dir ../.. run test:api-readiness-smoke",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "test": "node --test src/**/*.test.ts",
-    "test:startup-schema-safety": "node --test src/lib/startup-schema-safety.test.ts",
+    "test:generation": "node --test src/services/generation.test.ts",
+    "test:startup-schema-safety": "node --test src/lib/startup-schema-safety.test.ts src/lib/payment-config.test.ts src/services/generation.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:cache": "node --experimental-transform-types --test src/lib/durable-cache.test.ts",
     "test:ccn": "node --experimental-transform-types --test src/lib/ccn-lookup.test.ts"
