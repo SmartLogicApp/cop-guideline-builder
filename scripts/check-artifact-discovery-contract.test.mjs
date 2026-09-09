@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -46,6 +46,78 @@ test("rejects raw artifact discovery in an imported shared utility", async (t) =
   assert.deepEqual(await checkArtifactDiscoveryContract(repository), [
     "scripts/shared-discovery.mjs:8 lists the top-level artifacts directory without an approved discovery helper or actionable error handling",
   ]);
+});
+
+const unsafeDiscovery = `
+  import { readdir } from "node:fs/promises";
+  import { resolve } from "node:path";
+
+  async function discover(root) {
+    return readdir(resolve(root, "artifacts"));
+  }
+`;
+
+test("rejects unsafe validators in every supported script format", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "artifact-discovery-contract-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "scripts"));
+
+  const extensions = ["mjs", "js", "cjs", "ts", "mts"];
+  await Promise.all(
+    extensions.map((extension) =>
+      writeFile(
+        join(root, "scripts", `check-fixture-${extension}.${extension}`),
+        extension === "cjs"
+          ? `
+              const { readdir: listDirectory } = require("node:fs/promises");
+              const path = require("node:path");
+
+              async function discover(root) {
+                return listDirectory(path.resolve(root, "artifacts"));
+              }
+            `
+          : unsafeDiscovery,
+      ),
+    ),
+  );
+
+  assert.deepEqual(
+    await checkArtifactDiscoveryContract(root),
+    extensions
+      .map(
+        (extension) =>
+          `scripts/check-fixture-${extension}.${extension}:6 lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+      )
+      .sort(),
+  );
+});
+
+test("does not scan test files or the contract guard in supported formats", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "artifact-discovery-contract-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "scripts"));
+
+  const extensions = ["mjs", "js", "cjs", "ts", "mts"];
+  await Promise.all([
+    ...extensions.map((extension) =>
+      writeFile(
+        join(root, "scripts", `check-fixture.test.${extension}`),
+        unsafeDiscovery,
+      ),
+    ),
+    ...extensions.map((extension) =>
+      writeFile(
+        join(
+          root,
+          "scripts",
+          `check-artifact-discovery-contract.${extension}`,
+        ),
+        unsafeDiscovery,
+      ),
+    ),
+  ]);
+
+  assert.deepEqual(await checkArtifactDiscoveryContract(root), []);
 });
 
 test("rejects raw non-ENOENT artifact directory failures", () => {

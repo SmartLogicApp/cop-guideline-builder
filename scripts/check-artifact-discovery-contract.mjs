@@ -5,8 +5,19 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const APPROVED_DISCOVERY_HELPERS = new Set(["findBrowserArtifactDirectories"]);
-const VALIDATION_SCRIPT = /^(?:check|validate)-.+\.mjs$/u;
-const LOCAL_SCRIPT_EXTENSIONS = [".mjs", ".js"];
+const VALIDATION_SCRIPT = /^(?:check|validate)-.+\.(?:c?js|mjs|m?ts)$/u;
+const TEST_SCRIPT = /\.test\.(?:c?js|mjs|m?ts)$/u;
+const CONTRACT_SCRIPT_BASENAME = "check-artifact-discovery-contract";
+const LOCAL_SCRIPT_EXTENSIONS = [".mjs", ".js", ".cjs", ".ts", ".mts"];
+
+function isScannableValidationScript(name) {
+  const basename = name.slice(0, name.lastIndexOf("."));
+  return (
+    VALIDATION_SCRIPT.test(name) &&
+    !TEST_SCRIPT.test(name) &&
+    basename !== CONTRACT_SCRIPT_BASENAME
+  );
+}
 
 function functionName(node) {
   for (let current = node; current; current = current.parent) {
@@ -71,6 +82,42 @@ function directoryReaderBindings(sourceFile) {
   const namespaces = new Set();
   for (const statement of sourceFile.statements) {
     if (
+      ts.isVariableStatement(statement) &&
+      statement.declarationList.declarations.length
+    ) {
+      for (const declaration of statement.declarationList.declarations) {
+        const initializer = declaration.initializer;
+        if (
+          !initializer ||
+          !ts.isCallExpression(initializer) ||
+          !ts.isIdentifier(initializer.expression) ||
+          initializer.expression.text !== "require" ||
+          initializer.arguments.length !== 1 ||
+          !ts.isStringLiteral(initializer.arguments[0]) ||
+          !["node:fs", "node:fs/promises"].includes(
+            initializer.arguments[0].text,
+          )
+        ) {
+          continue;
+        }
+        if (ts.isIdentifier(declaration.name)) {
+          namespaces.add(declaration.name.text);
+        } else if (ts.isObjectBindingPattern(declaration.name)) {
+          for (const element of declaration.name.elements) {
+            if (
+              ts.isIdentifier(element.name) &&
+              ["readdir", "readdirSync"].includes(
+                element.propertyName?.getText() ?? element.name.text,
+              )
+            ) {
+              direct.add(element.name.text);
+            }
+          }
+        }
+      }
+      continue;
+    }
+    if (
       !ts.isImportDeclaration(statement) ||
       !ts.isStringLiteral(statement.moduleSpecifier) ||
       !["node:fs", "node:fs/promises"].includes(statement.moduleSpecifier.text)
@@ -124,7 +171,7 @@ export function artifactDiscoveryFailures(path, source) {
     source,
     ts.ScriptTarget.Latest,
     true,
-    ts.ScriptKind.JS,
+    undefined,
   );
   const artifactVariables = artifactDirectoryVariables(sourceFile);
   const readerBindings = directoryReaderBindings(sourceFile);
@@ -162,7 +209,7 @@ function localImportSpecifiers(path, source) {
     source,
     ts.ScriptTarget.Latest,
     true,
-    ts.ScriptKind.JS,
+    undefined,
   );
   const specifiers = new Set();
 
@@ -230,8 +277,7 @@ export async function checkArtifactDiscoveryContract(rootDirectory) {
   for (const entry of entries) {
     if (
       !entry.isFile() ||
-      !VALIDATION_SCRIPT.test(entry.name) ||
-      entry.name === "check-artifact-discovery-contract.mjs"
+      !isScannableValidationScript(entry.name)
     ) {
       continue;
     }
