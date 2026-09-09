@@ -20,12 +20,15 @@ export const accounts = pgTable("accounts", {
 });
 
 export const accountUsers = pgTable("account_users", {
-  id:          uuid("id").primaryKey().defaultRandom(),
-  clerkUserId: text("clerk_user_id").unique().notNull(),
-  accountId:   uuid("account_id").references(() => accounts.id, { onDelete: "cascade" }),
-  role:        text("role").default("member"),   // "admin" | "member"
-  email:       text("email"),
-  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow(),
+  id:                         uuid("id").primaryKey().defaultRandom(),
+  clerkUserId:                text("clerk_user_id").unique().notNull(),
+  accountId:                  uuid("account_id").references(() => accounts.id, { onDelete: "cascade" }),
+  role:                       text("role").default("member"),   // "admin" | "member"
+  email:                      text("email"),
+  hasComplimentaryAccess:     boolean("has_complimentary_access").default(false).notNull(),
+  complimentaryAccessGrantedBy: text("complimentary_access_granted_by"),
+  complimentaryAccessGrantedAt: timestamp("complimentary_access_granted_at", { withTimezone: true }),
+  createdAt:                  timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
 // Platform-level admins — managed via the /admin UI; bypasses subscription checks.

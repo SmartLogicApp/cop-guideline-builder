@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { accounts, accountUsers, tokenUsage } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
 import { requireAuth } from "./accounts";
+import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription";
 
 const router: IRouter = Router();
 
@@ -27,8 +28,15 @@ async function getUserAccount(clerkUserId: string) {
 
 // GET /api/billing/subscription
 router.get("/subscription", requireAuth, async (req, res) => {
-  const account = await getUserAccount((req as any).clerkUserId);
-  if (!account) return res.json({ subscription: null });
+  const access = await getSubscriptionAccess((req as any).clerkUserId);
+  const account = access.account;
+  if (!account) {
+    return res.json({
+      subscription: null,
+      isActive: access.isActive,
+      accessSource: access.accessSource,
+    });
+  }
 
   const now = new Date();
   const trialActive = account.subscriptionStatus === "trial" &&
@@ -41,7 +49,9 @@ router.get("/subscription", requireAuth, async (req, res) => {
       trialEndsAt:     account.trialEndsAt,
       termsAcceptedAt: account.termsAcceptedAt,
       termsVersion:    account.termsVersion,
-      isActive:        account.subscriptionStatus === "active" || trialActive,
+      isActive:        access.isActive,
+      accessSource:    access.accessSource,
+      hasComplimentaryAccess: access.hasComplimentaryAccess,
       daysLeftInTrial: trialActive
         ? Math.ceil((account.trialEndsAt!.getTime() - now.getTime()) / 86_400_000)
         : 0,

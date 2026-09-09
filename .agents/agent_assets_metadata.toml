@@ -22,3 +22,31 @@ type = "audio"
 title = "tutorial background music"
 description = "Generated music: Cinematic uplifting instrumental background music scoring a healthcare compliance software tutorial. Soft piano, warm marimba pulse, restrained strings, light brushed percussion, 98 …"
 logical_id = "ae205bc0-b9f3-453e-bb70-0a621fe52f3e"
+
+[[outputs]]
+id = "WPUAolRxokCOZk6QaaRYH"
+uri = "file://.local/outputs/CMS-Compliance-Suite---Consultant-Staff-Training.pptx"
+type = "slides"
+title = "CMS Compliance Suite – Consultant Staff Training (PPTX)"
+description = "Updated PowerPoint with the current 30-profile catalog, including 28 verified provider types and 2 pending-verification profiles."
+logical_id = "69e868c5-41c4-488f-b8d7-395280151257"
+content_hash = "sha256:8edcf8252222aac0387b96c1b3fef0388a8941e3e331847bd8eda1e7bcd99123"
+size = 644539
+mtime_ms = 1788927686073
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:c74f4f5a-4945-488f-8870-64d8cc2e87fc/69e868c5-41c4-488f-b8d7-395280151257/5e06603a-26cb-44e9-9c81-27204a0f56ca"
+storage_version_token = "1788927686635633"
+content_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+[[outputs]]
+id = "FJ1_qnJo0ozweIrpHElN4"
+uri = "file://CMS-Compliance-Suite.mp4"
+type = "video"
+title = "CMS Compliance Suite – Updated Tutorial Video (MP4)"
+description = "Refreshed animation with the current 30-profile catalog: 28 verified and available, with Outpatient Occupational Therapy and Indian Health Service Facility marked pending verification."
+logical_id = "d4cbba6f-8d68-4cfb-887d-99d9faa961bc"
+content_hash = "sha256:6a174065faa4e6a26343c5768144f2cb577f3f2b0bf5800899ddd27248bdafe1"
+size = 4421847
+mtime_ms = 1788927967745
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:c74f4f5a-4945-488f-8870-64d8cc2e87fc/d4cbba6f-8d68-4cfb-887d-99d9faa961bc/da109d15-d200-4924-8acd-c836ba82f578"
+storage_version_token = "1788928074117912"
+content_type = "video/mp4"

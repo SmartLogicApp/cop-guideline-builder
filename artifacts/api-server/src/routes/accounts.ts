@@ -78,7 +78,7 @@ router.get("/whoami", requireAuth, (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const rawEnv = process.env.ADMIN_CLERK_USER_IDS ?? "";
   const ids = rawEnv.split(",").map((s) => s.trim()).filter(Boolean);
-  const isSuperAdmin = superAdminIds.includes(userId);
+  const isSuperAdmin = ids.includes(userId);
   return res.json({
     clerkUserId: userId,
     isSuperAdmin,
@@ -110,6 +110,8 @@ router.get("/me", requireAuth, async (req, res) => {
     isActive,
     isAdminUser,
     isSuperAdmin,
+    hasComplimentaryAccess: access.hasComplimentaryAccess,
+    accessSource: isSuperAdmin ? "admin" : access.accessSource,
   });
 });
 
@@ -133,12 +135,11 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "acceptedAt must be a valid ISO timestamp" });
   }
 
-  const [accountUser] = await db.insert(accountUsers).values({
-    clerkUserId: userId,
-    accountId:   account.id,
-    role:        isFirstUser ? "admin" : "member",
-    email:       email ?? null,
-  }).returning();
+  const [accountUser] = await db
+    .select()
+    .from(accountUsers)
+    .where(eq(accountUsers.clerkUserId, userId))
+    .limit(1);
   if (!accountUser?.accountId) {
     return res.status(409).json({
       error: "Complete facility registration before recording terms acceptance",

@@ -60,7 +60,7 @@ export default function LandingPage() {
                 Navigate healthcare compliance with absolute confidence.
               </motion.h1>
               <motion.p variants={fadeIn} className="mt-6 text-lg leading-8 text-slate-600 max-w-2xl mx-auto text-balance">
-                AI-powered tools for hospitals, SNFs, HHAs, ASCs, IRFs, hospices, and 11 more CMS institution types to prepare for surveys, strengthen policies, and identify gaps.
+                AI-powered tools across 30 cataloged CMS provider profiles—28 with verified regulatory content available today and 2 transparently marked pending verification.
               </motion.p>
               <motion.div variants={fadeIn} className="mt-10 flex items-center justify-center gap-x-6">
                 <Button size="lg" className="h-12 px-8 text-base shadow-lg" asChild>
@@ -79,7 +79,7 @@ export default function LandingPage() {
         {/* TRUST SIGNALS */}
         <section className="border-y bg-white py-12">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <p className="text-sm font-semibold text-muted-foreground mb-8 uppercase tracking-wider">Built for compliance across all 17 supported CMS institution types</p>
+            <p className="text-sm font-semibold text-muted-foreground mb-8 uppercase tracking-wider">30 CMS provider profiles cataloged · 28 verified and available today · 2 pending verification</p>
             <div className="flex flex-wrap justify-center gap-8 md:gap-16 items-center opacity-70 grayscale">
               <div className="flex items-center gap-2 font-bold text-xl text-slate-800"><Shield className="h-6 w-6"/> CMS CoPs</div>
               <div className="flex items-center gap-2 font-bold text-xl text-slate-800"><ClipboardCheck className="h-6 w-6"/> Joint Commission</div>
@@ -109,7 +109,7 @@ export default function LandingPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-slate-600">
-                    Access live eCFR requirements across all 17 supported institution types. Always current, highly searchable, and instantly available.
+                    Access verified eCFR requirements across 28 currently available CMS provider types. Two additional profiles remain unavailable until verification is complete.
                   </p>
                 </CardContent>
               </Card>
@@ -173,8 +173,8 @@ export default function LandingPage() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-8 text-center">
                 <div className="flex flex-col items-center">
                   <div className="h-16 w-16 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 mb-6 text-xl font-bold text-white">1</div>
-                  <h3 className="font-semibold text-white mb-2">Select Institution</h3>
-                  <p className="text-sm text-slate-400">Choose from 17 supported CMS facility types.</p>
+                  <h3 className="font-semibold text-white mb-2">Select Provider Profile</h3>
+                  <p className="text-sm text-slate-400">Choose from 30 cataloged profiles, including 28 verified today.</p>
                 </div>
                 <div className="flex flex-col items-center">
                   <div className="h-16 w-16 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 mb-6 text-xl font-bold text-white">2</div>
@@ -207,11 +207,11 @@ export default function LandingPage() {
             </div>
 
             <div className="mx-auto max-w-md">
-              {/* Facility Plan */}
+              {/* Single universal plan */}
               <Card className="border-slate-200 shadow-lg relative flex flex-col">
                 <CardHeader className="pb-8">
-                  <CardTitle className="text-2xl mb-2">Facility Plan</CardTitle>
-                  <CardDescription className="text-base">For single-site organizations</CardDescription>
+                  <CardTitle className="text-2xl mb-2">CMS Compliance Suite</CardTitle>
+                  <CardDescription className="text-base">One plan for every compliance professional and organization</CardDescription>
                   <div className="mt-6 flex items-baseline gap-x-2">
                     <span className="text-5xl font-bold tracking-tight text-slate-900">$299</span>
                     <span className="text-sm font-semibold leading-6 text-slate-600">/month</span>

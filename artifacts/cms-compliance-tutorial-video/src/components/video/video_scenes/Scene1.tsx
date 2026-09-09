@@ -39,6 +39,32 @@ export function Scene1() {
           >
             Every compliance requirement is automatically tailored to your specific facility.
           </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ delay: 0.4 }}
+            className="mt-10 bg-white/60 backdrop-blur-sm border border-primary/20 rounded-xl p-6 shadow-sm"
+          >
+            <div className="flex items-baseline gap-3 mb-4">
+              <span className="text-4xl font-display font-bold text-primary">30</span>
+              <span className="text-lg font-semibold text-secondary uppercase tracking-wide">Cataloged Profiles</span>
+            </div>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm"></div>
+                <span className="text-xl text-secondary"><strong className="font-bold">28</strong> verified and available today</span>
+              </div>
+              <div className="flex items-start gap-3 mt-1">
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm mt-1.5 shrink-0"></div>
+                <div className="flex flex-col">
+                  <span className="text-xl text-secondary"><strong className="font-bold">2</strong> pending verification</span>
+                  <span className="text-sm text-text-muted mt-1 leading-tight">Outpatient Occupational Therapy<br/>Indian Health Service Facility</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
         </div>
 
         {/* Right Side: UI Mockup */}
@@ -50,7 +76,7 @@ export function Scene1() {
             exit={{ scale: 0.9, opacity: 0, filter: "blur(10px)" }}
             transition={{ ...springSnappy, delay: 0.3 }}
           >
-            <div className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">Select Facility Type</div>
+            <div className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">Select CMS Provider Profile</div>
             <div className="flex flex-col gap-3">
               {providers.map((p, i) => (
                 <motion.div

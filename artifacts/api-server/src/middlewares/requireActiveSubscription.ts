@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { accountUsers, accounts, adminUsers, db } from "@workspace/db";
-import { hasActiveSubscription } from "./subscriptionAccess";
+import { hasEffectiveAccess } from "./subscriptionAccess";
 
 export const PAYMENT_REQUIRED_RESPONSE = {
   error: "An active subscription or trial is required",
@@ -9,6 +9,11 @@ export const PAYMENT_REQUIRED_RESPONSE = {
 } as const;
 
 export async function getSubscriptionAccess(clerkUserId: string, now = new Date()) {
+  const isConfiguredSuperAdmin = (process.env.ADMIN_CLERK_USER_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .includes(clerkUserId);
   const [admin, membership] = await Promise.all([
     db.select({ id: adminUsers.id })
       .from(adminUsers)
@@ -22,13 +27,26 @@ export async function getSubscriptionAccess(clerkUserId: string, now = new Date(
   ]);
 
   const account = membership[0]?.account ?? null;
-  const isAdminUser = admin.length > 0;
+  const accountUser = membership[0]?.accountUser ?? null;
+  const isAdminUser = isConfiguredSuperAdmin || admin.length > 0;
+  const hasComplimentaryAccess = accountUser?.hasComplimentaryAccess === true;
 
   return {
     account,
-    accountUser: membership[0]?.accountUser ?? null,
+    accountUser,
     isAdminUser,
-    isActive: isAdminUser || hasActiveSubscription(account, now),
+    hasComplimentaryAccess,
+    accessSource: isAdminUser
+      ? "admin"
+      : hasComplimentaryAccess
+        ? "complimentary"
+        : "subscription",
+    isActive: hasEffectiveAccess({
+      isAdminUser,
+      hasComplimentaryAccess,
+      account,
+      now,
+    }),
   };
 }
 

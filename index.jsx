@@ -11,7 +11,6 @@ import {
   getProvidersByCategory,
   isProviderContentAvailable,
 } from "@workspace/cms-compliance-data";
-import { getTrialAccessView, TRIAL_ACCESS_VIEW } from "./trial-access.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -4081,16 +4080,10 @@ function Footer({ onTerms, onPrivacy }) {
 
 const TRIAL_END_PLANS = [
   {
-    name: "Individual",
-    price: "$99",
-    description: "For independent compliance consultants and solo professionals",
-    features: ["1 user", "All 4 compliance tools", "AI gap scanning"],
-  },
-  {
-    name: "Facility",
+    name: "CMS Compliance Suite",
     price: "$299",
-    description: "For all staff at one facility location",
-    features: ["Unlimited staff users", "1 facility / CCN", "Priority support"],
+    description: "One plan for every compliance professional and organization",
+    features: ["Unlimited staff users", "1 facility / CCN", "All compliance tools", "AI gap scanning", "Priority support"],
     highlight: true,
   },
 ];
@@ -4116,11 +4109,11 @@ function TrialEndedScreen({ billingUrl, onSignOut }) {
             Your 30-day trial has ended — subscribe to continue
           </h1>
           <p style={{ margin: 0, color: "rgba(255,255,255,0.72)", fontSize: "16px", lineHeight: 1.6 }}>
-            Choose the plan that fits your work to restore access to your compliance workspace.
+            Continue with the single $299/month plan to restore access to your compliance workspace.
           </p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "18px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 520px)", justifyContent: "center", gap: "18px" }}>
           {TRIAL_END_PLANS.map((plan) => (
             <section key={plan.name} style={{
               position: "relative", borderRadius: "14px", padding: "28px 26px",
@@ -4151,7 +4144,7 @@ function TrialEndedScreen({ billingUrl, onSignOut }) {
                 padding: "12px 16px", fontSize: "14px", fontWeight: 800,
                 background: plan.highlight ? "#0B3D8E" : "#fff",
                 color: plan.highlight ? "#fff" : "#0B3D8E",
-              }}>View billing options →</a>
+              }}>Continue for $299/month →</a>
             </section>
           ))}
         </div>
@@ -4167,11 +4160,45 @@ function TrialEndedScreen({ billingUrl, onSignOut }) {
   );
 }
 
+function AccessResolutionScreen({ failed = false, onRetry, onSignOut }) {
+  return (
+    <main style={{
+      minHeight: "100vh",
+      display: "grid",
+      placeItems: "center",
+      padding: "24px",
+      background: "linear-gradient(135deg, #071C33 0%, #0B3D8E 55%, #0B6F86 100%)",
+      color: "#fff",
+      fontFamily: "'DM Sans', Arial, sans-serif",
+    }}>
+      <section style={{ width: "min(460px, 100%)", textAlign: "center", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: "16px", padding: "32px" }}>
+        <div style={{ fontSize: "30px", marginBottom: "12px" }} aria-hidden="true">{failed ? "!" : "…"}</div>
+        <h1 style={{ fontSize: "24px", margin: "0 0 10px" }}>{failed ? "We couldn't verify your access" : "Checking your access"}</h1>
+        <p style={{ color: "rgba(255,255,255,0.72)", lineHeight: 1.6, margin: "0 0 20px" }}>
+          {failed
+            ? "Your workspace remains protected until the access check succeeds. Please try again."
+            : "Please wait while we securely load your workspace permissions."}
+        </p>
+        {failed && (
+          <div style={{ display: "flex", justifyContent: "center", gap: "10px", flexWrap: "wrap" }}>
+            <button onClick={onRetry} style={{ border: 0, borderRadius: "8px", padding: "11px 18px", background: "#F5C542", color: "#0B1F3A", fontWeight: 800, cursor: "pointer" }}>Try again</button>
+            <button onClick={onSignOut} style={{ border: "1px solid rgba(255,255,255,0.35)", borderRadius: "8px", padding: "11px 18px", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Sign out</button>
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
+
 // ─── Admin Quick Panel (super-admin only, embedded in main page) ──────────────
 
 function AdminQuickPanel({ basePath, onClose }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [facilityUsers, setFacilityUsers] = useState([]);
+  const [accessLoading, setAccessLoading] = useState(true);
+  const [accessError, setAccessError] = useState("");
+  const [updatingUserId, setUpdatingUserId] = useState(null);
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
@@ -4181,6 +4208,52 @@ function AdminQuickPanel({ basePath, onClose }) {
       .then((d) => { setStats(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, [basePath, month]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${basePath}/api/admin/facility-users`, { credentials: "include", cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to load workspace users");
+        return response.json();
+      })
+      .then((rows) => {
+        if (!cancelled) {
+          setFacilityUsers(Array.isArray(rows) ? rows : []);
+          setAccessLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAccessError("Could not load complimentary-access controls.");
+          setAccessLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [basePath]);
+
+  async function setComplimentaryAccess(user, hasComplimentaryAccess) {
+    setUpdatingUserId(user.id);
+    setAccessError("");
+    try {
+      const response = await fetch(`${basePath}/api/admin/facility-users/${encodeURIComponent(user.id)}/access`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hasComplimentaryAccess }),
+      });
+      if (!response.ok) throw new Error("Unable to update access");
+      const updated = await response.json();
+      setFacilityUsers((rows) => rows.map((row) => (
+        row.id === user.id
+          ? { ...row, ...updated }
+          : row
+      )));
+    } catch {
+      setAccessError("The access change could not be saved. Please try again.");
+    } finally {
+      setUpdatingUserId(null);
+    }
+  }
 
   function dl(type) {
     window.open(`${basePath}/api/admin/reports/download?type=${type}&month=${encodeURIComponent(month)}`, "_blank");
@@ -4240,6 +4313,40 @@ function AdminQuickPanel({ basePath, onClose }) {
           <a href={`${basePath}/admin`} style={{ fontSize: "12px", color: "rgba(255,255,255,0.45)", textDecoration: "none", fontWeight: 600 }}>Manage clients · Team access · Email reports →</a>
         </div>
 
+        <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+          <div style={{ color: "#fff", fontWeight: 800, fontSize: "13px" }}>Complimentary workspace access</div>
+          <div style={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", margin: "3px 0 10px" }}>
+            Selected users receive full workspace access without payment. This does not grant admin privileges.
+          </div>
+          {accessError && <div role="alert" style={{ color: "#FCA5A5", fontSize: "11px", marginBottom: "8px" }}>{accessError}</div>}
+          {accessLoading ? (
+            <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "12px" }}>Loading users…</div>
+          ) : facilityUsers.length === 0 ? (
+            <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "12px" }}>No registered users yet.</div>
+          ) : (
+            <div style={{ display: "grid", gap: "6px", maxHeight: "210px", overflowY: "auto" }}>
+              {facilityUsers.map((user) => (
+                <label key={user.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "7px", padding: "8px 10px", cursor: updatingUserId === user.id ? "wait" : "pointer" }}>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ color: "#fff", fontSize: "12px", fontWeight: 700, display: "block", overflow: "hidden", textOverflow: "ellipsis" }}>{user.email || user.clerkUserId}</span>
+                    <span style={{ color: "rgba(255,255,255,0.42)", fontSize: "10px" }}>{user.facilityName || "No facility"}</span>
+                  </span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", color: user.hasComplimentaryAccess ? "#86EFAC" : "rgba(255,255,255,0.5)", fontSize: "11px", fontWeight: 700, whiteSpace: "nowrap" }}>
+                    {user.hasComplimentaryAccess ? "Access granted" : "Payment required"}
+                    <input
+                      type="checkbox"
+                      checked={Boolean(user.hasComplimentaryAccess)}
+                      disabled={updatingUserId === user.id}
+                      onChange={(event) => void setComplimentaryAccess(user, event.target.checked)}
+                      aria-label={`Complimentary access for ${user.email || user.clerkUserId}`}
+                    />
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );
@@ -4262,17 +4369,18 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
   });
   const [legal, setLegal] = useState(null); // "terms" | "privacy" | null
   const [adminOpen, setAdminOpen] = useState(false);
-  const [subscription, setSubscription] = useState(undefined);
   const explicitOwnerId = clerkUserId || null;
   const [identityState, setIdentityState] = useState(() => ({
     requestKey: explicitOwnerId,
     ownerId: clerkUserId || undefined,
     accountData: null,
+    status: "loading",
   }));
   const [identityRefreshNonce, setIdentityRefreshNonce] = useState(0);
   const identityIsCurrent = identityState.requestKey === explicitOwnerId;
   const resolvedHistoryOwnerId = identityIsCurrent ? identityState.ownerId : undefined;
   const accountData = identityIsCurrent ? identityState.accountData : null;
+  const accessResolutionStatus = identityIsCurrent ? identityState.status : "loading";
   // Authorization is resolved by the server from controlled configuration.
   const isAdmin = accountData?.isSuperAdmin
     || accountData?.isAdminUser;
@@ -4294,6 +4402,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
         requestKey: explicitOwnerId,
         ownerId: clerkUserId || undefined,
         accountData: null,
+        status: "loading",
       });
       try {
         const response = await fetch("/api/accounts/me", {
@@ -4306,6 +4415,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
             requestKey: explicitOwnerId,
             ownerId: clerkUserId || null,
             accountData: null,
+            status: "error",
           });
           return;
         }
@@ -4317,6 +4427,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
           requestKey: explicitOwnerId,
           ownerId,
           accountData: data,
+          status: "resolved",
         });
         if (ownerId) bindEphemeralPolicySessionToUser(ownerId);
       } catch {
@@ -4325,6 +4436,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
             requestKey: explicitOwnerId,
             ownerId: clerkUserId || undefined,
             accountData: null,
+            status: "error",
           });
         }
       }
@@ -4340,12 +4452,16 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
     const removeClerkListener = window.Clerk?.addListener?.(() => {
       void resolveIdentity();
     });
+    const accessRefreshInterval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void resolveIdentity();
+    }, 60_000);
 
     return () => {
       cancelled = true;
       requestGeneration += 1;
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
+      window.clearInterval(accessRefreshInterval);
       if (typeof removeClerkListener === "function") removeClerkListener();
     };
   }, [clerkUserId, explicitOwnerId, identityRefreshNonce]);
@@ -4355,6 +4471,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
       requestKey: null,
       ownerId: undefined,
       accountData: null,
+      status: "loading",
     });
     try {
       await onSignOut?.();
@@ -4367,24 +4484,21 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
     try { sessionStorage.setItem(ACTIVE_WORKSPACE_TAB_KEY, tab); } catch {}
   }, [tab]);
 
-  useEffect(() => {
-    if (!clerkUserId) return;
-    let cancelled = false;
-    fetch(`${basePath}/api/billing/subscription`, { credentials: "include" })
-      .then((response) => {
-        if (!response.ok) throw new Error("Unable to load subscription status");
-        return response.json();
-      })
-      .then((data) => {
-        if (!cancelled) setSubscription(data.subscription ?? null);
-      })
-      .catch(() => {
-        // Fail open: a temporary billing API error must not falsely lock out a subscriber.
-      });
-    return () => { cancelled = true; };
-  }, [basePath, clerkUserId]);
+  if (accessResolutionStatus === "loading") {
+    return <AccessResolutionScreen onSignOut={handleSignOut} />;
+  }
 
-  if (getTrialAccessView(subscription) === TRIAL_ACCESS_VIEW.END_STATE) {
+  if (accessResolutionStatus === "error") {
+    return (
+      <AccessResolutionScreen
+        failed
+        onRetry={() => setIdentityRefreshNonce((value) => value + 1)}
+        onSignOut={handleSignOut}
+      />
+    );
+  }
+
+  if (!accountData?.isActive) {
     return <TrialEndedScreen billingUrl={`${basePath}/billing`} onSignOut={onSignOut} />;
   }
 

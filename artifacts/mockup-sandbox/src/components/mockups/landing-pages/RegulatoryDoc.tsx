@@ -171,7 +171,7 @@ export function RegulatoryDoc() {
         <div>
           <div style={{ fontFamily: "'Inter', Arial, sans-serif", fontSize: "11px", fontWeight: 700, color: "#C9963A", letterSpacing: "2.5px", textTransform: "uppercase", marginBottom: "12px" }}>Begin Your Trial</div>
           <div style={{ fontSize: "30px", fontWeight: 700, color: "#fff", marginBottom: "8px", letterSpacing: "-0.3px" }}>Survey preparation starts here.</div>
-          <div style={{ fontFamily: "'Inter', Arial, sans-serif", fontSize: "14px", color: "rgba(255,255,255,0.45)" }}>30-day free trial · All 17 facility types · Per-CCN pricing · Non-refundable after trial</div>
+          <div style={{ fontFamily: "'Inter', Arial, sans-serif", fontSize: "14px", color: "rgba(255,255,255,0.45)" }}>30-day free trial · 28 verified provider types available · 2 pending verification · Non-refundable after trial</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px", alignItems: "center" }}>
           <button style={{ fontFamily: "'Inter', Arial, sans-serif", padding: "16px 40px", background: "#C9963A", border: "none", borderRadius: "6px", color: "#fff", fontWeight: 700, fontSize: "15px", cursor: "pointer" }}>

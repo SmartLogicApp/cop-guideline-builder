@@ -166,9 +166,9 @@ export function ClinicalAuthority() {
         {/* Floating stat cards */}
         <div style={{ position: "absolute", right: "80px", top: "80px", display: "flex", flexDirection: "column", gap: "14px" }}>
           {[
-            { n: "17", label: "Facility Types Covered" },
-            { n: "100%", label: "Live eCFR Data" },
-            { n: "< 2 min", label: "To Generate Guidelines" },
+            { n: "30", label: "Provider Profiles Cataloged" },
+            { n: "28", label: "Verified & Available" },
+            { n: "2", label: "Pending Verification" },
           ].map(s => (
             <div key={s.n} style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: "12px", padding: "16px 24px", textAlign: "center", minWidth: "160px" }}>
               <div style={{ fontSize: "28px", fontWeight: 900, color: "#00E5FF" }}>{s.n}</div>
@@ -199,8 +199,8 @@ export function ClinicalAuthority() {
       {/* ── FACILITY TYPES ── */}
       <div style={{ padding: "56px 80px 40px", background: "#F0F4F8" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: "12px", marginBottom: "24px" }}>
-          <h2 style={{ fontSize: "13px", fontWeight: 700, color: "#0B3D8E", textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>Supported Facility Types</h2>
-          <span style={{ fontSize: "12px", color: "#94A3B8" }}>30 CMS provider types</span>
+          <h2 style={{ fontSize: "13px", fontWeight: 700, color: "#0B3D8E", textTransform: "uppercase", letterSpacing: "2px", margin: 0 }}>CMS Provider Profile Catalog</h2>
+          <span style={{ fontSize: "12px", color: "#94A3B8" }}>28 verified today · 2 pending verification</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: "10px" }}>
           {facilities.map(f => (
@@ -255,7 +255,7 @@ export function ClinicalAuthority() {
           <div style={{ fontSize: "30px", fontWeight: 800, color: "#fff", letterSpacing: "-0.5px", marginBottom: "8px" }}>
             Survey preparation starts here.
           </div>
-          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "15px" }}>30-day free trial · No credit card · All 17 facility types · Non-refundable after trial</div>
+          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "15px" }}>30-day free trial · No credit card · 28 verified provider types available · Non-refundable after trial</div>
         </div>
         <button style={{ padding: "16px 36px", background: "#00BCD4", border: "none", borderRadius: "10px", color: "#fff", fontWeight: 800, fontSize: "16px", cursor: "pointer", flexShrink: 0, boxShadow: "0 8px 24px rgba(0,0,0,0.25)" }}>
           Start Free Trial →

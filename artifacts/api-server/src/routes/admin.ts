@@ -512,20 +512,52 @@ router.post("/reports/email", requireAnyAdmin, async (req, res) => {
   }
 });
 
-// ─── Facility users lookup (super-admin only) ────────────────────────────────
+// ─── Complimentary workspace access (platform admins only) ──────────────────
 
-router.get("/facility-users", requireSuperAdmin, async (_req, res) => {
+router.get("/facility-users", requireAnyAdmin, async (_req, res) => {
   const rows = await db
     .select({
+      id: accountUsers.id,
       clerkUserId: accountUsers.clerkUserId,
       email: accountUsers.email,
       role: accountUsers.role,
+      hasComplimentaryAccess: accountUsers.hasComplimentaryAccess,
+      complimentaryAccessGrantedAt: accountUsers.complimentaryAccessGrantedAt,
       facilityName: accounts.facilityName,
     })
     .from(accountUsers)
     .leftJoin(accounts, eq(accountUsers.accountId, accounts.id))
     .orderBy(accounts.facilityName, accountUsers.email);
   return res.json(rows);
+});
+
+router.patch("/facility-users/:id/access", requireAnyAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  const grantedBy = (req as any).clerkUserId as string;
+  const { hasComplimentaryAccess } = req.body as { hasComplimentaryAccess?: boolean };
+
+  if (typeof hasComplimentaryAccess !== "boolean") {
+    return res.status(400).json({ error: "hasComplimentaryAccess (boolean) is required" });
+  }
+
+  const [updated] = await db
+    .update(accountUsers)
+    .set({
+      hasComplimentaryAccess,
+      complimentaryAccessGrantedBy: hasComplimentaryAccess ? grantedBy : null,
+      complimentaryAccessGrantedAt: hasComplimentaryAccess ? new Date() : null,
+    })
+    .where(eq(accountUsers.id, id))
+    .returning({
+      id: accountUsers.id,
+      clerkUserId: accountUsers.clerkUserId,
+      email: accountUsers.email,
+      hasComplimentaryAccess: accountUsers.hasComplimentaryAccess,
+      complimentaryAccessGrantedAt: accountUsers.complimentaryAccessGrantedAt,
+    });
+
+  if (!updated) return res.status(404).json({ error: "Facility user not found" });
+  return res.json(updated);
 });
 
 // ─── Admin user management (super-admin only) ─────────────────────────────────
