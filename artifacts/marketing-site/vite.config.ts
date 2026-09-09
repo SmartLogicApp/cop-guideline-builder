@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
+import { validateProductionClerkCredentials } from './scripts/validate-clerk-credentials.mjs';
 
 const rawPort = process.env.PORT;
 
@@ -27,7 +28,14 @@ if (!basePath) {
   );
 }
 
-export default defineConfig({
+export default defineConfig(async ({ command }) => {
+  if (command === 'build') {
+    validateProductionClerkCredentials(
+      process.env.VITE_CLERK_PUBLISHABLE_KEY,
+    );
+  }
+
+  return {
   base: basePath,
   plugins: [
     react(),
@@ -79,4 +87,5 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
   },
+  };
 });
