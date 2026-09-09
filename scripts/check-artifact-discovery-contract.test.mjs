@@ -144,15 +144,48 @@ test("rejects raw non-ENOENT artifact directory failures", () => {
   );
 });
 
+test("rejects artifact discovery through default filesystem imports", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-default-fs.mjs",
+      source: `
+        import fs from "node:fs";
+        import { resolve } from "node:path";
+
+        function discover(root) {
+          return fs.readdirSync(resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-default-fs-promises.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function discover(root) {
+          return fs.readdir(resolve(root, "artifacts"));
+        }
+      `,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:6 lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
 test("accepts equivalent actionable artifact discovery handling", () => {
   const source = `
-    import { readdir } from "node:fs/promises";
+    import fs from "node:fs/promises";
     import { resolve } from "node:path";
 
     async function discover(root) {
       const directory = resolve(root, "artifacts");
       try {
-        return await readdir(directory);
+        return await fs.readdir(directory);
       } catch (error) {
         throw new Error(
           \`Artifact directory could not be listed: \${error.message}. Check access permissions.\`,

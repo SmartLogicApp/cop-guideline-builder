@@ -124,7 +124,11 @@ function directoryReaderBindings(sourceFile) {
     ) {
       continue;
     }
-    const bindings = statement.importClause?.namedBindings;
+    const importClause = statement.importClause;
+    if (importClause?.name) {
+      namespaces.add(importClause.name.text);
+    }
+    const bindings = importClause?.namedBindings;
     if (bindings && ts.isNamedImports(bindings)) {
       for (const element of bindings.elements) {
         if (
