@@ -11,7 +11,7 @@
     "test:marketing-browser-boundary": "playwright test tests/browser/public-bundle-boundary.spec.ts --project=marketing-auth-chromium --project=marketing-auth-prefixed-chromium",
     "validate:marketing-release": "pnpm run test:marketing-build-credential-contract && pnpm run test:marketing-browser-boundary",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run check:browser-tsconfig-contract && pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "typecheck": "sh -c 'pnpm run check:browser-tsconfig-contract; contract_status=$?; pnpm run typecheck:libs; libs_status=$?; pnpm -r --no-bail --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck; leaves_status=$?; if [ \"$contract_status\" -ne 0 ] || [ \"$libs_status\" -ne 0 ] || [ \"$leaves_status\" -ne 0 ]; then exit 1; fi'",
     "check:browser-tsconfig-contract": "node scripts/check-browser-tsconfig-contract.mjs",
     "test:browser-tsconfig-contract": "node --test scripts/check-browser-tsconfig-contract.test.mjs && pnpm run check:browser-tsconfig-contract",
     "check:canvas-release-contract": "node scripts/check-canvas-release-contract.mjs",
