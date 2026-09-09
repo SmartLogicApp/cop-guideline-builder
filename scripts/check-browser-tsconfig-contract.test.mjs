@@ -134,9 +134,30 @@ test("rejects missing and malformed runtime classification", async () => {
           /artifacts\/browser\/\.replit-artifact\/artifact\.toml/,
         );
         assert.match(failures[0], expected);
+        assert.match(
+          failures[0],
+          /Repair the root-level artifact runtime metadata in this manifest\.$/,
+        );
       },
     );
   }
+});
+
+test("reports every malformed manifest deterministically with repair guidance", async () => {
+  await withFixture(
+    {
+      "artifacts/zeta/.replit-artifact/artifact.toml": "kind = web\n",
+      "artifacts/alpha/.replit-artifact/artifact.toml":
+        'kind = "web"\nbrowserRuntime = false\n',
+      "artifacts/valid/.replit-artifact/artifact.toml": 'kind = "api"\n',
+    },
+    async (root) => {
+      assert.deepEqual(await checkBrowserTsconfigContract(root), [
+        'artifacts/alpha/.replit-artifact/artifact.toml has contradictory runtime metadata: kind "web" requires browserRuntime = true. Repair the root-level artifact runtime metadata in this manifest.',
+        "artifacts/zeta/.replit-artifact/artifact.toml has malformed kind metadata. Repair the root-level artifact runtime metadata in this manifest.",
+      ]);
+    },
+  );
 });
 
 test("rejects unknown artifact kinds", async () => {
@@ -147,7 +168,7 @@ test("rejects unknown artifact kinds", async () => {
     },
     async (root) => {
       assert.deepEqual(await checkBrowserTsconfigContract(root), [
-        'artifacts/browser/.replit-artifact/artifact.toml uses unknown artifact kind "website" (expected one of: design, slides, video, web, api, mobile)',
+        'artifacts/browser/.replit-artifact/artifact.toml uses unknown artifact kind "website" (expected one of: design, slides, video, web, api, mobile). Repair the root-level artifact runtime metadata in this manifest.',
       ]);
     },
   );

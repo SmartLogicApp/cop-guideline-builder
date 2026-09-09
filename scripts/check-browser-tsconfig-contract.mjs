@@ -79,11 +79,10 @@ function formatDiagnostic(diagnostic) {
 export async function findBrowserArtifactDirectories(rootDirectory) {
   const artifactsDirectory = join(rootDirectory, "artifacts");
   const entries = await readdir(artifactsDirectory, { withFileTypes: true });
-  const artifactDirectories = [];
-
-  await Promise.all(
+  const results = await Promise.all(
     entries
       .filter((entry) => entry.isDirectory())
+      .sort((left, right) => left.name.localeCompare(right.name))
       .map(async (entry) => {
         const directory = join(artifactsDirectory, entry.name);
         const manifestPath = join(
@@ -96,27 +95,38 @@ export async function findBrowserArtifactDirectories(rootDirectory) {
           manifest = await readFile(manifestPath, "utf8");
         } catch (error) {
           if (error?.code === "ENOENT") {
-            return;
+            return {};
           }
           throw error;
         }
 
         try {
           if (artifactRunsInBrowser(manifest)) {
-            artifactDirectories.push(directory);
+            return { directory };
           }
+          return {};
         } catch (error) {
           const relativeManifestPath = manifestPath
             .slice(resolve(rootDirectory).length + 1)
             .replaceAll("\\", "/");
-          throw new Error(`${relativeManifestPath} ${error.message}`, {
-            cause: error,
-          });
+          return {
+            failure: `${relativeManifestPath} ${error.message}. Repair the root-level artifact runtime metadata in this manifest.`,
+          };
         }
       }),
   );
 
-  return artifactDirectories.sort();
+  const failures = results.flatMap(({ failure }) => failure ?? []);
+  if (failures.length) {
+    throw new AggregateError(
+      failures.map((failure) => new Error(failure)),
+      "Invalid artifact manifests",
+    );
+  }
+
+  return results
+    .flatMap(({ directory }) => directory ?? [])
+    .sort();
 }
 
 export function effectiveLibraryNames(tsconfigPath) {
@@ -154,6 +164,9 @@ export async function checkBrowserTsconfigContract(rootDirectory) {
   try {
     artifactDirectories = await findBrowserArtifactDirectories(rootDirectory);
   } catch (error) {
+    if (error instanceof AggregateError) {
+      return error.errors.map((manifestError) => manifestError.message);
+    }
     return [error.message];
   }
 
