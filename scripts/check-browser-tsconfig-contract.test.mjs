@@ -211,6 +211,35 @@ test("reports every malformed manifest deterministically with repair guidance", 
   );
 });
 
+test("reports unreadable manifests alongside malformed metadata", async () => {
+  await withFixture(
+    {
+      "artifacts/zeta/.replit-artifact/artifact.toml": "kind = web\n",
+    },
+    async (root) => {
+      await mkdir(
+        join(root, "artifacts/alpha/.replit-artifact/artifact.toml"),
+        { recursive: true },
+      );
+
+      const failures = await checkBrowserTsconfigContract(root);
+      assert.equal(failures.length, 2);
+      assert.match(
+        failures[0],
+        /^artifacts\/alpha\/\.replit-artifact\/artifact\.toml could not be read:/,
+      );
+      assert.match(
+        failures[0],
+        /Check file access for this manifest\.$/,
+      );
+      assert.equal(
+        failures[1],
+        "artifacts/zeta/.replit-artifact/artifact.toml has malformed kind metadata. Repair the root-level artifact runtime metadata in this manifest.",
+      );
+    },
+  );
+});
+
 test("rejects unknown artifact kinds", async () => {
   await withFixture(
     {

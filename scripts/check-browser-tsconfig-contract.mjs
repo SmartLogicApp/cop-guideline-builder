@@ -26,6 +26,9 @@ export async function findBrowserArtifactDirectories(rootDirectory) {
           ".replit-artifact",
           "artifact.toml",
         );
+        const relativeManifestPath = manifestPath
+          .slice(resolve(rootDirectory).length + 1)
+          .replaceAll("\\", "/");
         let manifest;
         try {
           manifest = await readFile(manifestPath, "utf8");
@@ -33,7 +36,9 @@ export async function findBrowserArtifactDirectories(rootDirectory) {
           if (error?.code === "ENOENT") {
             return {};
           }
-          throw error;
+          return {
+            failure: `${relativeManifestPath} could not be read: ${error.message}. Check file access for this manifest.`,
+          };
         }
 
         try {
@@ -42,9 +47,6 @@ export async function findBrowserArtifactDirectories(rootDirectory) {
           }
           return {};
         } catch (error) {
-          const relativeManifestPath = manifestPath
-            .slice(resolve(rootDirectory).length + 1)
-            .replaceAll("\\", "/");
           return {
             failure: `${relativeManifestPath} ${error.message}. Repair the root-level artifact runtime metadata in this manifest.`,
           };
