@@ -3,7 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const PUBLIC_ENTRY_BUDGET_BYTES = 650 * 1024;
+export const PUBLIC_ENTRY_BUDGET_BYTES = 450 * 1024;
 
 function normalize(value) {
   return value.replaceAll('\\', '/');

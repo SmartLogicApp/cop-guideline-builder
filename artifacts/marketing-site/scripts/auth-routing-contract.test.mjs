@@ -42,6 +42,7 @@ test('Clerk and authenticated routes stay behind a dynamic import', () => {
 
   assert.match(appSource, /lazy\(\(\) => import\(['"]\.\/AuthenticatedApp['"]\)\)/);
   assert.doesNotMatch(appSource, /from ['"]@clerk\//);
+  assert.doesNotMatch(appSource, /components\/ui\/(?:toaster|tooltip)/);
   assert.match(routeBoundary, /const \[location\] = useLocation\(\)/);
   assert.doesNotMatch(routeBoundary, /window\.location/);
   assert.match(routeBoundary, /location\.replace\(\/\\\/\+\$\/, ['"]{2}\)/);

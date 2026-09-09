@@ -1,7 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { ErrorBoundary } from '@/components/error-boundary';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import LandingPage from '@/pages/landing';
 import TermsPage from '@/pages/terms';
@@ -22,15 +20,6 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
-function PublicApp() {
-  return (
-    <TooltipProvider>
-      <PublicRouter />
-      <Toaster />
-    </TooltipProvider>
-  );
-}
-
 function RouteBoundary() {
   const [location] = useLocation();
   const normalizedLocation = location.length > 1
@@ -49,7 +38,7 @@ function RouteBoundary() {
       </Suspense>
     </ErrorBoundary>
   ) : (
-    <PublicApp />
+    <PublicRouter />
   );
 }
 
