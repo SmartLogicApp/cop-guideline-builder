@@ -14,10 +14,20 @@ function formatDiagnostic(diagnostic) {
 
 export async function findBrowserArtifactDirectories(
   rootDirectory,
-  { readManifestFile = readFile } = {},
+  { readArtifactsDirectory = readdir, readManifestFile = readFile } = {},
 ) {
   const artifactsDirectory = join(rootDirectory, "artifacts");
-  const entries = await readdir(artifactsDirectory, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await readArtifactsDirectory(artifactsDirectory, {
+      withFileTypes: true,
+    });
+  } catch (error) {
+    throw new Error(
+      `Artifact discovery failed because the artifacts directory could not be listed: ${error.message}. Check that the artifacts directory exists and that this validation process has permission to access it.`,
+      { cause: error },
+    );
+  }
   const results = await Promise.all(
     entries
       .filter((entry) => entry.isDirectory())
@@ -101,12 +111,17 @@ export function effectiveLibraryNames(tsconfigPath) {
 
 export async function checkBrowserTsconfigContract(
   rootDirectory,
-  { readConfigFile = readFile, readManifestFile = readFile } = {},
+  {
+    readArtifactsDirectory = readdir,
+    readConfigFile = readFile,
+    readManifestFile = readFile,
+  } = {},
 ) {
   const failures = [];
   let artifactDirectories;
   try {
     artifactDirectories = await findBrowserArtifactDirectories(rootDirectory, {
+      readArtifactsDirectory,
       readManifestFile,
     });
   } catch (error) {

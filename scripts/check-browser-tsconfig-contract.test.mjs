@@ -50,6 +50,23 @@ test("accepts every checked-in browser artifact", async () => {
   );
 });
 
+test("reports artifact discovery access failures with actionable guidance", async () => {
+  const readArtifactsDirectory = async () => {
+    const error = new Error("controlled directory access failure");
+    error.code = "EACCES";
+    throw error;
+  };
+
+  assert.deepEqual(
+    await checkBrowserTsconfigContract(rootDirectory, {
+      readArtifactsDirectory,
+    }),
+    [
+      "Artifact discovery failed because the artifacts directory could not be listed: controlled directory access failure. Check that the artifacts directory exists and that this validation process has permission to access it.",
+    ],
+  );
+});
+
 test("rejects a non-Vite browser artifact with server-only libraries", async () => {
   await withFixture(
     {
