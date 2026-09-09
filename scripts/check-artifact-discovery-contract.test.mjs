@@ -210,6 +210,73 @@ test("rejects artifact discovery through TypeScript import-equals bindings", () 
   }
 });
 
+test("rejects artifact discovery through static filesystem element access", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-bracket-fs.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function discover(root) {
+          return fs["readdir"](resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-bracket-fs-sync.cjs",
+      source: `
+        const fs = require("node:fs");
+        const path = require("node:path");
+
+        function discover(root) {
+          return fs['readdirSync'](path.resolve(root, "artifacts"));
+        }
+      `,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:6 lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
+test("ignores dynamic and unrelated filesystem element access", () => {
+  const source = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    async function inspect(root, method, other) {
+      await fs[method](resolve(root, "artifacts"));
+      await fs["stat"](resolve(root, "artifacts"));
+      return other["readdir"](resolve(root, "artifacts"));
+    }
+  `;
+
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-fixture.mjs", source),
+    [],
+  );
+});
+
+test("ignores unrelated dynamic imports", () => {
+  const source = `
+    import { resolve } from "node:path";
+
+    async function inspect(root) {
+      const helper = await import("./artifact-helper.mjs");
+      return helper.inspect(resolve(root, "artifacts"));
+    }
+  `;
+
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-fixture.mjs", source),
+    [],
+  );
+});
+
 test("accepts equivalent actionable artifact discovery handling", () => {
   const source = `
     import fs = require("node:fs/promises");

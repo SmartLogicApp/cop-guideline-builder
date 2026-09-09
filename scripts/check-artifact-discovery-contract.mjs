@@ -162,11 +162,26 @@ function isDirectoryReaderCall(call, bindings) {
   if (ts.isIdentifier(call.expression)) {
     return bindings.direct.has(call.expression.text);
   }
+  const expression = call.expression;
+  if (
+    !ts.isPropertyAccessExpression(expression) &&
+    !ts.isElementAccessExpression(expression)
+  ) {
+    return false;
+  }
+  if (
+    !ts.isIdentifier(expression.expression) ||
+    !bindings.namespaces.has(expression.expression.text)
+  ) {
+    return false;
+  }
+  if (ts.isPropertyAccessExpression(expression)) {
+    return ["readdir", "readdirSync"].includes(expression.name.text);
+  }
   return (
-    ts.isPropertyAccessExpression(call.expression) &&
-    ["readdir", "readdirSync"].includes(call.expression.name.text) &&
-    ts.isIdentifier(call.expression.expression) &&
-    bindings.namespaces.has(call.expression.expression.text)
+    ts.isElementAccessExpression(expression) &&
+    ts.isStringLiteralLike(expression.argumentExpression) &&
+    ["readdir", "readdirSync"].includes(expression.argumentExpression.text)
   );
 }
 
