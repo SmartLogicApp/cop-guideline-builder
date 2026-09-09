@@ -3,6 +3,9 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
+const authenticatedAppSource = await readFile(new URL('../src/AuthenticatedApp.tsx', import.meta.url), 'utf8');
+const globalStyles = await readFile(new URL('../src/index.css', import.meta.url), 'utf8');
+const authStyles = await readFile(new URL('../src/auth.css', import.meta.url), 'utf8');
 const landingSource = await readFile(new URL('../src/pages/landing.tsx', import.meta.url), 'utf8');
 
 function componentBody(source, functionName) {
@@ -13,15 +16,12 @@ function componentBody(source, functionName) {
   return source.slice(start, nextFunction === -1 ? source.length : nextFunction);
 }
 
-test('public and Clerk-backed paths are registered before the 404 fallback', () => {
-  const router = componentBody(appSource, 'Router');
+test('public paths are registered before the public 404 fallback', () => {
+  const router = componentBody(appSource, 'PublicRouter');
   const expectedRoutes = [
     '<Route path="/" component={LandingPage} />',
     '<Route path="/terms" component={TermsPage} />',
     '<Route path="/privacy" component={PrivacyPage} />',
-    '<Route path="/sign-in/*?" component={ClerkRoutes} />',
-    '<Route path="/sign-up/*?" component={ClerkRoutes} />',
-    '<Route path="/app" component={ClerkRoutes} />',
   ];
 
   let previousIndex = -1;
@@ -37,18 +37,28 @@ test('public and Clerk-backed paths are registered before the 404 fallback', () 
   );
 });
 
-test('public routes are outside the Clerk provider', () => {
-  const router = componentBody(appSource, 'Router');
-  const clerkRoutes = componentBody(appSource, 'ClerkRoutes');
+test('Clerk and authenticated routes stay behind a dynamic import', () => {
+  const routeBoundary = componentBody(appSource, 'RouteBoundary');
 
-  assert.doesNotMatch(router, /<ClerkProvider/);
-  assert.match(clerkRoutes, /<ClerkProvider/);
-  assert.doesNotMatch(clerkRoutes, /LandingPage|TermsPage|PrivacyPage/);
+  assert.match(appSource, /lazy\(\(\) => import\(['"]\.\/AuthenticatedApp['"]\)\)/);
+  assert.doesNotMatch(appSource, /from ['"]@clerk\//);
+  assert.match(routeBoundary, /const \[location\] = useLocation\(\)/);
+  assert.doesNotMatch(routeBoundary, /window\.location/);
+  assert.match(routeBoundary, /location\.replace\(\/\\\/\+\$\/, ['"]{2}\)/);
+  assert.match(componentBody(appSource, 'AppWithRouter'), /<WouterRouter base=\{basePath\}>\s*<RouteBoundary \/>/);
+  assert.match(authenticatedAppSource, /<Route path="\/sign-in\/\*\?" component=\{SignInPage\} \/>/);
+  assert.match(authenticatedAppSource, /<Route path="\/sign-up\/\*\?" component=\{SignUpPage\} \/>/);
+  assert.match(authenticatedAppSource, /<Route path="\/app" component=\{ComplianceWorkspace\} \/>/);
+  assert.match(authenticatedAppSource, /<ClerkLoading>\s*<ClerkLoadingState \/>/);
+  assert.match(authenticatedAppSource, /<ClerkLoaded>\s*<QueryClientProvider/);
+  assert.doesNotMatch(globalStyles, /@clerk\/themes/);
+  assert.match(authStyles, /@clerk\/themes\/shadcn\.css/);
+  assert.match(authenticatedAppSource, /import ['"]\.\/auth\.css['"]/);
 });
 
 test('Clerk path routing keeps callback subpaths and post-auth app redirects valid', () => {
-  const signInPage = componentBody(appSource, 'SignInPage');
-  const signUpPage = componentBody(appSource, 'SignUpPage');
+  const signInPage = componentBody(authenticatedAppSource, 'SignInPage');
+  const signUpPage = componentBody(authenticatedAppSource, 'SignUpPage');
 
   assert.match(signInPage, /path=\{`\$\{basePath\}\/sign-in`\}/);
   assert.match(signInPage, /signUpUrl=\{`\$\{basePath\}\/sign-up`\}/);
@@ -59,7 +69,7 @@ test('Clerk path routing keeps callback subpaths and post-auth app redirects val
 });
 
 test('signed-out visitors to the protected app are sent to sign-in', () => {
-  const workspace = componentBody(appSource, 'ComplianceWorkspace');
+  const workspace = componentBody(authenticatedAppSource, 'ComplianceWorkspace');
   assert.match(
     workspace,
     /<Show when="signed-out"><RedirectToSignIn \/><\/Show>/,
@@ -69,17 +79,17 @@ test('signed-out visitors to the protected app are sent to sign-in', () => {
 
 test('the private workspace is lazy-loaded behind clear loading and error states', () => {
   assert.match(
-    appSource,
+    authenticatedAppSource,
     /const CoPGuidelineBuilder = lazy\(\(\) =>\s*[\s\S]*?import\(['"]\.\.\/\.\.\/\.\.\/index\.jsx['"]\)/,
     'Expected the legacy workspace to use a dynamic import',
   );
   assert.doesNotMatch(
-    appSource,
+    authenticatedAppSource,
     /import CoPGuidelineBuilder from ['"]\.\.\/\.\.\/\.\.\/index\.jsx['"]/,
     'Expected no eager workspace import in the public entry',
   );
 
-  const workspace = componentBody(appSource, 'ComplianceWorkspace');
+  const workspace = componentBody(authenticatedAppSource, 'ComplianceWorkspace');
   assert.match(workspace, /FallbackComponent=\{WorkspaceLoadError\}/);
   assert.match(workspace, /<Suspense fallback=\{<WorkspaceLoading \/>\}>/);
 });

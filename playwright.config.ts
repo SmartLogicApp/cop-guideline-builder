@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+const launchOptions = executablePath ? { executablePath } : undefined;
+
 export default defineConfig({
   testDir: "./tests/browser",
   fullyParallel: true,
@@ -15,6 +18,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://127.0.0.1:4173",
+        launchOptions,
       },
     },
     {
@@ -23,6 +27,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://127.0.0.1:4174",
+        launchOptions,
       },
     },
     {
@@ -31,6 +36,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://127.0.0.1:4175/auth-test/",
+        launchOptions,
       },
     },
   ],

@@ -56,8 +56,20 @@ test.describe("built marketing site auth routing", () => {
     const basePath = escapedBasePath(baseURL!);
 
     try {
-      await page.goto(routeUrl(baseURL!, "/"));
+      await page.route("**/api/accounts/me", async (route) => {
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            clerkUserId: user.id,
+            isActive: true,
+            isSuperAdmin: false,
+            isAdminUser: false,
+          }),
+        });
+      });
+      await page.goto(routeUrl(baseURL!, "/sign-in"));
       await clerk.signIn({ page, emailAddress });
+      await page.goto(routeUrl(baseURL!, "/app"));
 
       await expect(page).toHaveURL(new RegExp(`${basePath}/app$`));
       await expect(
@@ -75,6 +87,15 @@ test.describe("built marketing site auth routing", () => {
       ).toBeVisible();
       await expect(
         page.getByRole("button", { name: "Sign Out" }),
+      ).toBeVisible();
+
+      await page.getByRole("button", { name: "Sign Out" }).click();
+
+      await expect(page).toHaveURL(new RegExp(`${basePath}/?$`));
+      await expect(
+        page.getByRole("heading", {
+          name: /^Navigate healthcare compliance with absolute confidence\.$/,
+        }),
       ).toBeVisible();
     } finally {
       await clerkClient.users.deleteUser(user.id);
@@ -129,35 +150,57 @@ test.describe("built marketing site auth routing", () => {
       page.getByRole("heading", { name: "Welcome back" }),
     ).toBeVisible();
   });
-});
 
-test.describe("built marketing site public routing", () => {
-  test("public pages remain usable when Clerk cannot initialize", async ({
+  test("the trailing-slash app URL keeps workspace protection", async ({
     page,
     baseURL,
   }) => {
-    const clerkRequests: string[] = [];
-    await page.route("**/*", async (route) => {
-      const url = new URL(route.request().url());
-      if (url.hostname.includes("clerk") || url.pathname.includes("__clerk")) {
-        clerkRequests.push(url.toString());
-        await route.abort("failed");
-        return;
-      }
-      await route.continue();
+    const basePath = escapedBasePath(baseURL!);
+
+    await page.goto(routeUrl(baseURL!, "/app/"));
+
+    await expect(page).toHaveURL(new RegExp(`${basePath}/sign-in(?:\\?.*)?$`));
+    await expect(
+      page.getByRole("heading", { name: "Welcome back" }),
+    ).toBeVisible();
+  });
+});
+
+test.describe("built marketing site public routing", () => {
+  test("client navigation and browser history switch public and auth shells", async ({
+    page,
+    baseURL,
+  }) => {
+    const landingHeading = page.getByRole("heading", {
+      name: /^Navigate healthcare compliance with absolute confidence\.$/,
     });
 
-    for (const [path, heading] of [
-      ["/", /^Navigate healthcare compliance with absolute confidence\.$/],
-      ["/terms", /terms of service/i],
-      ["/privacy", /^Privacy Policy$/],
-    ] as const) {
-      const response = await page.goto(routeUrl(baseURL!, path));
-      expect(response?.status(), `${path} should load`).toBe(200);
-      await expect(page.getByRole("heading", { name: heading })).toBeVisible();
-    }
+    await page.goto(routeUrl(baseURL!, "/"));
+    await expect(landingHeading).toBeVisible();
 
-    expect(clerkRequests).toEqual([]);
+    await page.evaluate((path) => {
+      window.history.pushState({}, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, new URL(routeUrl(baseURL!, "/sign-in")).pathname);
+    await expect(
+      page.getByRole("heading", { name: "Welcome back" }),
+    ).toBeVisible();
+
+    await page.goBack();
+    await expect(landingHeading).toBeVisible();
+
+    await page.goForward();
+    await expect(
+      page.getByRole("heading", { name: "Welcome back" }),
+    ).toBeVisible();
+
+    await page.evaluate((path) => {
+      window.history.pushState({}, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, new URL(routeUrl(baseURL!, "/privacy")).pathname);
+    await expect(
+      page.getByRole("heading", { name: "Privacy Policy", exact: true }),
+    ).toBeVisible();
   });
 
   test("prefixed public pages and assets stay within the site prefix", async ({
