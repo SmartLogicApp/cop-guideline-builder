@@ -81,8 +81,8 @@ test('signed-out visitors to the protected app are sent to sign-in', () => {
 test('the private workspace is lazy-loaded behind clear loading and error states', () => {
   assert.match(
     authenticatedAppSource,
-    /const CoPGuidelineBuilder = lazy\(\(\) =>\s*[\s\S]*?import\(['"]\.\.\/\.\.\/\.\.\/index\.jsx['"]\)/,
-    'Expected the legacy workspace to use a dynamic import',
+    /const CoPGuidelineBuilder = lazy\(\(\) =>\s*import\(['"]\.\/workspace-entry['"]\)\)/,
+    'Expected the legacy workspace and its styles to use a private dynamic entry',
   );
   assert.doesNotMatch(
     authenticatedAppSource,

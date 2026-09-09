@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const PUBLIC_ENTRY_BUDGET_BYTES = 450 * 1024;
+export const PUBLIC_CSS_BUDGET_BYTES = 105 * 1024;
 
 function normalize(value) {
   return value.replaceAll('\\', '/');
@@ -48,6 +49,7 @@ function assertNotPubliclyReachable({
 export async function checkPublicBundleBoundary({
   outDir,
   budgetBytes = PUBLIC_ENTRY_BUDGET_BYTES,
+  cssBudgetBytes = PUBLIC_CSS_BUDGET_BYTES,
 }) {
   const manifestPath = path.join(outDir, '.vite', 'manifest.json');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
@@ -60,10 +62,10 @@ export async function checkPublicBundleBoundary({
     manifest,
     (key, chunk) =>
       chunk.isDynamicEntry &&
-      (normalize(chunk.src ?? '').endsWith('/index.jsx') ||
-        normalize(chunk.src ?? '') === 'index.jsx' ||
-        key.endsWith('/index.jsx') ||
-        key === 'index.jsx'),
+      (normalize(chunk.src ?? '').endsWith('/workspace-entry.tsx') ||
+        normalize(chunk.src ?? '') === 'src/workspace-entry.tsx' ||
+        key.endsWith('/workspace-entry.tsx') ||
+        key === 'src/workspace-entry.tsx'),
     'private workspace',
   );
   const [authKey, authEntry] = findChunk(
@@ -71,8 +73,10 @@ export async function checkPublicBundleBoundary({
     (key, chunk) =>
       chunk.isDynamicEntry &&
       (normalize(chunk.src ?? '').endsWith('/AuthenticatedApp.tsx') ||
+        normalize(chunk.src ?? '') === 'src/AuthenticatedApp.tsx' ||
         normalize(chunk.src ?? '') === 'AuthenticatedApp.tsx' ||
         key.endsWith('/AuthenticatedApp.tsx') ||
+        key === 'src/AuthenticatedApp.tsx' ||
         key === 'AuthenticatedApp.tsx'),
     'authenticated application',
   );
@@ -143,6 +147,17 @@ export async function checkPublicBundleBoundary({
     })
     .filter(Boolean);
   const privateFiles = [...new Set(privateChunkFiles)];
+
+  const workspaceKeys = [...collectStaticImports(manifest, workspaceKey)]
+    .filter((key) => !eagerChunks.has(key));
+  const workspaceChunks = [...new Set(
+    workspaceKeys.flatMap((key) => {
+      const chunk = manifest[key];
+      return chunk
+        ? [chunk.file, ...(chunk.css ?? []), ...(chunk.assets ?? [])]
+        : [];
+    }).filter(Boolean),
+  )];
   const html = await readFile(path.join(outDir, 'index.html'), 'utf8');
   for (const privateFile of privateFiles) {
     assert.ok(
@@ -157,10 +172,33 @@ export async function checkPublicBundleBoundary({
     `Public entry ${publicEntry.file} is ${publicEntryBytes} bytes, exceeding the ${budgetBytes}-byte budget`,
   );
 
+  const publicCss = [...new Set(
+    [...eagerChunks].flatMap((key) => manifest[key]?.css ?? []),
+  )];
+  const publicCssBytes = (
+    await Promise.all(
+      publicCss.map(async (file) => (await stat(path.join(outDir, file))).size),
+    )
+  ).reduce((total, bytes) => total + bytes, 0);
+  assert.ok(
+    publicCssBytes <= cssBudgetBytes,
+    `Public CSS (${publicCss.join(', ')}) is ${publicCssBytes} bytes, exceeding the ${cssBudgetBytes}-byte budget`,
+  );
+
+  const workspaceCss = workspaceChunks.filter((file) => file.endsWith('.css'));
+  assert.ok(
+    workspaceCss.length > 0,
+    'Expected the private workspace to own at least one separately loaded CSS file',
+  );
+
   return {
     publicEntry: publicEntry.file,
     publicEntryBytes,
     privateChunks: privateFiles,
+    publicCss,
+    publicCssBytes,
+    workspaceChunks,
+    workspaceCss,
   };
 }
 
@@ -173,7 +211,7 @@ async function main() {
   );
   const result = await checkPublicBundleBoundary({ outDir });
   console.log(
-    `Bundle boundary verified: public entry ${result.publicEntry} (${result.publicEntryBytes} bytes); private authentication chunks ${result.privateChunks.join(', ')}.`,
+    `Bundle boundary verified: public entry ${result.publicEntry} (${result.publicEntryBytes} bytes), public CSS ${result.publicCss.join(', ')} (${result.publicCssBytes} bytes); private authentication chunks ${result.privateChunks.join(', ')}; private workspace chunks ${result.workspaceChunks.join(', ')}.`,
   );
 }
 

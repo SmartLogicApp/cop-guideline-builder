@@ -1,16 +1,21 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { checkPublicBundleBoundary } from './check-public-bundle-boundary.mjs';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function fixture({
   eagerPrivateChunk,
   preloadPrivateChunk,
   clerkFile = 'assets/clerk-auth.js',
   publicBytes = 20,
+  publicCssBytes = 20,
+  includeWorkspaceCss = true,
 } = {}) {
   const outDir = await mkdtemp(path.join(os.tmpdir(), 'bundle-boundary-'));
   await mkdir(path.join(outDir, '.vite'), { recursive: true });
@@ -22,22 +27,24 @@ async function fixture({
       isEntry: true,
       imports: eagerPrivateChunk ? [eagerPrivateChunk] : [],
       dynamicImports: ['src/AuthenticatedApp.tsx'],
+      css: ['assets/public.css'],
     },
     'src/AuthenticatedApp.tsx': {
       file: 'assets/authenticated-app.js',
       src: 'src/AuthenticatedApp.tsx',
       isDynamicEntry: true,
       imports: ['_clerk-auth.js'],
-      dynamicImports: ['../../index.jsx'],
+      dynamicImports: ['src/workspace-entry.tsx'],
       css: ['assets/authenticated-app.css'],
     },
     '_clerk-auth.js': {
       file: 'assets/clerk-auth.js',
     },
-    '../../index.jsx': {
+    'src/workspace-entry.tsx': {
       file: 'assets/workspace.js',
-      src: '../../index.jsx',
+      src: 'src/workspace-entry.tsx',
       isDynamicEntry: true,
+      css: includeWorkspaceCss ? ['assets/workspace.css'] : [],
     },
   };
   await writeFile(
@@ -58,7 +65,9 @@ async function fixture({
   await writeFile(path.join(outDir, 'assets', 'authenticated-app.js'), 'authenticated');
   await writeFile(path.join(outDir, 'assets', 'authenticated-app.css'), '.auth{}');
   await writeFile(path.join(outDir, 'assets', 'clerk-auth.js'), 'clerk');
+  await writeFile(path.join(outDir, 'assets', 'public.css'), 'x'.repeat(publicCssBytes));
   await writeFile(path.join(outDir, 'assets', 'workspace.js'), 'workspace');
+  await writeFile(path.join(outDir, 'assets', 'workspace.css'), 'workspace');
   return outDir;
 }
 
@@ -66,12 +75,18 @@ test('accepts separately loaded authentication and workspace chunks', async () =
   const result = await checkPublicBundleBoundary({
     outDir: await fixture(),
     budgetBytes: 100,
+    cssBudgetBytes: 100,
   });
   assert.deepEqual(result.privateChunks, [
     'assets/authenticated-app.js',
     'assets/authenticated-app.css',
     'assets/clerk-auth.js',
     'assets/workspace.js',
+    'assets/workspace.css',
+  ]);
+  assert.deepEqual(result.workspaceChunks, [
+    'assets/workspace.js',
+    'assets/workspace.css',
   ]);
 });
 
@@ -80,6 +95,7 @@ test('rejects Clerk modules bundled into the public entry itself', async () => {
     checkPublicBundleBoundary({
       outDir: await fixture({ clerkFile: 'assets/public.js' }),
       budgetBytes: 100,
+      cssBudgetBytes: 100,
     }),
     /Clerk authentication chunk .* is eagerly reachable/,
   );
@@ -88,7 +104,7 @@ test('rejects Clerk modules bundled into the public entry itself', async () => {
 for (const [description, manifestKey] of [
   ['authenticated application', 'src/AuthenticatedApp.tsx'],
   ['Clerk authentication', '_clerk-auth.js'],
-  ['private workspace', '../../index.jsx'],
+  ['private workspace', 'src/workspace-entry.tsx'],
 ]) {
   test(`rejects an eagerly reachable ${description} chunk`, async () => {
     await assert.rejects(
@@ -106,6 +122,7 @@ for (const privateFile of [
   'assets/authenticated-app.css',
   'assets/clerk-auth.js',
   'assets/workspace.js',
+  'assets/workspace.css',
 ]) {
   test(`rejects an HTML preload of ${privateFile}`, async () => {
     await assert.rejects(
@@ -123,7 +140,44 @@ test('rejects a public entry over budget', async () => {
     checkPublicBundleBoundary({
       outDir: await fixture({ publicBytes: 101 }),
       budgetBytes: 100,
+      cssBudgetBytes: 100,
     }),
     /exceeding the 100-byte budget/,
   );
+});
+
+test('rejects public CSS over budget', async () => {
+  await assert.rejects(
+    checkPublicBundleBoundary({
+      outDir: await fixture({ publicCssBytes: 101 }),
+      budgetBytes: 100,
+      cssBudgetBytes: 100,
+    }),
+    /Public CSS .* exceeding the 100-byte budget/,
+  );
+});
+
+test('rejects a workspace without separately loaded CSS', async () => {
+  await assert.rejects(
+    checkPublicBundleBoundary({
+      outDir: await fixture({ includeWorkspaceCss: false }),
+      budgetBytes: 100,
+      cssBudgetBytes: 100,
+    }),
+    /separately loaded CSS file/,
+  );
+});
+
+test('keeps public and workspace Tailwind sources separated', async () => {
+  const [publicCss, authCss, workspaceCss] = await Promise.all([
+    readFile(path.join(scriptDir, '..', 'src', 'index.css'), 'utf8'),
+    readFile(path.join(scriptDir, '..', 'src', 'auth.css'), 'utf8'),
+    readFile(path.join(scriptDir, '..', 'src', 'workspace.css'), 'utf8'),
+  ]);
+
+  assert.match(publicCss, /@import 'tailwindcss' source\(none\);/);
+  assert.doesNotMatch(publicCss, /AuthenticatedApp/);
+  assert.doesNotMatch(publicCss, /index\.jsx/);
+  assert.match(authCss, /@source '\.\/AuthenticatedApp\.tsx';/);
+  assert.match(workspaceCss, /@source '\.\.\/\.\.\/\.\.\/index\.jsx';/);
 });

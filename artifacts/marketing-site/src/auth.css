@@ -1,1 +1,3 @@
 @import '@clerk/themes/shadcn.css';
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@source './AuthenticatedApp.tsx';

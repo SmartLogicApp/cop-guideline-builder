@@ -1,0 +1,8 @@
+/*
+ * Private workspace utilities are generated separately so public marketing
+ * routes do not download styles used only after entering /app.
+ */
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@import 'tw-animate-css';
+@plugin "@tailwindcss/typography";
+@source '../../../index.jsx';

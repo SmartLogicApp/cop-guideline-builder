@@ -20,10 +20,7 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation } from 'wouter';
 import './auth.css';
 
-const CoPGuidelineBuilder = lazy(() =>
-  // @ts-expect-error The legacy compliance workspace is a JavaScript component.
-  import('../../../index.jsx'),
-);
+const CoPGuidelineBuilder = lazy(() => import('./workspace-entry'));
 
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');

@@ -1,8 +1,12 @@
 @layer theme, base, clerk, components, utilities;
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
+@source './App.tsx';
+@source './main.tsx';
+@source './pages/**/*.tsx';
+@source './components/**/*.tsx';
 
 @custom-variant dark (&:is(.dark *));
 
