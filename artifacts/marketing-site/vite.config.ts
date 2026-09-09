@@ -76,6 +76,7 @@ export default defineConfig(async ({ command }) => {
   build: {
     outDir: path.resolve(import.meta.dirname, buildOutDir),
     emptyOutDir: true,
+    manifest: true,
   },
   server: {
     port,
