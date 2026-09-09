@@ -25,6 +25,14 @@ export default defineConfig({
         baseURL: "http://127.0.0.1:4174",
       },
     },
+    {
+      name: "marketing-auth-prefixed-chromium",
+      testMatch: /auth-routing\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        baseURL: "http://127.0.0.1:4175/auth-test/",
+      },
+    },
   ],
   webServer: [
     {
@@ -38,12 +46,28 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: "pnpm --filter @workspace/marketing-site run build && pnpm --filter @workspace/marketing-site run serve",
+      command:
+        "pnpm --filter @workspace/marketing-site run build && pnpm --filter @workspace/marketing-site run serve",
       env: {
         BASE_PATH: "/",
+        BUILD_OUT_DIR: "dist/public",
+        CLERK_AUTH_BROWSER_TEST: "true",
         PORT: "4174",
       },
       url: "http://127.0.0.1:4174",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command:
+        "pnpm --filter @workspace/marketing-site run build && pnpm --filter @workspace/marketing-site run serve",
+      env: {
+        BASE_PATH: "/auth-test/",
+        BUILD_OUT_DIR: "dist/auth-test",
+        CLERK_AUTH_BROWSER_TEST: "true",
+        PORT: "4175",
+      },
+      url: "http://127.0.0.1:4175/auth-test/",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

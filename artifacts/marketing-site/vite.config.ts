@@ -21,6 +21,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const basePath = process.env.BASE_PATH;
+const buildOutDir = process.env.BUILD_OUT_DIR ?? 'dist/public';
 
 if (!basePath) {
   throw new Error(
@@ -29,7 +30,10 @@ if (!basePath) {
 }
 
 export default defineConfig(async ({ command }) => {
-  if (command === 'build') {
+  if (
+    command === 'build' &&
+    process.env.CLERK_AUTH_BROWSER_TEST !== 'true'
+  ) {
     validateProductionClerkCredentials(
       process.env.VITE_CLERK_PUBLISHABLE_KEY,
     );
@@ -70,7 +74,7 @@ export default defineConfig(async ({ command }) => {
   },
   root: path.resolve(import.meta.dirname),
   build: {
-    outDir: path.resolve(import.meta.dirname, 'dist/public'),
+    outDir: path.resolve(import.meta.dirname, buildOutDir),
     emptyOutDir: true,
   },
   server: {
