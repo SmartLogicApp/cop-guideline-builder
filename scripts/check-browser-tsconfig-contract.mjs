@@ -6,14 +6,70 @@ import ts from "typescript";
 
 const REQUIRED_DOM_LIBRARIES = ["lib.dom.d.ts", "lib.dom.iterable.d.ts"];
 const BROWSER_ARTIFACT_KINDS = new Set(["design", "slides", "video", "web"]);
+const NON_BROWSER_ARTIFACT_KINDS = new Set(["api", "mobile"]);
+const ARTIFACT_KINDS = new Set([
+  ...BROWSER_ARTIFACT_KINDS,
+  ...NON_BROWSER_ARTIFACT_KINDS,
+]);
 
-function artifactRunsInBrowser(manifest) {
-  const kind = manifest.match(/^\s*kind\s*=\s*"([^"]+)"/mu)?.[1];
-  const browserRuntime =
-    manifest.match(/^\s*browserRuntime\s*=\s*(true|false)\s*(?:#.*)?$/mu)?.[1] ===
-    "true";
+function parseRootAssignment(manifest, key, valuePattern) {
+  const declaration = new RegExp(`^\\s*${key}\\s*=`, "u");
+  const assignment = new RegExp(
+    `^\\s*${key}\\s*=\\s*${valuePattern}\\s*(?:#.*)?$`,
+    "u",
+  );
+  const declarations = [];
+  let inTable = false;
+  for (const line of manifest.split(/\r?\n/u)) {
+    if (/^\s*\[\[?.+\]?\]\s*(?:#.*)?$/u.test(line)) {
+      inTable = true;
+    }
+    if (!inTable && declaration.test(line)) {
+      declarations.push(line);
+    }
+  }
 
-  return browserRuntime || BROWSER_ARTIFACT_KINDS.has(kind);
+  if (declarations.length > 1) {
+    throw new Error(`defines ${key} more than once`);
+  }
+  if (declarations.length === 0) {
+    return undefined;
+  }
+
+  const match = declarations[0].match(assignment);
+  if (!match) {
+    throw new Error(`has malformed ${key} metadata`);
+  }
+  return match[1];
+}
+
+export function artifactRunsInBrowser(manifest) {
+  const kind = parseRootAssignment(manifest, "kind", '"([^"]+)"');
+  if (kind === undefined) {
+    throw new Error('is missing required kind metadata (for example, kind = "web")');
+  }
+  if (!ARTIFACT_KINDS.has(kind)) {
+    throw new Error(
+      `uses unknown artifact kind "${kind}" (expected one of: ${[...ARTIFACT_KINDS].join(", ")})`,
+    );
+  }
+
+  const runtimeValue = parseRootAssignment(
+    manifest,
+    "browserRuntime",
+    "(true|false)",
+  );
+  const expectedBrowserRuntime = BROWSER_ARTIFACT_KINDS.has(kind);
+  if (
+    runtimeValue !== undefined &&
+    (runtimeValue === "true") !== expectedBrowserRuntime
+  ) {
+    throw new Error(
+      `has contradictory runtime metadata: kind "${kind}" requires browserRuntime = ${expectedBrowserRuntime}`,
+    );
+  }
+
+  return expectedBrowserRuntime;
 }
 
 function formatDiagnostic(diagnostic) {
@@ -45,8 +101,17 @@ export async function findBrowserArtifactDirectories(rootDirectory) {
           throw error;
         }
 
-        if (artifactRunsInBrowser(manifest)) {
-          artifactDirectories.push(directory);
+        try {
+          if (artifactRunsInBrowser(manifest)) {
+            artifactDirectories.push(directory);
+          }
+        } catch (error) {
+          const relativeManifestPath = manifestPath
+            .slice(resolve(rootDirectory).length + 1)
+            .replaceAll("\\", "/");
+          throw new Error(`${relativeManifestPath} ${error.message}`, {
+            cause: error,
+          });
         }
       }),
   );
@@ -85,8 +150,12 @@ export function effectiveLibraryNames(tsconfigPath) {
 
 export async function checkBrowserTsconfigContract(rootDirectory) {
   const failures = [];
-  const artifactDirectories =
-    await findBrowserArtifactDirectories(rootDirectory);
+  let artifactDirectories;
+  try {
+    artifactDirectories = await findBrowserArtifactDirectories(rootDirectory);
+  } catch (error) {
+    return [error.message];
+  }
 
   for (const artifactDirectory of artifactDirectories) {
     const relativeDirectory = artifactDirectory

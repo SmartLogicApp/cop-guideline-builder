@@ -86,7 +86,7 @@ test("rejects an explicitly marked browser artifact without a tsconfig", async (
   await withFixture(
     {
       "artifacts/new-browser/.replit-artifact/artifact.toml":
-        'kind = "custom"\nbrowserRuntime = true\n',
+        'kind = "web"\nbrowserRuntime = true\n',
     },
     async (root) => {
       assert.deepEqual(await checkBrowserTsconfigContract(root), [
@@ -109,4 +109,65 @@ test("excludes API and mobile-native artifacts", async () => {
       assert.deepEqual(await checkBrowserTsconfigContract(root), []);
     },
   );
+});
+
+test("rejects missing and malformed runtime classification", async () => {
+  for (const [manifest, expected] of [
+    ['name = "browser"\n', /missing required kind metadata/],
+    ['[metadata]\nkind = "web"\n', /missing required kind metadata/],
+    ["kind = web\n", /malformed kind metadata/],
+    [
+      'kind = "web"\nbrowserRuntime = "true"\n',
+      /malformed browserRuntime metadata/,
+    ],
+    ['kind = "web"\nkind = "api"\n', /defines kind more than once/],
+  ]) {
+    await withFixture(
+      {
+        "artifacts/browser/.replit-artifact/artifact.toml": manifest,
+      },
+      async (root) => {
+        const failures = await checkBrowserTsconfigContract(root);
+        assert.equal(failures.length, 1);
+        assert.match(
+          failures[0],
+          /artifacts\/browser\/\.replit-artifact\/artifact\.toml/,
+        );
+        assert.match(failures[0], expected);
+      },
+    );
+  }
+});
+
+test("rejects unknown artifact kinds", async () => {
+  await withFixture(
+    {
+      "artifacts/browser/.replit-artifact/artifact.toml":
+        'kind = "website"\nbrowserRuntime = true\n',
+    },
+    async (root) => {
+      assert.deepEqual(await checkBrowserTsconfigContract(root), [
+        'artifacts/browser/.replit-artifact/artifact.toml uses unknown artifact kind "website" (expected one of: design, slides, video, web, api, mobile)',
+      ]);
+    },
+  );
+});
+
+test("rejects runtime metadata that contradicts the artifact kind", async () => {
+  for (const manifest of [
+    'kind = "web"\nbrowserRuntime = false\n',
+    'kind = "api"\nbrowserRuntime = true\n',
+  ]) {
+    await withFixture(
+      {
+        "artifacts/artifact/.replit-artifact/artifact.toml": manifest,
+      },
+      async (root) => {
+        assert.match(
+          (await checkBrowserTsconfigContract(root))[0],
+          /contradictory runtime metadata/,
+        );
+      },
+    );
+  }
 });
