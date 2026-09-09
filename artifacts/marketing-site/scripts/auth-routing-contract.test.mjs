@@ -13,15 +13,15 @@ function componentBody(source, functionName) {
   return source.slice(start, nextFunction === -1 ? source.length : nextFunction);
 }
 
-test('auth, app, and legal paths are registered before the 404 fallback', () => {
+test('public and Clerk-backed paths are registered before the 404 fallback', () => {
   const router = componentBody(appSource, 'Router');
   const expectedRoutes = [
-    '<Route path="/" component={HomePage} />',
-    '<Route path="/sign-in/*?" component={SignInPage} />',
-    '<Route path="/sign-up/*?" component={SignUpPage} />',
-    '<Route path="/app" component={ComplianceWorkspace} />',
+    '<Route path="/" component={LandingPage} />',
     '<Route path="/terms" component={TermsPage} />',
     '<Route path="/privacy" component={PrivacyPage} />',
+    '<Route path="/sign-in/*?" component={ClerkRoutes} />',
+    '<Route path="/sign-up/*?" component={ClerkRoutes} />',
+    '<Route path="/app" component={ClerkRoutes} />',
   ];
 
   let previousIndex = -1;
@@ -35,6 +35,15 @@ test('auth, app, and legal paths are registered before the 404 fallback', () => 
     router.indexOf('<Route component={NotFound} />') > previousIndex,
     'Expected the 404 route to remain last',
   );
+});
+
+test('public routes are outside the Clerk provider', () => {
+  const router = componentBody(appSource, 'Router');
+  const clerkRoutes = componentBody(appSource, 'ClerkRoutes');
+
+  assert.doesNotMatch(router, /<ClerkProvider/);
+  assert.match(clerkRoutes, /<ClerkProvider/);
+  assert.doesNotMatch(clerkRoutes, /LandingPage|TermsPage|PrivacyPage/);
 });
 
 test('Clerk path routing keeps callback subpaths and post-auth app redirects valid', () => {

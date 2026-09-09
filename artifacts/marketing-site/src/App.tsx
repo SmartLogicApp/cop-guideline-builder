@@ -39,10 +39,6 @@ const clerkPubKey = publishableKeyFromHost(
 );
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 
-if (!clerkPubKey) {
-  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY');
-}
-
 function stripBase(path: string): string {
   return basePath && path.startsWith(basePath)
     ? path.slice(basePath.length) || '/'
@@ -113,16 +109,6 @@ function ClerkQueryClientCacheInvalidator() {
 
   return null;
 }
-
-function HomePage() {
-  return (
-    <>
-      <Show when="signed-in"><Redirect to="/app" /></Show>
-      <Show when="signed-out"><LandingPage /></Show>
-    </>
-  );
-}
-
 function SignInPage() {
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-slate-50 px-4 py-12">
@@ -216,12 +202,12 @@ function Router() {
   return (
     <RoutedErrorBoundary>
       <Switch>
-        <Route path="/" component={HomePage} />
-        <Route path="/sign-in/*?" component={SignInPage} />
-        <Route path="/sign-up/*?" component={SignUpPage} />
-        <Route path="/app" component={ComplianceWorkspace} />
+        <Route path="/" component={LandingPage} />
         <Route path="/terms" component={TermsPage} />
         <Route path="/privacy" component={PrivacyPage} />
+        <Route path="/sign-in/*?" component={ClerkRoutes} />
+        <Route path="/sign-up/*?" component={ClerkRoutes} />
+        <Route path="/app" component={ClerkRoutes} />
         <Route component={NotFound} />
       </Switch>
     </RoutedErrorBoundary>
@@ -233,8 +219,12 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
-function App() {
+function ClerkRoutes() {
   const [, setLocation] = useLocation();
+
+  if (!clerkPubKey) {
+    throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY');
+  }
 
   return (
     <ClerkProvider
@@ -250,21 +240,24 @@ function App() {
       routerPush={(to) => setLocation(stripBase(to))}
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
     >
+      <ClerkQueryClientCacheInvalidator />
+      <Switch>
+        <Route path="/sign-in/*?" component={SignInPage} />
+        <Route path="/sign-up/*?" component={SignUpPage} />
+        <Route path="/app" component={ComplianceWorkspace} />
+      </Switch>
+    </ClerkProvider>
+  );
+}
+export default function AppWithRouter() {
+  return (
+    <WouterRouter base={basePath}>
       <QueryClientProvider client={queryClient}>
-        <ClerkQueryClientCacheInvalidator />
         <TooltipProvider>
           <Router />
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
-    </ClerkProvider>
-  );
-}
-
-export default function AppWithRouter() {
-  return (
-    <WouterRouter base={basePath}>
-      <App />
     </WouterRouter>
   );
 }

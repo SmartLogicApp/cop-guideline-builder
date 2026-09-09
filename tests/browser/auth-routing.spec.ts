@@ -132,6 +132,34 @@ test.describe("built marketing site auth routing", () => {
 });
 
 test.describe("built marketing site public routing", () => {
+  test("public pages remain usable when Clerk cannot initialize", async ({
+    page,
+    baseURL,
+  }) => {
+    const clerkRequests: string[] = [];
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname.includes("clerk") || url.pathname.includes("__clerk")) {
+        clerkRequests.push(url.toString());
+        await route.abort("failed");
+        return;
+      }
+      await route.continue();
+    });
+
+    for (const [path, heading] of [
+      ["/", /^Navigate healthcare compliance with absolute confidence\.$/],
+      ["/terms", /terms of service/i],
+      ["/privacy", /^Privacy Policy$/],
+    ] as const) {
+      const response = await page.goto(routeUrl(baseURL!, path));
+      expect(response?.status(), `${path} should load`).toBe(200);
+      await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    }
+
+    expect(clerkRequests).toEqual([]);
+  });
+
   test("prefixed public pages and assets stay within the site prefix", async ({
     page,
     baseURL,
