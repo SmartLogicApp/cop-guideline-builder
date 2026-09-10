@@ -305,6 +305,81 @@ test("rejects artifact discovery through extracted filesystem methods", () => {
   }
 });
 
+test("rejects artifact discovery through copied and assigned reader aliases", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-copied-reader.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function discover(root) {
+          const first = fs.readdir;
+          const second = first;
+          const third = second;
+          return third(resolve(root, "artifacts"));
+        }
+      `,
+      line: 9,
+    },
+    {
+      path: "scripts/check-assigned-reader.cjs",
+      source: `
+        const fs = require("node:fs");
+        const path = require("node:path");
+
+        function discover(root) {
+          let listDirectory;
+          listDirectory = fs.readdirSync;
+          return listDirectory(path.resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+    {
+      path: "scripts/check-assigned-copy.mjs",
+      source: `
+        import { readdir } from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function discover(root) {
+          let first;
+          first = readdir;
+          let second;
+          second = first;
+          return second(resolve(root, "artifacts"));
+        }
+      `,
+      line: 10,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:${fixture.line} lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
+test("stops tracking copied reader aliases after unrelated reassignment", () => {
+  const source = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    async function inspect(root, helper) {
+      const first = fs.readdir;
+      let second = first;
+      second = helper;
+      return second(resolve(root, "artifacts"));
+    }
+  `;
+
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-fixture.mjs", source),
+    [],
+  );
+});
+
 test("ignores reassigned and unrelated extracted filesystem methods", () => {
   const source = `
     import fs from "node:fs/promises";
@@ -335,6 +410,13 @@ test("ignores reassigned and unrelated extracted filesystem methods", () => {
         const listDirectory = helper;
         return listDirectory(resolve(root, "artifacts"));
       }
+    }
+
+    function unrelatedOuter(root) {
+      const inspectDirectory = fs.stat;
+      return function inspect() {
+        return inspectDirectory(resolve(root, "artifacts"));
+      };
     }
   `;
 

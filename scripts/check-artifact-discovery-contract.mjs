@@ -281,6 +281,35 @@ function directoryReaderBindings(sourceFile) {
     );
   }
 
+  function trackedAliasAt(name, node) {
+    const position = node.getStart(sourceFile);
+    const scope = bindingScope(node, sourceFile);
+    return aliases.some((alias) => {
+      if (
+        alias.name !== name ||
+        !scopeContains(alias.visibilityScope, node) ||
+        hasShadowingBinding(alias, node)
+      ) {
+        return false;
+      }
+      if (scope !== alias.scope) {
+        return alias.transitions.some((transition) => transition.active);
+      }
+      const latestTransition = alias.transitions
+        .filter((transition) => transition.at < position)
+        .at(-1);
+      return latestTransition?.active === true;
+    });
+  }
+
+  function isTrackedReaderValue(node) {
+    return (
+      isTrackedNamespaceMember(node) ||
+      (ts.isIdentifier(node) &&
+        (direct.has(node.text) || trackedAliasAt(node.text, node)))
+    );
+  }
+
   function collectAliases(node) {
     if (ts.isVariableDeclaration(node) || ts.isParameter(node)) {
       addLocalBindings(
@@ -299,18 +328,13 @@ function directoryReaderBindings(sourceFile) {
     ) {
       addLocalBindings(node.name, node, node);
     }
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      isTrackedNamespaceMember(node.initializer)
-    ) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
       aliases.push({
         name: node.name.text,
         declaration: node,
         scope: bindingScope(node, sourceFile),
         visibilityScope: visibilityScope(node, sourceFile),
-        transitions: [{ at: node.initializer.end, active: true }],
+        transitions: [],
       });
     }
     ts.forEachChild(node, collectAliases);
@@ -328,8 +352,18 @@ function directoryReaderBindings(sourceFile) {
     );
   }
 
-  function collectReassignments(node) {
+  function collectTransitions(node) {
     if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer
+    ) {
+      const alias = aliases.find((candidate) => candidate.declaration === node);
+      alias.transitions.push({
+        at: node.initializer.end,
+        active: isTrackedReaderValue(node.initializer),
+      });
+    } else if (
       ts.isBinaryExpression(node) &&
       ts.isIdentifier(node.left) &&
       node.operatorToken.kind === ts.SyntaxKind.EqualsToken
@@ -339,20 +373,20 @@ function directoryReaderBindings(sourceFile) {
           alias.name === node.left.text &&
           scopeContains(alias.scope, node) &&
           !hasShadowingBinding(alias, node) &&
-          (isTrackedNamespaceMember(node.right) ||
+          (isTrackedReaderValue(node.right) ||
             isStraightLineReassignment(node, alias.scope)) &&
-          node.getStart(sourceFile) > alias.transitions[0].at
+          node.getStart(sourceFile) > alias.declaration.end
         ) {
           alias.transitions.push({
             at: node.end,
-            active: isTrackedNamespaceMember(node.right),
+            active: isTrackedReaderValue(node.right),
           });
         }
       }
     }
-    ts.forEachChild(node, collectReassignments);
+    ts.forEachChild(node, collectTransitions);
   }
-  collectReassignments(sourceFile);
+  collectTransitions(sourceFile);
 
   return { direct, namespaces, aliases, hasShadowingBinding };
 }
@@ -370,7 +404,9 @@ function isDirectoryReaderCall(call, bindings) {
       ) {
         return false;
       }
-      if (callScope !== alias.scope) return true;
+      if (callScope !== alias.scope) {
+        return alias.transitions.some((transition) => transition.active);
+      }
       const latestTransition = alias.transitions
         .filter((transition) => transition.at < callPosition)
         .at(-1);
