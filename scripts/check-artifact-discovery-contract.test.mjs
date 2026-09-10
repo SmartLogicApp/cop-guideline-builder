@@ -243,6 +243,335 @@ test("rejects artifact discovery through static filesystem element access", () =
   }
 });
 
+test("rejects artifact discovery through extracted filesystem methods", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-extracted-fs.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function discover(root) {
+          const listDirectory = fs.readdir;
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-extracted-bracket-fs.cjs",
+      source: `
+        const fs = require("node:fs");
+        const path = require("node:path");
+
+        function discover(root) {
+          const listDirectory = fs["readdirSync"];
+          return listDirectory(path.resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-module-extracted-fs.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        const listDirectory = fs.readdir;
+        async function discover(root) {
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-outer-extracted-fs.cjs",
+      source: `
+        const fs = require("node:fs");
+        const path = require("node:path");
+
+        function outer(root) {
+          const listDirectory = fs.readdirSync;
+          return function discover() {
+            return listDirectory(path.resolve(root, "artifacts"));
+          };
+        }
+      `,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const expectedLine = fixture.path.includes("outer") ? 8 : 7;
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:${expectedLine} lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
+test("ignores reassigned and unrelated extracted filesystem methods", () => {
+  const source = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    async function inspect(root, helper) {
+      let listDirectory = fs.readdir;
+      listDirectory = helper;
+      await listDirectory(resolve(root, "artifacts"));
+
+      const inspectDirectory = fs.stat;
+      return inspectDirectory(resolve(root, "artifacts"));
+    }
+
+    function unrelated(root, listDirectory) {
+      return listDirectory(resolve(root, "artifacts"));
+    }
+
+    function shadowedParameter(root) {
+      const listDirectory = fs.readdir;
+      return ((listDirectory) =>
+        listDirectory(resolve(root, "artifacts")))(helper);
+    }
+
+    function shadowedBlock(root) {
+      const listDirectory = fs.readdir;
+      {
+        const listDirectory = helper;
+        return listDirectory(resolve(root, "artifacts"));
+      }
+    }
+  `;
+
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-fixture.mjs", source),
+    [],
+  );
+});
+
+test("respects lexical scope when extracted reader names are shadowed", () => {
+  const unsafeCatchSource = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    const listDirectory = fs.readdir;
+    async function inspect(root) {
+      try {
+        await Promise.resolve();
+      } catch (listDirectory) {
+        return listDirectory;
+      }
+      return listDirectory(resolve(root, "artifacts"));
+    }
+  `;
+
+  assert.deepEqual(
+    artifactDiscoveryFailures(
+      "scripts/check-catch-scope.mjs",
+      unsafeCatchSource,
+    ),
+    [
+      "scripts/check-catch-scope.mjs:12 lists the top-level artifacts directory without an approved discovery helper or actionable error handling",
+    ],
+  );
+
+  const safeShadowSources = [
+    `
+      import fs from "node:fs/promises";
+      import { resolve } from "node:path";
+
+      const listDirectory = fs.readdir;
+      function inspect(root, { listDirectory }) {
+        return listDirectory(resolve(root, "artifacts"));
+      }
+    `,
+    `
+      import fs from "node:fs/promises";
+      import { resolve } from "node:path";
+
+      const listDirectory = fs.readdir;
+      function inspect(root) {
+        function listDirectory() {
+          return [];
+        }
+        return listDirectory(resolve(root, "artifacts"));
+      }
+    `,
+  ];
+
+  for (const source of safeShadowSources) {
+    assert.deepEqual(
+      artifactDiscoveryFailures("scripts/check-shadow.mjs", source),
+      [],
+    );
+  }
+});
+
+test("retains extracted reader tracking after conditional reassignment", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-branch-reassignment.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root, helper, replace) {
+          let listDirectory = fs.readdir;
+          if (replace) {
+            listDirectory = helper;
+          }
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+      line: 10,
+    },
+    {
+      path: "scripts/check-short-circuit-reassignment.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root, helper, replace) {
+          let listDirectory = fs.readdir;
+          replace && (listDirectory = helper);
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+    {
+      path: "scripts/check-nested-reassignment.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root, helper) {
+          let listDirectory = fs.readdir;
+          function replaceLater() {
+            listDirectory = helper;
+          }
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+      line: 10,
+    },
+    {
+      path: "scripts/check-rhs-reassignment.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          let listDirectory = fs.readdir;
+          listDirectory = await listDirectory(resolve(root, "artifacts"));
+          return listDirectory;
+        }
+      `,
+      line: 7,
+    },
+    {
+      path: "scripts/check-reader-reassignment.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          let listDirectory = fs.readdir;
+          listDirectory = fs["readdir"];
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+    {
+      path: "scripts/check-reader-reactivation.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root, helper) {
+          let listDirectory = fs.readdir;
+          listDirectory = helper;
+          listDirectory = fs.readdir;
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+      line: 9,
+    },
+    {
+      path: "scripts/check-captured-reassignment.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root, helper) {
+          let listDirectory = fs.readdir;
+          listDirectory = helper;
+          async function discover() {
+            return listDirectory(resolve(root, "artifacts"));
+          }
+          return discover();
+        }
+      `,
+      line: 9,
+    },
+    {
+      path: "scripts/check-early-captured-reader.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          async function discover() {
+            return listDirectory(resolve(root, "artifacts"));
+          }
+          const listDirectory = fs.readdir;
+          return discover();
+        }
+      `,
+      line: 7,
+    },
+    {
+      path: "scripts/check-shadowed-reassignment.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root, helper) {
+          let listDirectory = fs.readdir;
+          {
+            let listDirectory = helper;
+            listDirectory = helper;
+          }
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+      line: 11,
+    },
+    {
+      path: "scripts/check-conditional-reactivation.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root, helper, restore) {
+          let listDirectory = fs.readdir;
+          listDirectory = helper;
+          if (restore) {
+            listDirectory = fs.readdir;
+          }
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+      line: 11,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.deepEqual(
+      artifactDiscoveryFailures(fixture.path, fixture.source),
+      [
+        `${fixture.path}:${fixture.line} lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+      ],
+    );
+  }
+});
+
 test("rejects legacy filesystem module specifiers through supported bindings", () => {
   const fixtures = [
     {

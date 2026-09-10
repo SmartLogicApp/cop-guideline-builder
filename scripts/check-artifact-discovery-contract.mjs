@@ -83,6 +83,87 @@ function artifactDirectoryVariables(sourceFile) {
   return names;
 }
 
+function bindingScope(node, sourceFile) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (
+      ts.isFunctionDeclaration(current) ||
+      ts.isFunctionExpression(current) ||
+      ts.isArrowFunction(current) ||
+      ts.isMethodDeclaration(current)
+    ) {
+      return current;
+    }
+  }
+  return sourceFile;
+}
+
+function visibilityScope(declaration, sourceFile) {
+  if (ts.isParameter(declaration)) {
+    return bindingScope(declaration, sourceFile);
+  }
+  if (ts.isCatchClause(declaration.parent)) {
+    return declaration.parent;
+  }
+  const declarationList = declaration.parent;
+  if (
+    ts.isVariableDeclarationList(declarationList) &&
+    (declarationList.flags & ts.NodeFlags.BlockScoped) !== 0
+  ) {
+    for (
+      let current = declarationList.parent;
+      current;
+      current = current.parent
+    ) {
+      if (
+        ts.isSourceFile(current) ||
+        ts.isBlock(current) ||
+        ts.isCaseBlock(current) ||
+        ts.isForStatement(current) ||
+        ts.isForInStatement(current) ||
+        ts.isForOfStatement(current)
+      ) {
+        return current;
+      }
+    }
+  }
+  return bindingScope(declaration, sourceFile);
+}
+
+function scopeContains(scope, node) {
+  for (let current = node; current; current = current.parent) {
+    if (current === scope) return true;
+  }
+  return false;
+}
+
+function isStraightLineReassignment(node, scope) {
+  if (bindingScope(node, node.getSourceFile()) !== scope) return false;
+  let current = node.parent;
+  while (current && current !== scope) {
+    if (
+      ts.isIfStatement(current) ||
+      ts.isConditionalExpression(current) ||
+      ts.isSwitchStatement(current) ||
+      ts.isForStatement(current) ||
+      ts.isForInStatement(current) ||
+      ts.isForOfStatement(current) ||
+      ts.isWhileStatement(current) ||
+      ts.isDoStatement(current) ||
+      ts.isTryStatement(current) ||
+      (ts.isBinaryExpression(current) &&
+        [
+          ts.SyntaxKind.AmpersandAmpersandToken,
+          ts.SyntaxKind.BarBarToken,
+          ts.SyntaxKind.QuestionQuestionToken,
+        ].includes(current.operatorToken.kind))
+    ) {
+      return false;
+    }
+    current = current.parent;
+  }
+  return current === scope;
+}
+
 function directoryReaderBindings(sourceFile) {
   const direct = new Set(["readdir"]);
   const namespaces = new Set();
@@ -157,12 +238,144 @@ function directoryReaderBindings(sourceFile) {
       namespaces.add(bindings.name.text);
     }
   }
-  return { direct, namespaces };
+  const aliases = [];
+  const localBindings = [];
+
+  function addLocalBindings(name, declaration, scope) {
+    if (ts.isIdentifier(name)) {
+      localBindings.push({
+        declaration,
+        name: name.text,
+        scope,
+      });
+      return;
+    }
+    if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+      for (const element of name.elements) {
+        if (ts.isBindingElement(element)) {
+          addLocalBindings(element.name, declaration, scope);
+        }
+      }
+    }
+  }
+
+  function isTrackedNamespaceMember(node) {
+    if (
+      !ts.isPropertyAccessExpression(node) &&
+      !ts.isElementAccessExpression(node)
+    ) {
+      return false;
+    }
+    if (
+      !ts.isIdentifier(node.expression) ||
+      !namespaces.has(node.expression.text)
+    ) {
+      return false;
+    }
+    if (ts.isPropertyAccessExpression(node)) {
+      return ["readdir", "readdirSync"].includes(node.name.text);
+    }
+    return (
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      ["readdir", "readdirSync"].includes(node.argumentExpression.text)
+    );
+  }
+
+  function collectAliases(node) {
+    if (ts.isVariableDeclaration(node) || ts.isParameter(node)) {
+      addLocalBindings(
+        node.name,
+        node,
+        visibilityScope(node, sourceFile),
+      );
+    } else if (
+      (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
+      node.name
+    ) {
+      addLocalBindings(node.name, node, node.parent);
+    } else if (
+      (ts.isFunctionExpression(node) || ts.isClassExpression(node)) &&
+      node.name
+    ) {
+      addLocalBindings(node.name, node, node);
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      isTrackedNamespaceMember(node.initializer)
+    ) {
+      aliases.push({
+        name: node.name.text,
+        declaration: node,
+        scope: bindingScope(node, sourceFile),
+        visibilityScope: visibilityScope(node, sourceFile),
+        transitions: [{ at: node.initializer.end, active: true }],
+      });
+    }
+    ts.forEachChild(node, collectAliases);
+  }
+  collectAliases(sourceFile);
+
+  function hasShadowingBinding(alias, node) {
+    return localBindings.some(
+      (binding) =>
+        binding.name === alias.name &&
+        binding.declaration !== alias.declaration &&
+        binding.scope !== alias.visibilityScope &&
+        scopeContains(alias.visibilityScope, binding.scope) &&
+        scopeContains(binding.scope, node),
+    );
+  }
+
+  function collectReassignments(node) {
+    if (
+      ts.isBinaryExpression(node) &&
+      ts.isIdentifier(node.left) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
+      for (const alias of aliases) {
+        if (
+          alias.name === node.left.text &&
+          scopeContains(alias.scope, node) &&
+          !hasShadowingBinding(alias, node) &&
+          (isTrackedNamespaceMember(node.right) ||
+            isStraightLineReassignment(node, alias.scope)) &&
+          node.getStart(sourceFile) > alias.transitions[0].at
+        ) {
+          alias.transitions.push({
+            at: node.end,
+            active: isTrackedNamespaceMember(node.right),
+          });
+        }
+      }
+    }
+    ts.forEachChild(node, collectReassignments);
+  }
+  collectReassignments(sourceFile);
+
+  return { direct, namespaces, aliases, hasShadowingBinding };
 }
 
 function isDirectoryReaderCall(call, bindings) {
   if (ts.isIdentifier(call.expression)) {
-    return bindings.direct.has(call.expression.text);
+    if (bindings.direct.has(call.expression.text)) return true;
+    const callPosition = call.getStart();
+    const callScope = bindingScope(call, call.getSourceFile());
+    return bindings.aliases.some((alias) => {
+      if (
+        alias.name !== call.expression.text ||
+        !scopeContains(alias.visibilityScope, call) ||
+        bindings.hasShadowingBinding(alias, call)
+      ) {
+        return false;
+      }
+      if (callScope !== alias.scope) return true;
+      const latestTransition = alias.transitions
+        .filter((transition) => transition.at < callPosition)
+        .at(-1);
+      return latestTransition?.active === true;
+    });
   }
   const expression = call.expression;
   if (
