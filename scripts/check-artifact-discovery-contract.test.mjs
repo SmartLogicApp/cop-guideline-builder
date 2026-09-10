@@ -361,6 +361,101 @@ test("rejects artifact discovery through copied and assigned reader aliases", ()
   }
 });
 
+test("rejects artifact discovery through local object destructuring", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-destructured-reader.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function discover(root) {
+          const { readdir: listDirectory } = fs;
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+    },
+    {
+      path: "scripts/check-destructured-sync-reader.cjs",
+      source: `
+        const fs = require("node:fs");
+        const path = require("node:path");
+
+        function discover(root) {
+          const { readdirSync } = fs;
+          return readdirSync(path.resolve(root, "artifacts"));
+        }
+      `,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:7 lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
+test("tracks standalone destructuring assignments and later reassignment", () => {
+  const unsafeSource = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    async function discover(root) {
+      let listDirectory;
+      ({ readdir: listDirectory } = fs);
+      return listDirectory(resolve(root, "artifacts"));
+    }
+  `;
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-assigned-destructure.mjs", unsafeSource),
+    [
+      "scripts/check-assigned-destructure.mjs:8 lists the top-level artifacts directory without an approved discovery helper or actionable error handling",
+    ],
+  );
+
+  const reassignedSource = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    async function inspect(root, helper) {
+      let listDirectory;
+      ({ readdir: listDirectory } = fs);
+      listDirectory = helper;
+      return listDirectory(resolve(root, "artifacts"));
+    }
+  `;
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-reassigned-destructure.mjs", reassignedSource),
+    [],
+  );
+});
+
+test("ignores unrelated and lexically shadowed destructured members", () => {
+  const source = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    async function unrelated(root) {
+      const { stat: listDirectory } = fs;
+      return listDirectory(resolve(root, "artifacts"));
+    }
+
+    async function shadowed(root) {
+      const { readdir: listDirectory } = fs;
+      {
+        const listDirectory = helper;
+        return listDirectory(resolve(root, "artifacts"));
+      }
+    }
+  `;
+
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-destructure-safety.mjs", source),
+    [],
+  );
+});
+
 test("stops tracking copied reader aliases after unrelated reassignment", () => {
   const source = `
     import fs from "node:fs/promises";

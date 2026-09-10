@@ -288,6 +288,55 @@ function directoryReaderBindings(sourceFile) {
     );
   }
 
+  function trackedReaderPropertyName(node) {
+    if (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) {
+      return ["readdir", "readdirSync"].includes(node.text)
+        ? node.text
+        : undefined;
+    }
+    return undefined;
+  }
+
+  function objectBindingReaderTargets(pattern) {
+    const targets = [];
+    for (const element of pattern.elements) {
+      if (!ts.isIdentifier(element.name)) continue;
+      const property = trackedReaderPropertyName(
+        element.propertyName ?? element.name,
+      );
+      targets.push({
+        name: element.name.text,
+        active: property !== undefined,
+      });
+    }
+    return targets;
+  }
+
+  function objectAssignmentReaderTargets(pattern) {
+    const targets = [];
+    for (const property of pattern.properties) {
+      if (ts.isShorthandPropertyAssignment(property)) {
+        targets.push({
+          name: property.name.text,
+          active: trackedReaderPropertyName(property.name) !== undefined,
+        });
+      } else if (
+        ts.isPropertyAssignment(property) &&
+        ts.isIdentifier(property.initializer)
+      ) {
+        targets.push({
+          name: property.initializer.text,
+          active: trackedReaderPropertyName(property.name) !== undefined,
+        });
+      }
+    }
+    return targets;
+  }
+
+  function isTrackedNamespaceValue(node) {
+    return ts.isIdentifier(node) && namespaces.has(node.text);
+  }
+
   function trackedAliasAt(name, node) {
     const position = node.getStart(sourceFile);
     const scope = bindingScope(node, sourceFile);
@@ -344,14 +393,21 @@ function directoryReaderBindings(sourceFile) {
     ) {
       addLocalBindings(node.name, node, node);
     }
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-      aliases.push({
-        name: node.name.text,
-        declaration: node,
-        scope: bindingScope(node, sourceFile),
-        visibilityScope: visibilityScope(node, sourceFile),
-        transitions: [],
-      });
+    if (ts.isVariableDeclaration(node)) {
+      const aliasNames = ts.isIdentifier(node.name)
+        ? [node.name.text]
+        : ts.isObjectBindingPattern(node.name)
+          ? objectBindingReaderTargets(node.name).map((target) => target.name)
+          : [];
+      for (const name of aliasNames) {
+        aliases.push({
+          name,
+          declaration: node,
+          scope: bindingScope(node, sourceFile),
+          visibilityScope: visibilityScope(node, sourceFile),
+          transitions: [],
+        });
+      }
     }
     ts.forEachChild(node, collectAliases);
   }
@@ -380,6 +436,22 @@ function directoryReaderBindings(sourceFile) {
         active: isTrackedReaderValue(node.initializer),
       });
     } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer
+    ) {
+      const trackedNamespace = isTrackedNamespaceValue(node.initializer);
+      for (const target of objectBindingReaderTargets(node.name)) {
+        const alias = aliases.find(
+          (candidate) =>
+            candidate.declaration === node && candidate.name === target.name,
+        );
+        alias.transitions.push({
+          at: node.initializer.end,
+          active: trackedNamespace && target.active,
+        });
+      }
+    } else if (
       ts.isBinaryExpression(node) &&
       ts.isIdentifier(node.left) &&
       node.operatorToken.kind === ts.SyntaxKind.EqualsToken
@@ -397,6 +469,29 @@ function directoryReaderBindings(sourceFile) {
             at: node.end,
             active: isTrackedReaderValue(node.right),
           });
+        }
+      }
+    } else if (
+      ts.isBinaryExpression(node) &&
+      ts.isObjectLiteralExpression(node.left) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
+      const trackedNamespace = isTrackedNamespaceValue(node.right);
+      for (const target of objectAssignmentReaderTargets(node.left)) {
+        for (const alias of aliases) {
+          if (
+            alias.name === target.name &&
+            scopeContains(alias.scope, node) &&
+            !hasShadowingBinding(alias, node) &&
+            ((trackedNamespace && target.active) ||
+              isStraightLineReassignment(node, alias.scope)) &&
+            node.getStart(sourceFile) > alias.declaration.end
+          ) {
+            alias.transitions.push({
+              at: node.end,
+              active: trackedNamespace && target.active,
+            });
+          }
         }
       }
     }
