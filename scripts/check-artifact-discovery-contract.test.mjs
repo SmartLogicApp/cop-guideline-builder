@@ -475,6 +475,237 @@ test("stops tracking copied reader aliases after unrelated reassignment", () => 
   );
 });
 
+test("rejects artifact discovery through static local container members", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-object-reader.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          const helpers = { list: fs.readdir };
+          return helpers.list(resolve(root, "artifacts"));
+        }
+      `,
+      line: 7,
+    },
+    {
+      path: "scripts/check-array-reader.mjs",
+      source: `
+        import { readdir } from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          const helpers = [readdir];
+          return helpers[0](resolve(root, "artifacts"));
+        }
+      `,
+      line: 7,
+    },
+    {
+      path: "scripts/check-copied-container-reader.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          const helpers = { "list": fs.readdir };
+          const listDirectory = helpers["list"];
+          return listDirectory(resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+    {
+      path: "scripts/check-assigned-container-reader.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          const helpers = {};
+          helpers.list = fs.readdir;
+          return helpers.list(resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:${fixture.line} lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
+test("clears static local container members after unrelated writes", () => {
+  const source = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    async function inspect(root, helper) {
+      const objectHelpers = { list: fs.readdir };
+      objectHelpers.list = helper;
+      await objectHelpers.list(resolve(root, "artifacts"));
+
+      const arrayHelpers = [fs.readdir];
+      arrayHelpers[0] = helper;
+      return arrayHelpers[0](resolve(root, "artifacts"));
+    }
+  `;
+
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-fixture.mjs", source),
+    [],
+  );
+});
+
+test("updates tracked members after whole local container replacement", () => {
+  const safeSource = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    async function inspect(root, helper) {
+      let objectHelpers = { list: fs.readdir };
+      objectHelpers = { list: helper };
+      await objectHelpers.list(resolve(root, "artifacts"));
+
+      let arrayHelpers = [fs.readdir];
+      arrayHelpers = [helper];
+      return arrayHelpers[0](resolve(root, "artifacts"));
+    }
+  `;
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-replaced-safe.mjs", safeSource),
+    [],
+  );
+
+  const unsafeFixtures = [
+    {
+      path: "scripts/check-replaced-object.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          let helpers = {};
+          helpers = { list: fs.readdir };
+          return helpers.list(resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+    {
+      path: "scripts/check-replaced-array.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          let helpers = [];
+          helpers = [fs.readdir];
+          return helpers[0](resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+  ];
+  for (const fixture of unsafeFixtures) {
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:${fixture.line} lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
+test("retains tracked members across possible or reader-copying replacements", () => {
+  const fixtures = [
+    {
+      path: "scripts/check-conditional-object-replacement.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root, helper, replace) {
+          let helpers = { list: fs.readdir };
+          if (replace) helpers = { list: helper };
+          return helpers.list(resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+    {
+      path: "scripts/check-conditional-array-replacement.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root, helper, replace) {
+          let helpers = [fs.readdir];
+          if (replace) helpers = [helper];
+          return helpers[0](resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+    {
+      path: "scripts/check-copied-object-replacement.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          let helpers = { list: fs.readdir };
+          helpers = { copied: helpers.list };
+          return helpers.copied(resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+    {
+      path: "scripts/check-copied-array-replacement.mjs",
+      source: `
+        import fs from "node:fs/promises";
+        import { resolve } from "node:path";
+
+        async function inspect(root) {
+          let helpers = [fs.readdir];
+          helpers = [helpers[0]];
+          return helpers[0](resolve(root, "artifacts"));
+        }
+      `,
+      line: 8,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.deepEqual(artifactDiscoveryFailures(fixture.path, fixture.source), [
+      `${fixture.path}:${fixture.line} lists the top-level artifacts directory without an approved discovery helper or actionable error handling`,
+    ]);
+  }
+});
+
+test("ignores dynamic members and unrelated local containers", () => {
+  const source = `
+    import fs from "node:fs/promises";
+    import { resolve } from "node:path";
+
+    async function inspect(root, key, helper) {
+      const tracked = { list: fs.readdir };
+      await tracked[key](resolve(root, "artifacts"));
+
+      const unrelated = { list: helper };
+      return unrelated.list(resolve(root, "artifacts"));
+    }
+  `;
+
+  assert.deepEqual(
+    artifactDiscoveryFailures("scripts/check-fixture.mjs", source),
+    [],
+  );
+});
+
 test("ignores reassigned and unrelated extracted filesystem methods", () => {
   const source = `
     import fs from "node:fs/promises";

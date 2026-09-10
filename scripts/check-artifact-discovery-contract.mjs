@@ -246,6 +246,7 @@ function directoryReaderBindings(sourceFile) {
     }
   }
   const aliases = [];
+  const containers = [];
   const localBindings = [];
 
   function addLocalBindings(name, declaration, scope) {
@@ -337,6 +338,53 @@ function directoryReaderBindings(sourceFile) {
     return ts.isIdentifier(node) && namespaces.has(node.text);
   }
 
+  function staticContainerMember(node) {
+    if (
+      (!ts.isPropertyAccessExpression(node) &&
+        !ts.isElementAccessExpression(node)) ||
+      !ts.isIdentifier(node.expression)
+    ) {
+      return undefined;
+    }
+    if (ts.isPropertyAccessExpression(node)) {
+      return { containerName: node.expression.text, member: node.name.text };
+    }
+    if (
+      ts.isStringLiteralLike(node.argumentExpression) ||
+      ts.isNumericLiteral(node.argumentExpression)
+    ) {
+      return {
+        containerName: node.expression.text,
+        member: node.argumentExpression.text,
+      };
+    }
+    return undefined;
+  }
+
+  function trackedContainerMemberAt(node) {
+    const memberAccess = staticContainerMember(node);
+    if (!memberAccess) return false;
+    const position = node.getStart(sourceFile);
+    const scope = bindingScope(node, sourceFile);
+    return containers.some((container) => {
+      if (
+        container.name !== memberAccess.containerName ||
+        !scopeContains(container.visibilityScope, node) ||
+        hasShadowingBinding(container, node)
+      ) {
+        return false;
+      }
+      const transitions = container.members.get(memberAccess.member) ?? [];
+      if (scope !== container.scope) {
+        return transitions.some((transition) => transition.active);
+      }
+      const latestTransition = transitions
+        .filter((transition) => transition.at < position)
+        .at(-1);
+      return latestTransition?.active === true;
+    });
+  }
+
   function trackedAliasAt(name, node) {
     const position = node.getStart(sourceFile);
     const scope = bindingScope(node, sourceFile);
@@ -369,10 +417,65 @@ function directoryReaderBindings(sourceFile) {
   function isTrackedReaderValue(node) {
     return (
       isTrackedNamespaceMember(node) ||
+      trackedContainerMemberAt(node) ||
       (ts.isIdentifier(node) &&
         (isDirectReaderAt(node.text, node) ||
           trackedAliasAt(node.text, node)))
     );
+  }
+
+  function addContainerTransition(container, member, at, active) {
+    const transitions = container.members.get(member) ?? [];
+    transitions.push({ at, active });
+    container.members.set(member, transitions);
+  }
+
+  function literalContainerStates(literal) {
+    const states = [];
+    if (ts.isObjectLiteralExpression(literal)) {
+      for (const property of literal.properties) {
+        if (
+          ts.isPropertyAssignment(property) &&
+          (ts.isIdentifier(property.name) ||
+            ts.isStringLiteralLike(property.name) ||
+            ts.isNumericLiteral(property.name))
+        ) {
+          states.push({
+            member: property.name.text,
+            at: property.end,
+            active: isTrackedReaderValue(property.initializer),
+          });
+        } else if (ts.isShorthandPropertyAssignment(property)) {
+          states.push({
+            member: property.name.text,
+            at: property.end,
+            active: isTrackedReaderValue(property.name),
+          });
+        }
+      }
+    } else if (ts.isArrayLiteralExpression(literal)) {
+      literal.elements.forEach((element, index) => {
+        if (!ts.isOmittedExpression(element) && !ts.isSpreadElement(element)) {
+          states.push({
+            member: String(index),
+            at: element.end,
+            active: isTrackedReaderValue(element),
+          });
+        }
+      });
+    }
+    return states;
+  }
+
+  function addLiteralContainerTransitions(container, literal) {
+    for (const state of literalContainerStates(literal)) {
+      addContainerTransition(
+        container,
+        state.member,
+        state.at,
+        state.active,
+      );
+    }
   }
 
   function collectAliases(node) {
@@ -408,6 +511,20 @@ function directoryReaderBindings(sourceFile) {
           transitions: [],
         });
       }
+      if (
+        ts.isIdentifier(node.name) &&
+        node.initializer &&
+        (ts.isObjectLiteralExpression(node.initializer) ||
+          ts.isArrayLiteralExpression(node.initializer))
+      ) {
+        containers.push({
+          name: node.name.text,
+          declaration: node,
+          scope: bindingScope(node, sourceFile),
+          visibilityScope: visibilityScope(node, sourceFile),
+          members: new Map(),
+        });
+      }
     }
     ts.forEachChild(node, collectAliases);
   }
@@ -435,6 +552,12 @@ function directoryReaderBindings(sourceFile) {
         at: node.initializer.end,
         active: isTrackedReaderValue(node.initializer),
       });
+      const container = containers.find(
+        (candidate) => candidate.declaration === node,
+      );
+      if (container) {
+        addLiteralContainerTransitions(container, node.initializer);
+      }
     } else if (
       ts.isVariableDeclaration(node) &&
       ts.isObjectBindingPattern(node.name) &&
@@ -471,6 +594,37 @@ function directoryReaderBindings(sourceFile) {
           });
         }
       }
+      for (const container of containers) {
+        if (
+          container.name !== node.left.text ||
+          !scopeContains(container.scope, node) ||
+          hasShadowingBinding(container, node) ||
+          node.getStart(sourceFile) <= container.declaration.end
+        ) {
+          continue;
+        }
+        const straightLine = isStraightLineReassignment(node, container.scope);
+        const replacementStates =
+          ts.isObjectLiteralExpression(node.right) ||
+          ts.isArrayLiteralExpression(node.right)
+            ? literalContainerStates(node.right)
+            : [];
+        if (straightLine) {
+          for (const member of container.members.keys()) {
+            addContainerTransition(container, member, node.end, false);
+          }
+        }
+        for (const state of replacementStates) {
+          if (straightLine || state.active) {
+            addContainerTransition(
+              container,
+              state.member,
+              node.end,
+              state.active,
+            );
+          }
+        }
+      }
     } else if (
       ts.isBinaryExpression(node) &&
       ts.isObjectLiteralExpression(node.left) &&
@@ -494,6 +648,30 @@ function directoryReaderBindings(sourceFile) {
           }
         }
       }
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
+      const memberAccess = staticContainerMember(node.left);
+      if (memberAccess) {
+        for (const container of containers) {
+          if (
+            container.name === memberAccess.containerName &&
+            scopeContains(container.scope, node) &&
+            !hasShadowingBinding(container, node) &&
+            (isTrackedReaderValue(node.right) ||
+              isStraightLineReassignment(node, container.scope)) &&
+            node.getStart(sourceFile) > container.declaration.end
+          ) {
+            addContainerTransition(
+              container,
+              memberAccess.member,
+              node.end,
+              isTrackedReaderValue(node.right),
+            );
+          }
+        }
+      }
     }
     ts.forEachChild(node, collectTransitions);
   }
@@ -503,11 +681,13 @@ function directoryReaderBindings(sourceFile) {
     aliases,
     hasShadowingBinding,
     isDirectReaderAt,
+    isTrackedReaderValue,
     namespaces,
   };
 }
 
 function isDirectoryReaderCall(call, bindings) {
+  if (bindings.isTrackedReaderValue(call.expression)) return true;
   if (ts.isIdentifier(call.expression)) {
     if (bindings.isDirectReaderAt(call.expression.text, call)) return true;
     const callPosition = call.getStart();
