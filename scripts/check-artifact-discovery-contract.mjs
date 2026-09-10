@@ -165,8 +165,15 @@ function isStraightLineReassignment(node, scope) {
 }
 
 function directoryReaderBindings(sourceFile) {
-  const direct = new Set(["readdir"]);
+  const direct = [];
   const namespaces = new Set();
+  function addDirectBinding(name, declaration) {
+    direct.push({
+      declaration,
+      name,
+      visibilityScope: sourceFile,
+    });
+  }
   for (const statement of sourceFile.statements) {
     if (
       ts.isImportEqualsDeclaration(statement) &&
@@ -205,7 +212,7 @@ function directoryReaderBindings(sourceFile) {
                 element.propertyName?.getText() ?? element.name.text,
               )
             ) {
-              direct.add(element.name.text);
+              addDirectBinding(element.name.text, declaration);
             }
           }
         }
@@ -231,7 +238,7 @@ function directoryReaderBindings(sourceFile) {
             (element.propertyName ?? element.name).text,
           )
         ) {
-          direct.add(element.name.text);
+          addDirectBinding(element.name.text, element);
         }
       }
     } else if (bindings && ts.isNamespaceImport(bindings)) {
@@ -302,11 +309,20 @@ function directoryReaderBindings(sourceFile) {
     });
   }
 
+  function isDirectReaderAt(name, node) {
+    return direct.some(
+      (binding) =>
+        binding.name === name &&
+        !hasShadowingBinding(binding, node),
+    );
+  }
+
   function isTrackedReaderValue(node) {
     return (
       isTrackedNamespaceMember(node) ||
       (ts.isIdentifier(node) &&
-        (direct.has(node.text) || trackedAliasAt(node.text, node)))
+        (isDirectReaderAt(node.text, node) ||
+          trackedAliasAt(node.text, node)))
     );
   }
 
@@ -388,12 +404,17 @@ function directoryReaderBindings(sourceFile) {
   }
   collectTransitions(sourceFile);
 
-  return { direct, namespaces, aliases, hasShadowingBinding };
+  return {
+    aliases,
+    hasShadowingBinding,
+    isDirectReaderAt,
+    namespaces,
+  };
 }
 
 function isDirectoryReaderCall(call, bindings) {
   if (ts.isIdentifier(call.expression)) {
-    if (bindings.direct.has(call.expression.text)) return true;
+    if (bindings.isDirectReaderAt(call.expression.text, call)) return true;
     const callPosition = call.getStart();
     const callScope = bindingScope(call, call.getSourceFile());
     return bindings.aliases.some((alias) => {

@@ -484,6 +484,96 @@ test("respects lexical scope when extracted reader names are shadowed", () => {
   }
 });
 
+test("resolves lexical bindings for named filesystem reader imports", () => {
+  const unsafeSources = [
+    `
+      import { readdir } from "node:fs/promises";
+      import { resolve } from "node:path";
+
+      async function inspect(root) {
+        return readdir(resolve(root, "artifacts"));
+      }
+    `,
+    `
+      import { readdirSync as listDirectory } from "node:fs";
+      import { resolve } from "node:path";
+
+      function inspect(root) {
+        const copiedReader = listDirectory;
+        return copiedReader(resolve(root, "artifacts"));
+      }
+    `,
+  ];
+
+  for (const source of unsafeSources) {
+    assert.equal(
+      artifactDiscoveryFailures("scripts/check-named-reader.mjs", source)
+        .length,
+      1,
+    );
+  }
+
+  const safeShadowSources = [
+    `
+      import { readdir } from "node:fs/promises";
+      import { resolve } from "node:path";
+
+      async function inspect(root, readdir) {
+        return readdir(resolve(root, "artifacts"));
+      }
+    `,
+    `
+      import { readdir } from "node:fs/promises";
+      import { resolve } from "node:path";
+
+      async function inspect(root, helper) {
+        {
+          const readdir = helper;
+          return readdir(resolve(root, "artifacts"));
+        }
+      }
+    `,
+    `
+      import { readdir } from "node:fs/promises";
+      import { resolve } from "node:path";
+
+      async function inspect(root) {
+        try {
+          await Promise.resolve();
+        } catch (readdir) {
+          return readdir(resolve(root, "artifacts"));
+        }
+      }
+    `,
+    `
+      import { readdir } from "node:fs/promises";
+      import { resolve } from "node:path";
+
+      async function inspect(root, helper) {
+        return function nested(readdir) {
+          return readdir(resolve(root, "artifacts"));
+        }(helper);
+      }
+    `,
+    `
+      import { readdir } from "node:fs/promises";
+      import { resolve } from "node:path";
+
+      async function inspect(root, readdir) {
+        const copiedReader = readdir;
+        return copiedReader(resolve(root, "artifacts"));
+      }
+    `,
+  ];
+
+  for (const source of safeShadowSources) {
+    assert.deepEqual(
+      artifactDiscoveryFailures("scripts/check-shadowed-named-reader.mjs", source),
+      [],
+    );
+  }
+});
+
 test("retains extracted reader tracking after conditional reassignment", () => {
   const fixtures = [
     {
