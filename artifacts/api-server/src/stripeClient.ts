@@ -11,13 +11,17 @@ export async function stripeRequest<T>(
   path: string,
   options: StripeProxyOptions = {},
 ): Promise<T> {
-  const testSecret = process.env.STRIPE_TEST_SECRET_KEY?.trim();
-  if (testSecret && process.env.NODE_ENV !== "production") {
+  const directSecret = (
+    process.env.NODE_ENV === "production"
+      ? process.env.STRIPE_LIVE_SECRET_KEY
+      : process.env.STRIPE_TEST_SECRET_KEY
+  )?.trim();
+  if (directSecret) {
     const response = await fetch(`https://api.stripe.com${path}`, {
       method: options.method ?? "GET",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${testSecret}`,
+        Authorization: `Bearer ${directSecret}`,
         ...(options.body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
         ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
       },
@@ -65,13 +69,13 @@ export function getConfiguredStripePriceId(): string {
 export function getStripeWebhookSecret(): string {
   const webhookSecret = (
     process.env.NODE_ENV === "production"
-      ? process.env.STRIPE_WEBHOOK_SECRET
+      ? process.env.STRIPE_LIVE_WEBHOOK_SECRET ?? process.env.STRIPE_WEBHOOK_SECRET
       : process.env.STRIPE_TEST_WEBHOOK_SECRET ?? process.env.STRIPE_WEBHOOK_SECRET
   )?.trim();
   if (!webhookSecret) {
     throw new Error(
       process.env.NODE_ENV === "production"
-        ? "STRIPE_WEBHOOK_SECRET is not configured."
+        ? "STRIPE_LIVE_WEBHOOK_SECRET is not configured."
         : "STRIPE_TEST_WEBHOOK_SECRET is not configured.",
     );
   }
