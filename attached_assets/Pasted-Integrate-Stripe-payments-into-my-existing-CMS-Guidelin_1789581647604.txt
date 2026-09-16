@@ -1,0 +1,37 @@
+Integrate Stripe payments into my existing CMS Guideline Builder web app.
+
+First, inspect the current codebase, framework, authentication, database schema, and existing user/account model. Do not replace working functionality or create a separate demo app.
+
+Implement a production-ready subscription billing flow using Stripe Checkout:
+
+1. Use Stripe Test mode initially.
+2. Create a server-side checkout-session endpoint. Never expose the Stripe secret key in frontend code.
+3. Add a pricing page with a clear “Subscribe” button.
+4. Use the authenticated user’s email and user ID when creating the Stripe Customer and Checkout Session.
+5. Support the Stripe Price ID through an environment variable rather than hardcoding it.
+6. Add a Stripe webhook endpoint that:
+   - Verifies the Stripe signature
+   - Handles checkout.session.completed
+   - Handles customer.subscription.created
+   - Handles customer.subscription.updated
+   - Handles customer.subscription.deleted
+   - Handles invoice.payment_failed
+7. Store the Stripe customer ID, subscription ID, subscription status, current plan, and relevant billing dates in the existing database.
+8. Gate paid CMS Guideline Builder features based on the user’s active subscription status.
+9. Add success, cancellation, billing, and subscription-management states to the UI.
+10. Add a “Manage billing” button using the Stripe Customer Portal.
+11. Handle cancelled subscriptions, failed payments, expired sessions, duplicate webhook events, and users who already have an active subscription.
+12. Add useful error messages and loading states without exposing sensitive Stripe details.
+13. Add or update database migrations, server routes, and tests as needed.
+14. Confirm that the app still works for logged-out users and free users.
+15. Run the app and verify the complete flow with Stripe test mode before declaring this finished.
+
+Use these environment variables, and tell me exactly which ones I need to add in Replit Secrets:
+- STRIPE_SECRET_KEY
+- STRIPE_PUBLISHABLE_KEY
+- STRIPE_WEBHOOK_SECRET
+- STRIPE_PRICE_ID
+
+Do not ask me to paste keys into chat. Use Replit Secrets for all credentials. If the app’s existing architecture requires different variable names, explain the mapping and use secure environment variables.
+
+Before switching to live payments, give me a short checklist for replacing the test keys, creating the live Price ID, configuring the production webhook URL, and verifying a real payment safely.
