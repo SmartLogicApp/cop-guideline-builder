@@ -17,3 +17,4 @@
 - [Long generation transport](long-generation-transport.md) — keep long AI work on one authenticated SSE request, and never unmount active tools during background access refreshes.
 - [OpenAPI codegen compatibility](openapi-codegen-compatibility.md) — preserve the workspace’s Orval/YAML/Zod compatibility constraints when changing schemas or package overrides.
 - [Static alias safety analysis](static-alias-safety-analysis.md) — safety guards must track possible alias states by lexical binding and conservatively retain risk across conditional or captured writes.
+- [Webhook secret replacement](webhook-secret-replacement.md) — confirming an existing secure field may retain its old value; use a distinct Test-only key when account ownership changes.
