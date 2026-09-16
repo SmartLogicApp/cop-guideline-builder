@@ -40,8 +40,18 @@ export function getConfiguredStripePriceId(): string {
 }
 
 export function getStripeWebhookSecret(): string {
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
-  if (!webhookSecret) throw new Error("STRIPE_WEBHOOK_SECRET is not configured.");
+  const webhookSecret = (
+    process.env.NODE_ENV === "production"
+      ? process.env.STRIPE_WEBHOOK_SECRET
+      : process.env.STRIPE_TEST_WEBHOOK_SECRET ?? process.env.STRIPE_WEBHOOK_SECRET
+  )?.trim();
+  if (!webhookSecret) {
+    throw new Error(
+      process.env.NODE_ENV === "production"
+        ? "STRIPE_WEBHOOK_SECRET is not configured."
+        : "STRIPE_TEST_WEBHOOK_SECRET is not configured.",
+    );
+  }
   return webhookSecret;
 }
 
