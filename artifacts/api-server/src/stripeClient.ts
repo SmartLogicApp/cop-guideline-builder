@@ -11,6 +11,29 @@ export async function stripeRequest<T>(
   path: string,
   options: StripeProxyOptions = {},
 ): Promise<T> {
+  const testSecret = process.env.STRIPE_TEST_SECRET_KEY?.trim();
+  if (testSecret && process.env.NODE_ENV !== "production") {
+    const response = await fetch(`https://api.stripe.com${path}`, {
+      method: options.method ?? "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${testSecret}`,
+        ...(options.body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
+        ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
+      },
+      body: options.body?.toString(),
+    });
+    const payload = await response.json() as T & {
+      error?: { message?: string; code?: string };
+    };
+    if (!response.ok) {
+      const error = new Error(payload.error?.message ?? `Stripe request failed (${response.status}).`);
+      Object.assign(error, { status: response.status, stripeCode: payload.error?.code });
+      throw error;
+    }
+    return payload;
+  }
+
   // Never cache the connector client: its identity tokens may rotate.
   const connectors = new ReplitConnectors();
   const response = await connectors.proxy("stripe", path, {
