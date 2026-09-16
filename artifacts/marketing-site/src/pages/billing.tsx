@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   CircleDollarSign,
+  CreditCard,
   FileClock,
   LoaderCircle,
   ShieldCheck,
@@ -19,10 +20,14 @@ type SubscriptionData = {
     accessSource: 'admin' | 'complimentary' | 'subscription';
     hasComplimentaryAccess: boolean;
     daysLeftInTrial: number;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
   };
   isActive?: boolean;
   accessSource?: 'admin' | 'complimentary' | 'subscription';
   paymentAcceptanceEnabled: boolean;
+  plan: null | { name: string; amountUsd: number; interval: 'month' };
+  canManageBilling: boolean;
 };
 
 type TokenUsageData = {
@@ -71,7 +76,10 @@ export default function BillingPage() {
   const [usage, setUsage] = useState<TokenUsageData['currentMonth'] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<'checkout' | 'portal' | null>(null);
   const paymentAcceptanceEnabled = subscription?.paymentAcceptanceEnabled === true;
+  const checkoutState = new URLSearchParams(window.location.search).get('checkout');
 
   const loadBilling = useCallback(async () => {
     setIsLoading(true);
@@ -109,6 +117,33 @@ export default function BillingPage() {
   useEffect(() => {
     void loadBilling();
   }, [loadBilling]);
+
+  const openStripe = useCallback(async (endpoint: 'checkout' | 'portal') => {
+    setActionLoading(endpoint);
+    setActionError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Your secure session is unavailable. Please sign in again.');
+      const response = await fetch(`/api/billing/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      const body = await response.json() as { url?: string; error?: string };
+      if (!response.ok || !body.url) {
+        throw new Error(body.error || 'Billing could not be opened. Please try again.');
+      }
+      window.location.assign(body.url);
+    } catch (actionFailure) {
+      setActionError(actionFailure instanceof Error
+        ? actionFailure.message
+        : 'Billing could not be opened. Please try again.');
+      setActionLoading(null);
+    }
+  }, [getToken]);
 
   return (
     <main className="min-h-[100dvh] bg-slate-50 px-4 py-8 sm:px-6 sm:py-12">
@@ -176,6 +211,16 @@ export default function BillingPage() {
 
         {!isLoading && !error && (
           <>
+            {checkoutState === 'success' && (
+              <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">
+                Checkout completed. Subscription access will update as soon as Stripe confirms it.
+              </div>
+            )}
+            {checkoutState === 'canceled' && (
+              <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700" role="status">
+                Checkout was canceled. No payment was made.
+              </div>
+            )}
             <section className="mt-8 grid gap-4 sm:grid-cols-3">
               <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <ShieldCheck className="size-5 text-teal-700" aria-hidden="true" />
@@ -210,33 +255,90 @@ export default function BillingPage() {
               </article>
             </section>
 
-            <section
-              className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 sm:p-8"
-              data-payment-acceptance={paymentAcceptanceEnabled ? 'enabled' : 'disabled'}
-            >
+            {paymentAcceptanceEnabled ? (
+              <section
+                className="mt-6 rounded-2xl border border-teal-200 bg-white p-6 shadow-sm sm:p-8"
+                data-payment-acceptance="enabled"
+              >
+                <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-11 items-center justify-center rounded-xl bg-teal-100">
+                        <CreditCard className="size-6 text-teal-800" aria-hidden="true" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-teal-700">Facility plan</p>
+                        <h2 className="text-xl font-bold text-slate-950">CMS Compliance Suite</h2>
+                      </div>
+                    </div>
+                    <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
+                      Full compliance workspace access for your registered facility, including guideline,
+                      policy, inspection-readiness, and policy-gap generation tools.
+                    </p>
+                    {subscription?.subscription?.currentPeriodEnd && (
+                      <p className="mt-3 text-sm font-medium text-slate-700">
+                        {subscription.subscription.cancelAtPeriodEnd ? 'Access ends' : 'Renews'}{' '}
+                        {new Date(subscription.subscription.currentPeriodEnd).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  <div className="min-w-56 rounded-xl bg-slate-50 p-5 text-center">
+                    <p className="text-3xl font-bold text-slate-950">
+                      ${subscription?.plan?.amountUsd ?? 299}
+                      <span className="text-sm font-medium text-slate-500">/month</span>
+                    </p>
+                    {subscription?.canManageBilling ? (
+                      <button
+                        type="button"
+                        onClick={() => void openStripe('portal')}
+                        disabled={actionLoading !== null}
+                        className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {actionLoading === 'portal' ? 'Opening…' : 'Manage billing'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void openStripe('checkout')}
+                        disabled={actionLoading !== null}
+                        className="mt-4 w-full rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {actionLoading === 'checkout' ? 'Opening secure checkout…' : 'Subscribe'}
+                      </button>
+                    )}
+                    <p className="mt-3 text-xs leading-5 text-slate-500">
+                      Secure checkout and subscription management are provided by Stripe.
+                    </p>
+                  </div>
+                </div>
+                {actionError && (
+                  <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+                    {actionError}
+                  </div>
+                )}
+              </section>
+            ) : (
+              <section
+                className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 sm:p-8"
+                data-payment-acceptance="disabled"
+              >
               <div className="flex flex-col gap-5 sm:flex-row">
                 <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-100">
                   <CircleDollarSign className="size-6 text-amber-800" aria-hidden="true" />
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-amber-950">
-                    {paymentAcceptanceEnabled
-                      ? 'Payment setup is enabled, but no purchase options are available'
-                      : 'Paid billing is not active yet'}
+                    Paid billing is not active yet
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-amber-900">
-                    {paymentAcceptanceEnabled
-                      ? 'No checkout action is available for this account. A payment method will only be requested after plans, payment processing, and updated billing terms are fully configured.'
-                      : 'Stripe checkout, automatic renewals, and payment collection are not currently enabled. No payment method will be requested and no charge will be created from this page. Updated pricing and billing terms will be presented before paid subscriptions launch.'}
+                    Stripe checkout, automatic renewals, and payment collection are not currently enabled. No payment method will be requested and no charge will be created from this page. Updated pricing and billing terms will be presented before paid subscriptions launch.
                   </p>
                   <button
                     type="button"
                     disabled
                     className="mt-5 cursor-not-allowed rounded-lg border border-amber-300 bg-amber-100 px-4 py-2 text-sm font-bold text-amber-800 opacity-80"
                   >
-                    {paymentAcceptanceEnabled
-                      ? 'No payment plans available'
-                      : 'Payment acceptance not enabled'}
+                    Payment acceptance not enabled
                   </button>
                   <p className="mt-4 text-sm text-amber-900">
                     Need help with access?{' '}
@@ -249,7 +351,8 @@ export default function BillingPage() {
                   </p>
                 </div>
               </div>
-            </section>
+              </section>
+            )}
 
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
               <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">

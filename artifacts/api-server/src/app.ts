@@ -9,6 +9,7 @@ import { WebhookHandlers } from "./webhookHandlers";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { HealthCheckResponse } from "@workspace/api-zod";
+import { isPaymentAcceptanceEnabled } from "./lib/payment-config";
 
 const app: Express = express();
 
@@ -55,6 +56,9 @@ app.post(
   "/api/stripe/webhook",
   express.raw({ type: "application/json" }),
   async (req, res) => {
+    if (!isPaymentAcceptanceEnabled()) {
+      return res.status(503).json({ error: "Payment acceptance is not enabled yet." });
+    }
     const signature = req.headers["stripe-signature"];
     if (!signature) return res.status(400).json({ error: "Missing stripe-signature" });
     try {

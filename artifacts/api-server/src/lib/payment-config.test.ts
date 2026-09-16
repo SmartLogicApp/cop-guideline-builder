@@ -25,7 +25,7 @@ test("payment acceptance can only be enabled explicitly", () => {
 
 test("disabled payment routes reject before loading the Stripe client", () => {
   const checkoutStart = billingRouteSource.indexOf('router.post("/checkout"');
-  const portalStart = billingRouteSource.indexOf('router.get("/portal"');
+  const portalStart = billingRouteSource.indexOf('router.post("/portal"');
   const usageStart = billingRouteSource.indexOf('router.get("/token-usage"');
 
   assert.ok(checkoutStart >= 0 && portalStart > checkoutStart && usageStart > portalStart);

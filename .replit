@@ -73,3 +73,8 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["glib", "gtk3", "nss", "nspr", "atk", "at-spi2-atk", "cups", "dbus", "expat", "libdrm", "mesa", "pango", "cairo", "alsa-lib", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxcb", "libxkbcommon", "libgbm"]
+
+[userenv]
+
+[userenv.development]
+STRIPE_PRICE_ID = "price_1UGNCvPNZMi0ZO8Uy0JCVe5x"

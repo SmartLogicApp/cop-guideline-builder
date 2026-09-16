@@ -1,7 +1,7 @@
 import Stripe from 'stripe';
 import { StripeSync } from 'stripe-replit-sync';
 
-async function getStripeCredentials(): Promise<{ secretKey: string; webhookSecret?: string }> {
+export async function getStripeCredentials(): Promise<{ secretKey: string; webhookSecret?: string }> {
   const hostname    = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? "repl " + process.env.REPL_IDENTITY
@@ -26,12 +26,27 @@ async function getStripeCredentials(): Promise<{ secretKey: string; webhookSecre
   const settings = data.items?.[0]?.settings;
   if (!settings?.secret_key) throw new Error("Stripe integration missing secret key.");
 
-  return { secretKey: settings.secret_key, webhookSecret: settings.webhook_secret };
+  return {
+    secretKey: settings.secret_key,
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? settings.webhook_secret,
+  };
 }
 
 export async function getUncachableStripeClient(): Promise<Stripe> {
   const { secretKey } = await getStripeCredentials();
   return new Stripe(secretKey);
+}
+
+export function getConfiguredStripePriceId(): string {
+  const priceId = process.env.STRIPE_PRICE_ID?.trim();
+  if (!priceId) throw new Error("STRIPE_PRICE_ID is not configured.");
+  return priceId;
+}
+
+export async function getStripeWebhookSecret(): Promise<string> {
+  const { webhookSecret } = await getStripeCredentials();
+  if (!webhookSecret) throw new Error("STRIPE_WEBHOOK_SECRET is not configured.");
+  return webhookSecret;
 }
 
 export async function getStripeSync(): Promise<StripeSync> {

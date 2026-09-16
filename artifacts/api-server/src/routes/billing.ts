@@ -1,10 +1,11 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import { accounts, accountUsers, tokenUsage } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
 import { requireAuth } from "./accounts";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription";
 import { isPaymentAcceptanceEnabled } from "../lib/payment-config";
+import { getConfiguredStripePriceId } from "../stripeClient";
 
 const router: IRouter = Router();
 
@@ -24,7 +25,16 @@ async function getUserAccount(clerkUserId: string) {
   if (!au?.accountId) return null;
   const [account] = await db.select().from(accounts)
     .where(eq(accounts.id, au.accountId)).limit(1);
-  return account ?? null;
+  return account ? { account, accountUser: au } : null;
+}
+
+function getReturnBase(req: Request) {
+  const configured = process.env.PUBLIC_APP_URL?.trim();
+  if (configured) return configured.replace(/\/$/, "");
+  const protocol = String(req.headers["x-forwarded-proto"] ?? req.protocol ?? "https").split(",")[0];
+  const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "").split(",")[0].trim();
+  if (!/^[a-z0-9.-]+(?::\d+)?$/i.test(host)) throw new Error("Unable to determine a safe return URL.");
+  return `${protocol}://${host}`;
 }
 
 // GET /api/billing/subscription
@@ -49,6 +59,11 @@ router.get("/subscription", requireAuth, async (req, res) => {
     subscription: {
       status:          account.subscriptionStatus,
       stripeId:        account.stripeSubscriptionId,
+      priceId:         account.stripePriceId,
+      currentPeriodStart: account.subscriptionCurrentPeriodStart,
+      currentPeriodEnd: account.subscriptionCurrentPeriodEnd,
+      cancelAtPeriodEnd: account.subscriptionCancelAtPeriodEnd,
+      canceledAt: account.subscriptionCanceledAt,
       trialEndsAt:     account.trialEndsAt,
       termsAcceptedAt: account.termsAcceptedAt,
       termsVersion:    account.termsVersion,
@@ -60,10 +75,14 @@ router.get("/subscription", requireAuth, async (req, res) => {
         : 0,
     },
     paymentAcceptanceEnabled,
+    plan: paymentAcceptanceEnabled
+      ? { name: "Facility", amountUsd: 299, interval: "month" }
+      : null,
+    canManageBilling: Boolean(account.stripeCustomerId),
   });
 });
 
-// POST /api/billing/checkout  { priceId }
+// POST /api/billing/checkout
 router.post("/checkout", requireAuth, async (req, res) => {
   if (!isPaymentAcceptanceEnabled()) {
     return res.status(503).json({
@@ -77,23 +96,40 @@ router.post("/checkout", requireAuth, async (req, res) => {
     return res.status(503).json({ error: "Payment processing is not yet configured." });
   }
 
-  const account = await getUserAccount((req as any).clerkUserId);
-  if (!account) return res.status(404).json({ error: "No facility account found" });
+  const membership = await getUserAccount((req as any).clerkUserId);
+  if (!membership) return res.status(404).json({ error: "No facility account found" });
+  const { account, accountUser } = membership;
+  if (
+    account.stripeSubscriptionId &&
+    ["active", "trialing"].includes(account.subscriptionStatus ?? "")
+  ) {
+    return res.status(409).json({
+      error: "This facility already has an active subscription.",
+      code: "ALREADY_SUBSCRIBED",
+    });
+  }
 
-  const { priceId } = req.body as { priceId: string };
-  if (!priceId) return res.status(400).json({ error: "priceId is required" });
-
-  const protocol = req.headers["x-forwarded-proto"] ?? "https";
-  const host     = req.headers["x-forwarded-host"] ?? req.headers.host;
-  const base     = `${protocol}://${host}`;
+  let priceId: string;
+  try {
+    priceId = getConfiguredStripePriceId();
+  } catch {
+    return res.status(503).json({
+      error: "The subscription plan is not configured yet.",
+      code: "PRICE_NOT_CONFIGURED",
+    });
+  }
+  const base = getReturnBase(req);
+  const clerkUserId = (req as any).clerkUserId as string;
+  const email = accountUser.email ?? (req as any).clerkEmail ?? undefined;
 
   // Create or reuse Stripe customer
   let customerId = account.stripeCustomerId;
   if (!customerId) {
     const customer = await stripe.customers.create({
       name:     account.facilityName,
-      metadata: { accountId: account.id, ccn: account.ccn },
-    });
+      email,
+      metadata: { accountId: account.id, ccn: account.ccn, clerkUserId },
+    }, { idempotencyKey: `cms-customer-${account.id}` });
     await db.update(accounts).set({ stripeCustomerId: customer.id })
       .where(eq(accounts.id, account.id));
     customerId = customer.id;
@@ -104,16 +140,23 @@ router.post("/checkout", requireAuth, async (req, res) => {
     payment_method_types: ["card"],
     line_items:           [{ price: priceId, quantity: 1 }],
     mode:                 "subscription",
-    success_url:          `${base}/billing?success=1`,
-    cancel_url:           `${base}/billing?canceled=1`,
-    metadata:             { accountId: account.id, ccn: account.ccn },
-  });
+    success_url:          `${base}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url:           `${base}/billing?checkout=canceled`,
+    client_reference_id:  account.id,
+    metadata:             { accountId: account.id, ccn: account.ccn, clerkUserId },
+    subscription_data: {
+      metadata: { accountId: account.id, ccn: account.ccn, clerkUserId },
+    },
+  }, { idempotencyKey: `cms-checkout-${account.id}-${priceId}` });
 
-  return res.json({ url: session.url });
+  if (!session.url) {
+    return res.status(502).json({ error: "Stripe did not return a checkout URL." });
+  }
+  return res.status(201).json({ url: session.url });
 });
 
-// GET /api/billing/portal
-router.get("/portal", requireAuth, async (req, res) => {
+// POST /api/billing/portal
+router.post("/portal", requireAuth, async (req, res) => {
   if (!isPaymentAcceptanceEnabled()) {
     return res.status(503).json({
       error: "Payment acceptance is not enabled yet.",
@@ -126,14 +169,13 @@ router.get("/portal", requireAuth, async (req, res) => {
     return res.status(503).json({ error: "Payment processing is not yet configured." });
   }
 
-  const account = await getUserAccount((req as any).clerkUserId);
+  const membership = await getUserAccount((req as any).clerkUserId);
+  const account = membership?.account;
   if (!account?.stripeCustomerId) {
     return res.status(404).json({ error: "No billing account found" });
   }
 
-  const protocol = req.headers["x-forwarded-proto"] ?? "https";
-  const host     = req.headers["x-forwarded-host"] ?? req.headers.host;
-  const base     = `${protocol}://${host}`;
+  const base = getReturnBase(req);
 
   const portalSession = await stripe.billingPortal.sessions.create({
     customer:   account.stripeCustomerId,
@@ -145,7 +187,8 @@ router.get("/portal", requireAuth, async (req, res) => {
 
 // GET /api/billing/token-usage — current month aggregate for the user's account
 router.get("/token-usage", requireAuth, async (req, res) => {
-  const account = await getUserAccount((req as any).clerkUserId);
+  const membership = await getUserAccount((req as any).clerkUserId);
+  const account = membership?.account;
   if (!account) return res.json({
     currentMonth: {
       inputTokens: 0, outputTokens: 0, totalTokens: 0,
