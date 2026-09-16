@@ -60,7 +60,7 @@ test('Clerk and authenticated routes stay behind a dynamic import', () => {
   assert.match(authenticatedAppSource, /import ['"]\.\/auth\.css['"]/);
 });
 
-test('billing is an authenticated route with an honest pre-launch state', () => {
+test('billing is authenticated and gates Stripe actions on server availability', () => {
   const routeBoundary = componentBody(appSource, 'RouteBoundary');
   const billing = componentBody(authenticatedAppSource, 'Billing');
 
@@ -76,8 +76,10 @@ test('billing is an authenticated route with an honest pre-launch state', () => 
   );
   assert.match(billingSource, /data-payment-acceptance=/);
   assert.match(billingSource, /Payment acceptance not enabled/);
-  assert.doesNotMatch(billingSource, /\/api\/billing\/checkout/);
-  assert.doesNotMatch(billingSource, /\/api\/billing\/portal/);
+  assert.match(billingSource, /endpoint: ['"]checkout['"] \| ['"]portal['"]/);
+  assert.match(billingSource, /`\/api\/billing\/\$\{endpoint\}`/);
+  assert.match(billingSource, /paymentAcceptanceEnabled \?/);
+  assert.match(billingSource, /disabled=\{actionLoading !== null\}/);
   assert.doesNotMatch(workspaceSource, /href=\{`\$\{basePath\}\/admin`\}/);
   assert.doesNotMatch(workspaceSource, /Continue for \$299\/month/);
   assert.match(workspaceSource, /View billing and access options/);

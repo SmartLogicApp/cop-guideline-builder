@@ -66,7 +66,10 @@ app.post(
       await WebhookHandlers.processWebhook(req.body as Buffer, sig);
       return res.status(200).json({ received: true });
     } catch (err: any) {
-      logger.error({ err }, "Stripe webhook error");
+      logger.error(
+        { errorName: err?.name, errorMessage: err?.message },
+        "Stripe webhook error",
+      );
       return res.status(400).json({ error: "Webhook processing failed" });
     }
   },

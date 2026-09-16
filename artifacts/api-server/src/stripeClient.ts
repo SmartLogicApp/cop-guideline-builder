@@ -1,40 +1,36 @@
-import Stripe from 'stripe';
-import { StripeSync } from 'stripe-replit-sync';
+import { ReplitConnectors } from "@replit/connectors-sdk";
+import Stripe from "stripe";
 
-export async function getStripeCredentials(): Promise<{ secretKey: string; webhookSecret?: string }> {
-  const hostname    = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? "repl " + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-      ? "depl " + process.env.WEB_REPL_RENEWAL
-      : null;
+type StripeProxyOptions = {
+  method?: "GET" | "POST" | "DELETE";
+  body?: URLSearchParams;
+  idempotencyKey?: string;
+};
 
-  if (!hostname || !xReplitToken) {
-    throw new Error("Stripe integration not connected. Connect it via the Integrations tab.");
+export async function stripeRequest<T>(
+  path: string,
+  options: StripeProxyOptions = {},
+): Promise<T> {
+  // Never cache the connector client: its identity tokens may rotate.
+  const connectors = new ReplitConnectors();
+  const response = await connectors.proxy("stripe", path, {
+    method: options.method ?? "GET",
+    headers: {
+      Accept: "application/json",
+      ...(options.body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
+      ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
+    },
+    body: options.body,
+  });
+  const payload = await response.json() as T & {
+    error?: { message?: string; code?: string };
+  };
+  if (!response.ok) {
+    const error = new Error(payload.error?.message ?? `Stripe request failed (${response.status}).`);
+    Object.assign(error, { status: response.status, stripeCode: payload.error?.code });
+    throw error;
   }
-
-  const resp = await fetch(
-    `https://${hostname}/api/v2/connection?include_secrets=true&connector_names=stripe`,
-    { headers: { Accept: "application/json", X_REPLIT_TOKEN: xReplitToken }, signal: AbortSignal.timeout(10_000) },
-  );
-
-  if (!resp.ok) throw new Error(`Failed to fetch Stripe credentials: ${resp.status}`);
-
-  const data = await resp.json() as {
-    items?: Array<{ settings?: { secret_key?: string; webhook_secret?: string } }>;
-  };
-  const settings = data.items?.[0]?.settings;
-  if (!settings?.secret_key) throw new Error("Stripe integration missing secret key.");
-
-  return {
-    secretKey: settings.secret_key,
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? settings.webhook_secret,
-  };
-}
-
-export async function getUncachableStripeClient(): Promise<Stripe> {
-  const { secretKey } = await getStripeCredentials();
-  return new Stripe(secretKey);
+  return payload;
 }
 
 export function getConfiguredStripePriceId(): string {
@@ -43,19 +39,15 @@ export function getConfiguredStripePriceId(): string {
   return priceId;
 }
 
-export async function getStripeWebhookSecret(): Promise<string> {
-  const { webhookSecret } = await getStripeCredentials();
+export function getStripeWebhookSecret(): string {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
   if (!webhookSecret) throw new Error("STRIPE_WEBHOOK_SECRET is not configured.");
   return webhookSecret;
 }
 
-export async function getStripeSync(): Promise<StripeSync> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error("DATABASE_URL required");
-  const { secretKey, webhookSecret } = await getStripeCredentials();
-  return new StripeSync({
-    poolConfig: { connectionString: databaseUrl },
-    stripeSecretKey: secretKey,
-    stripeWebhookSecret: webhookSecret ?? "",
+export function getStripeSignatureVerifier(): Stripe {
+  // Signature verification is local; outbound API calls always use the connector.
+  return new Stripe("sk_test_signature_verification_only", {
+    apiVersion: "2026-07-29.dahlia",
   });
 }

@@ -8,8 +8,8 @@ const billingRouteSource = await readFile(
   "utf8",
 );
 
-test("payment acceptance is disabled when configuration is absent", () => {
-  assert.equal(isPaymentAcceptanceEnabled(undefined), false);
+test("payment acceptance is disabled when configuration is empty", () => {
+  assert.equal(isPaymentAcceptanceEnabled(""), false);
 });
 
 test("payment acceptance stays disabled for non-true values", () => {

@@ -78,3 +78,5 @@ packages = ["glib", "gtk3", "nss", "nspr", "atk", "at-spi2-atk", "cups", "dbus",
 
 [userenv.development]
 STRIPE_PRICE_ID = "price_1UGNCvPNZMi0ZO8Uy0JCVe5x"
+PAYMENT_ACCEPTANCE_ENABLED = "true"
+STRIPE_PORTAL_CONFIGURATION_ID = "bpc_1UGNKFPNZMi0ZO8Urw6yOuPN"

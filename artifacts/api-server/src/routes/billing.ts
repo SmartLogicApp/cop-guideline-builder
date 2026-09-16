@@ -5,14 +5,14 @@ import { eq, and, gte } from "drizzle-orm";
 import { requireAuth } from "./accounts";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription";
 import { isPaymentAcceptanceEnabled } from "../lib/payment-config";
-import { getConfiguredStripePriceId } from "../stripeClient";
+import { getConfiguredStripePriceId, stripeRequest } from "../stripeClient";
+import { syncStripeSubscriptionById } from "../webhookHandlers";
 
 const router: IRouter = Router();
 
 async function getStripeOptional() {
   try {
-    const { getUncachableStripeClient } = await import("../stripeClient");
-    return await getUncachableStripeClient();
+    return { request: stripeRequest };
   } catch {
     return null;
   }
@@ -125,34 +125,85 @@ router.post("/checkout", requireAuth, async (req, res) => {
   // Create or reuse Stripe customer
   let customerId = account.stripeCustomerId;
   if (!customerId) {
-    const customer = await stripe.customers.create({
-      name:     account.facilityName,
-      email,
-      metadata: { accountId: account.id, ccn: account.ccn, clerkUserId },
-    }, { idempotencyKey: `cms-customer-${account.id}` });
+    const customerParams = new URLSearchParams({
+      name: account.facilityName,
+      ...(email ? { email } : {}),
+      "metadata[accountId]": account.id,
+      "metadata[ccn]": account.ccn,
+      "metadata[clerkUserId]": clerkUserId,
+    });
+    const customer = await stripe.request<{ id: string }>("/v1/customers", {
+      method: "POST",
+      body: customerParams,
+      idempotencyKey: `cms-customer-${account.id}`,
+    });
     await db.update(accounts).set({ stripeCustomerId: customer.id })
       .where(eq(accounts.id, account.id));
     customerId = customer.id;
   }
 
-  const session = await stripe.checkout.sessions.create({
-    customer:             customerId,
-    payment_method_types: ["card"],
-    line_items:           [{ price: priceId, quantity: 1 }],
-    mode:                 "subscription",
-    success_url:          `${base}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url:           `${base}/billing?checkout=canceled`,
-    client_reference_id:  account.id,
-    metadata:             { accountId: account.id, ccn: account.ccn, clerkUserId },
-    subscription_data: {
-      metadata: { accountId: account.id, ccn: account.ccn, clerkUserId },
-    },
-  }, { idempotencyKey: `cms-checkout-${account.id}-${priceId}` });
+  const checkoutParams = new URLSearchParams({
+    customer: customerId,
+    "line_items[0][price]": priceId,
+    "line_items[0][quantity]": "1",
+    mode: "subscription",
+    success_url: `${base}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${base}/billing?checkout=canceled`,
+    client_reference_id: account.id,
+    "metadata[accountId]": account.id,
+    "metadata[ccn]": account.ccn,
+    "metadata[clerkUserId]": clerkUserId,
+    "subscription_data[metadata][accountId]": account.id,
+    "subscription_data[metadata][ccn]": account.ccn,
+    "subscription_data[metadata][clerkUserId]": clerkUserId,
+  });
+  const session = await stripe.request<{ url: string | null }>("/v1/checkout/sessions", {
+    method: "POST",
+    body: checkoutParams,
+    idempotencyKey: `cms-checkout-${account.id}-${priceId}`,
+  });
 
   if (!session.url) {
     return res.status(502).json({ error: "Stripe did not return a checkout URL." });
   }
   return res.status(201).json({ url: session.url });
+});
+
+// POST /api/billing/checkout/confirm — authenticated fallback after Stripe return
+router.post("/checkout/confirm", requireAuth, async (req, res) => {
+  if (!isPaymentAcceptanceEnabled()) {
+    return res.status(503).json({ error: "Payment acceptance is not enabled yet." });
+  }
+  const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+  if (!/^cs_(?:test|live)_[A-Za-z0-9]+$/.test(sessionId)) {
+    return res.status(400).json({ error: "A valid Checkout session is required." });
+  }
+  const membership = await getUserAccount((req as any).clerkUserId);
+  if (!membership) return res.status(404).json({ error: "No facility account found" });
+  const session = await stripeRequest<{
+    client_reference_id: string | null;
+    customer: string | { id: string } | null;
+    subscription: string | { id: string } | null;
+    payment_status: string;
+    status: string | null;
+  }>(`/v1/checkout/sessions/${encodeURIComponent(sessionId)}`);
+  const customerId = typeof session.customer === "string"
+    ? session.customer
+    : session.customer?.id;
+  if (
+    session.client_reference_id !== membership.account.id ||
+    customerId !== membership.account.stripeCustomerId
+  ) {
+    return res.status(403).json({ error: "This Checkout session does not belong to this facility." });
+  }
+  if (session.status !== "complete" || !session.subscription) {
+    return res.status(409).json({ error: "Checkout is not complete yet." });
+  }
+  const subscriptionId = typeof session.subscription === "string"
+    ? session.subscription
+    : session.subscription.id;
+  await syncStripeSubscriptionById(subscriptionId);
+  return res.json({ synchronized: true });
 });
 
 // POST /api/billing/portal
@@ -177,9 +228,16 @@ router.post("/portal", requireAuth, async (req, res) => {
 
   const base = getReturnBase(req);
 
-  const portalSession = await stripe.billingPortal.sessions.create({
-    customer:   account.stripeCustomerId,
+  const portalParams = new URLSearchParams({
+    customer: account.stripeCustomerId,
     return_url: `${base}/billing`,
+    ...(process.env.STRIPE_PORTAL_CONFIGURATION_ID
+      ? { configuration: process.env.STRIPE_PORTAL_CONFIGURATION_ID }
+      : {}),
+  });
+  const portalSession = await stripe.request<{ url: string }>("/v1/billing_portal/sessions", {
+    method: "POST",
+    body: portalParams,
   });
 
   return res.json({ url: portalSession.url });

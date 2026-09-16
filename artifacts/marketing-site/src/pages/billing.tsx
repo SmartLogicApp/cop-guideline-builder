@@ -115,8 +115,30 @@ export default function BillingPage() {
   }, [getToken]);
 
   useEffect(() => {
-    void loadBilling();
-  }, [loadBilling]);
+    const hydrate = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const sessionId = params.get('session_id');
+      if (params.get('checkout') === 'success' && sessionId) {
+        try {
+          const token = await getToken();
+          if (token) {
+            await fetch('/api/billing/checkout/confirm', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ sessionId }),
+            });
+          }
+        } catch {
+          // A signed Stripe webhook may already have synchronized access.
+        }
+      }
+      await loadBilling();
+    };
+    void hydrate();
+  }, [getToken, loadBilling]);
 
   const openStripe = useCallback(async (endpoint: 'checkout' | 'portal') => {
     setActionLoading(endpoint);

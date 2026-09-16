@@ -1,14 +1,19 @@
 import type Stripe from "stripe";
 import { db, accounts } from "@workspace/db";
-import { eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
+  getStripeSignatureVerifier,
   getStripeWebhookSecret,
-  getUncachableStripeClient,
+  stripeRequest,
 } from "./stripeClient";
 
 type SubscriptionLike = Stripe.Subscription & {
   current_period_start?: number;
   current_period_end?: number;
+  items: Stripe.ApiList<Stripe.SubscriptionItem & {
+    current_period_start?: number;
+    current_period_end?: number;
+  }>;
 };
 
 function timestamp(seconds: number | null | undefined) {
@@ -27,8 +32,12 @@ async function syncSubscription(subscription: SubscriptionLike) {
     stripeSubscriptionId: subscription.id,
     stripePriceId: firstItem?.price.id ?? null,
     subscriptionStatus: subscription.status,
-    subscriptionCurrentPeriodStart: timestamp(subscription.current_period_start),
-    subscriptionCurrentPeriodEnd: timestamp(subscription.current_period_end),
+    subscriptionCurrentPeriodStart: timestamp(
+      firstItem?.current_period_start ?? subscription.current_period_start,
+    ),
+    subscriptionCurrentPeriodEnd: timestamp(
+      firstItem?.current_period_end ?? subscription.current_period_end,
+    ),
     subscriptionCancelAtPeriodEnd: subscription.cancel_at_period_end,
     subscriptionCanceledAt: timestamp(subscription.canceled_at),
     updatedAt: new Date(),
@@ -38,12 +47,18 @@ async function syncSubscription(subscription: SubscriptionLike) {
 }
 
 async function retrieveSubscription(
-  stripe: Stripe,
   subscriptionRef: string | Stripe.Subscription | null | undefined,
 ) {
   if (!subscriptionRef) return null;
   const id = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef.id;
-  return await stripe.subscriptions.retrieve(id) as SubscriptionLike;
+  return await stripeRequest<SubscriptionLike>(`/v1/subscriptions/${encodeURIComponent(id)}`);
+}
+
+export async function syncStripeSubscriptionById(subscriptionId: string) {
+  const subscription = await retrieveSubscription(subscriptionId);
+  if (!subscription) throw new Error("Stripe subscription was not found.");
+  await syncSubscription(subscription);
+  return subscription;
 }
 
 export class WebhookHandlers {
@@ -53,16 +68,14 @@ export class WebhookHandlers {
         'Payload must be a Buffer — ensure webhook route is registered BEFORE express.json().',
       );
     }
-    const [stripe, webhookSecret] = await Promise.all([
-      getUncachableStripeClient(),
-      getStripeWebhookSecret(),
-    ]);
+    const stripe = getStripeSignatureVerifier();
+    const webhookSecret = getStripeWebhookSecret();
     const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
 
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
-        const subscription = await retrieveSubscription(stripe, session.subscription);
+        const subscription = await retrieveSubscription(session.subscription);
         if (subscription) await syncSubscription(subscription);
         break;
       }
@@ -70,10 +83,7 @@ export class WebhookHandlers {
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         // Retrieve current state so duplicate or out-of-order events converge.
-        const subscription = await retrieveSubscription(
-          stripe,
-          event.data.object as Stripe.Subscription,
-        );
+        const subscription = await retrieveSubscription(event.data.object as Stripe.Subscription);
         if (subscription) await syncSubscription(subscription);
         break;
       }
@@ -83,7 +93,6 @@ export class WebhookHandlers {
           parent?: { subscription_details?: { subscription?: string | Stripe.Subscription | null } };
         };
         const subscription = await retrieveSubscription(
-          stripe,
           invoice.subscription ?? invoice.parent?.subscription_details?.subscription,
         );
         if (subscription) await syncSubscription(subscription);

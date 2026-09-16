@@ -9,10 +9,10 @@ const app = await readFile(new URL("../app.ts", import.meta.url), "utf8");
 test("checkout uses the configured server-side price and authenticated identity metadata", () => {
   assert.match(billing, /getConfiguredStripePriceId\(\)/);
   assert.doesNotMatch(billing, /req\.body\s+as\s+\{\s*priceId/);
-  assert.match(billing, /email,/);
+  assert.match(billing, /\.\.\.\(email \? \{ email \}/);
   assert.match(billing, /clerkUserId/);
   assert.match(billing, /client_reference_id:\s+account\.id/);
-  assert.match(billing, /subscription_data:/);
+  assert.match(billing, /"subscription_data\[metadata\]\[accountId\]"/);
   assert.match(billing, /idempotencyKey:/);
 });
 
@@ -36,7 +36,7 @@ test("webhooks are raw-body verified and converge supported events to current St
   ]) {
     assert.match(webhook, new RegExp(event.replaceAll(".", "\\.")));
   }
-  assert.match(webhook, /stripe\.subscriptions\.retrieve/);
+  assert.match(webhook, /stripeRequest<SubscriptionLike>\(`\/v1\/subscriptions/);
   assert.match(webhook, /subscriptionCurrentPeriodEnd/);
   assert.match(webhook, /subscriptionCancelAtPeriodEnd/);
 });
