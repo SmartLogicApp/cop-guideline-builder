@@ -1,7 +1,6 @@
-import { ReplitConnectors } from "@replit/connectors-sdk";
 import Stripe from "stripe";
 
-type StripeProxyOptions = {
+type StripeRequestOptions = {
   method?: "GET" | "POST" | "DELETE";
   body?: URLSearchParams;
   idempotencyKey?: string;
@@ -9,45 +8,30 @@ type StripeProxyOptions = {
 
 export async function stripeRequest<T>(
   path: string,
-  options: StripeProxyOptions = {},
+  options: StripeRequestOptions = {},
 ): Promise<T> {
   const directSecret = (
     process.env.NODE_ENV === "production"
       ? process.env.STRIPE_LIVE_SECRET_KEY
       : process.env.STRIPE_TEST_SECRET_KEY
   )?.trim();
-  if (directSecret) {
-    const response = await fetch(`https://api.stripe.com${path}`, {
-      method: options.method ?? "GET",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${directSecret}`,
-        ...(options.body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
-        ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
-      },
-      body: options.body?.toString(),
-    });
-    const payload = await response.json() as T & {
-      error?: { message?: string; code?: string };
-    };
-    if (!response.ok) {
-      const error = new Error(payload.error?.message ?? `Stripe request failed (${response.status}).`);
-      Object.assign(error, { status: response.status, stripeCode: payload.error?.code });
-      throw error;
-    }
-    return payload;
+  if (!directSecret) {
+    throw new Error(
+      process.env.NODE_ENV === "production"
+        ? "STRIPE_LIVE_SECRET_KEY is not configured."
+        : "STRIPE_TEST_SECRET_KEY is not configured.",
+    );
   }
 
-  // Never cache the connector client: its identity tokens may rotate.
-  const connectors = new ReplitConnectors();
-  const response = await connectors.proxy("stripe", path, {
+  const response = await fetch(`https://api.stripe.com${path}`, {
     method: options.method ?? "GET",
     headers: {
       Accept: "application/json",
+      Authorization: `Bearer ${directSecret}`,
       ...(options.body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
       ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
     },
-    body: options.body,
+    body: options.body?.toString(),
   });
   const payload = await response.json() as T & {
     error?: { message?: string; code?: string };
@@ -83,7 +67,7 @@ export function getStripeWebhookSecret(): string {
 }
 
 export function getStripeSignatureVerifier(): Stripe {
-  // Signature verification is local; outbound API calls always use the connector.
+  // Signature verification is local; outbound API calls use the environment-specific key.
   return new Stripe("sk_test_signature_verification_only", {
     apiVersion: "2026-07-29.dahlia",
   });

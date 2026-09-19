@@ -5,6 +5,15 @@ import test from "node:test";
 const billing = await readFile(new URL("../routes/billing.ts", import.meta.url), "utf8");
 const webhook = await readFile(new URL("../webhookHandlers.ts", import.meta.url), "utf8");
 const app = await readFile(new URL("../app.ts", import.meta.url), "utf8");
+const stripeClient = await readFile(new URL("../stripeClient.ts", import.meta.url), "utf8");
+
+test("Stripe requests use isolated direct Test and Live credentials without a sandbox connector", () => {
+  assert.match(stripeClient, /process\.env\.STRIPE_TEST_SECRET_KEY/);
+  assert.match(stripeClient, /process\.env\.STRIPE_LIVE_SECRET_KEY/);
+  assert.match(stripeClient, /https:\/\/api\.stripe\.com/);
+  assert.doesNotMatch(stripeClient, /ReplitConnectors/);
+  assert.doesNotMatch(stripeClient, /\.proxy\(["']stripe["']/);
+});
 
 test("checkout uses the configured server-side price and authenticated identity metadata", () => {
   assert.match(billing, /getConfiguredStripePriceId\(\)/);
