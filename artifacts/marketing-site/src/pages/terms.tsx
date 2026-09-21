@@ -1,48 +1,10 @@
+import { CONTACT_EMAIL_SUPPORT } from '@/lib/contact';
 import { Link } from 'wouter';
-import { termsV1 } from '@/legal/terms-v1';
-import type { ReactNode } from 'react';
+import { TermsDocument } from '@/components/terms-document';
 
-const supportEmail = 'CMSComplianceGaurdian@outlook.com';
+const supportEmail = CONTACT_EMAIL_SUPPORT;
 const siteUrl = (path: string) =>
   `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
-
-function renderInline(text: string): ReactNode[] {
-  return text.split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) =>
-    part.startsWith('**') && part.endsWith('**')
-      ? <strong key={index} className="font-semibold text-slate-950">{part.slice(2, -2)}</strong>
-      : part,
-  );
-}
-
-function TermsDocument() {
-  return (
-    <div className="space-y-3 text-[15px] leading-7 text-slate-700">
-      {termsV1.split('\n').map((rawLine, index) => {
-        const line = rawLine.trim();
-        if (!line) return <div key={index} className="h-1" aria-hidden="true" />;
-        if (line === '---') return <hr key={index} className="my-7 border-slate-200" />;
-        if (line.startsWith('# ')) {
-          return <h1 key={index} className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">{line.slice(2)}</h1>;
-        }
-        if (line.startsWith('## ')) {
-          const title = line.slice(3);
-          const id = title.startsWith('13.') ? 'billing' : undefined;
-          return <h2 key={index} id={id} className="scroll-mt-8 pt-7 text-xl font-bold text-slate-950 sm:text-2xl">{title}</h2>;
-        }
-        if (line.startsWith('- ')) {
-          return <div key={index} className="flex gap-3 pl-2"><span aria-hidden="true">•</span><p>{renderInline(line.slice(2))}</p></div>;
-        }
-        if (line.startsWith('> ')) {
-          return <blockquote key={index} className="my-4 border-l-4 border-teal-700 bg-teal-50 px-5 py-3 text-slate-800">{renderInline(line.slice(2))}</blockquote>;
-        }
-        if (line.startsWith('|')) {
-          return <pre key={index} className="overflow-x-auto rounded bg-slate-50 px-3 py-1 text-xs text-slate-700">{line}</pre>;
-        }
-        return <p key={index}>{renderInline(line)}</p>;
-      })}
-    </div>
-  );
-}
 
 export default function TermsPage() {
   return (

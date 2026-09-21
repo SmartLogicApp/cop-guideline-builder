@@ -1,3 +1,4 @@
+import { CONTACT_EMAIL_MAIN, CONTACT_EMAIL_SUPPORT, mailto } from '@/lib/contact';
 import { Shield, BookOpen, FileText, ClipboardCheck, Activity, CheckCircle2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +10,7 @@ const SIGN_UP_URL = siteUrl("/sign-up");
 const SIGN_IN_URL = siteUrl("/sign-in");
 const TERMS_URL = siteUrl("/terms");
 const PRIVACY_URL = siteUrl("/privacy");
-const CONTACT_URL = "mailto:CMSComplianceGaurdian@outlook.com?subject=Enterprise%20Inquiry";
+const CONTACT_URL = mailto(CONTACT_EMAIL_MAIN, "Enterprise Inquiry");
 
 const fadeIn = {
   initial: { opacity: 0, y: 20 },
@@ -266,7 +267,7 @@ export default function LandingPage() {
                 <a href={TERMS_URL} className="hover:text-slate-900">Terms of Service</a>
                 <a href={PRIVACY_URL} className="hover:text-slate-900">Privacy Policy</a>
                 <a href={`${TERMS_URL}#billing`} className="hover:text-slate-900">Billing &amp; Cancellation</a>
-                <a href="mailto:CMSComplianceGaurdian@outlook.com" className="hover:text-slate-900">Support</a>
+                <a href={mailto(CONTACT_EMAIL_SUPPORT)} className="hover:text-slate-900">Support</a>
               </nav>
             </div>
           </div>

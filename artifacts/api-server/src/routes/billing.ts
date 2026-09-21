@@ -4,7 +4,9 @@ import { accounts, accountUsers, tokenUsage } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
 import { requireAuth } from "./accounts";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription";
-import { isPaymentAcceptanceEnabled } from "../lib/payment-config";
+import { isTrialStatus } from "../middlewares/subscriptionAccess";
+import { getTrialPeriodDays, isPaymentAcceptanceEnabled } from "../lib/payment-config";
+import { CURRENT_TERMS_VERSION, needsAcceptance } from "../lib/terms-versions";
 import { getConfiguredStripePriceId, stripeRequest } from "../stripeClient";
 import { syncStripeSubscriptionById } from "../webhookHandlers";
 
@@ -52,7 +54,7 @@ router.get("/subscription", requireAuth, async (req, res) => {
   }
 
   const now = new Date();
-  const trialActive = account.subscriptionStatus === "trial" &&
+  const trialActive = isTrialStatus(account.subscriptionStatus) &&
     account.trialEndsAt != null && account.trialEndsAt > now;
 
   return res.json({
@@ -67,6 +69,8 @@ router.get("/subscription", requireAuth, async (req, res) => {
       trialEndsAt:     account.trialEndsAt,
       termsAcceptedAt: account.termsAcceptedAt,
       termsVersion:    account.termsVersion,
+      currentTermsVersion: CURRENT_TERMS_VERSION,
+      termsAcceptanceRequired: needsAcceptance(account.termsVersion),
       isActive:        access.isActive,
       accessSource:    access.accessSource,
       hasComplimentaryAccess: access.hasComplimentaryAccess,
@@ -99,6 +103,21 @@ router.post("/checkout", requireAuth, async (req, res) => {
   const membership = await getUserAccount((req as any).clerkUserId);
   if (!membership) return res.status(404).json({ error: "No facility account found" });
   const { account, accountUser } = membership;
+
+  // The gate. Terms 1.0 told customers that updated billing terms would be
+  // presented and affirmatively accepted before any charging begins. This is
+  // where that promise is kept: no checkout session is created for a facility
+  // that has not accepted the current version, so there is no path to a charge
+  // without a recorded acceptance of the terms that govern it.
+  if (needsAcceptance(account.termsVersion)) {
+    return res.status(409).json({
+      error: "The current Terms of Service must be accepted before subscribing.",
+      code: "TERMS_ACCEPTANCE_REQUIRED",
+      currentVersion: CURRENT_TERMS_VERSION,
+      acceptedVersion: account.termsVersion,
+    });
+  }
+
   if (
     account.stripeSubscriptionId &&
     ["active", "trialing"].includes(account.subscriptionStatus ?? "")
@@ -142,11 +161,20 @@ router.post("/checkout", requireAuth, async (req, res) => {
     customerId = customer.id;
   }
 
+  // Stripe runs the trial clock. The app mirrors trial_end back onto the
+  // account when the subscription syncs, so there is one source of truth.
+  // payment_method_collection is explicit: the card is taken up front, and
+  // the subscription charges automatically when the trial ends.
+  const trialPeriodDays = getTrialPeriodDays();
   const checkoutParams = new URLSearchParams({
     customer: customerId,
     "line_items[0][price]": priceId,
     "line_items[0][quantity]": "1",
     mode: "subscription",
+    payment_method_collection: "always",
+    ...(trialPeriodDays > 0
+      ? { "subscription_data[trial_period_days]": String(trialPeriodDays) }
+      : {}),
     success_url: `${base}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}/billing?checkout=canceled`,
     client_reference_id: account.id,
@@ -160,7 +188,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
   const session = await stripe.request<{ url: string | null }>("/v1/checkout/sessions", {
     method: "POST",
     body: checkoutParams,
-    idempotencyKey: `cms-checkout-${account.id}-${priceId}`,
+    idempotencyKey: `cms-checkout-${account.id}-${priceId}-t${trialPeriodDays}`,
   });
 
   if (!session.url) {

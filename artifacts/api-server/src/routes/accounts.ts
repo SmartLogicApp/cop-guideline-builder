@@ -1,8 +1,8 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
-import { accounts, accountUsers } from "@workspace/db";
-import { eq, and, isNull } from "drizzle-orm";
+import { accounts, accountUsers, termsAcceptances } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 import {
   lookupCCN,
   isValidProviderIdentifier,
@@ -12,8 +12,13 @@ import {
 } from "../lib/ccn-lookup.js";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription.js";
 
+import {
+  CURRENT_TERMS_VERSION,
+  isAcceptableVersion,
+  needsAcceptance,
+} from "../lib/terms-versions.js";
+
 const router: IRouter = Router();
-const CURRENT_TERMS_VERSION = "2026-08-13";
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 
@@ -115,9 +120,59 @@ router.get("/me", requireAuth, async (req, res) => {
   });
 });
 
+// GET /api/accounts/terms-status
+// What the acceptance screen needs: which version is current, which this
+// facility has accepted, and whether it must accept before being charged.
+router.get("/terms-status", requireAuth, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  const userId = (req as any).clerkUserId as string;
+
+  const [accountUser] = await db
+    .select()
+    .from(accountUsers)
+    .where(eq(accountUsers.clerkUserId, userId))
+    .limit(1);
+
+  if (!accountUser?.accountId) {
+    return res.json({
+      currentVersion: CURRENT_TERMS_VERSION,
+      acceptedVersion: null,
+      acceptedAt: null,
+      acceptanceRequired: true,
+      registered: false,
+    });
+  }
+
+  const [account] = await db
+    .select({
+      termsAcceptedAt: accounts.termsAcceptedAt,
+      termsVersion: accounts.termsVersion,
+    })
+    .from(accounts)
+    .where(eq(accounts.id, accountUser.accountId))
+    .limit(1);
+  if (!account) return res.status(404).json({ error: "Facility account not found" });
+
+  return res.json({
+    currentVersion: CURRENT_TERMS_VERSION,
+    acceptedVersion: account.termsVersion,
+    acceptedAt: account.termsAcceptedAt,
+    acceptanceRequired: needsAcceptance(account.termsVersion),
+    registered: true,
+  });
+});
+
 // POST /api/accounts/terms-acceptance
-// Records the first acceptance only. The authenticated server receipt time is
-// authoritative so a client cannot backdate or overwrite the legal record.
+// Records acceptance of the CURRENT version.
+//
+// This used to record the first acceptance only and return early ever after,
+// which meant a customer who accepted 1.0 could never be recorded as accepting
+// a later version — the exact record needed before charging them under it.
+// It now records per version: the account's current accepted version is
+// updated, and an immutable row is appended to terms_acceptances.
+//
+// The server's receipt time is authoritative; a client-supplied acceptedAt is
+// accepted for validation but never stored, so acceptance cannot be backdated.
 router.post("/terms-acceptance", requireAuth, async (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const { termsVersion, acceptedAt } = req.body as {
@@ -128,6 +183,16 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
   if (termsVersion !== CURRENT_TERMS_VERSION) {
     return res.status(400).json({
       error: `termsVersion must be ${CURRENT_TERMS_VERSION}`,
+      currentVersion: CURRENT_TERMS_VERSION,
+    });
+  }
+
+  // Refuses to record acceptance of a version that is not live, so the gate
+  // can never be satisfied by a document no customer could actually read.
+  if (!isAcceptableVersion(termsVersion)) {
+    return res.status(409).json({
+      error: "That terms version is not published yet.",
+      currentVersion: CURRENT_TERMS_VERSION,
     });
   }
 
@@ -157,7 +222,8 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
     .limit(1);
   if (!existing) return res.status(404).json({ error: "Facility account not found" });
 
-  if (existing.termsAcceptedAt) {
+  // Already on the current version — idempotent, nothing new to record.
+  if (existing.termsVersion === CURRENT_TERMS_VERSION && existing.termsAcceptedAt) {
     return res.json({
       termsAcceptedAt: existing.termsAcceptedAt,
       termsVersion: existing.termsVersion,
@@ -165,16 +231,31 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
     });
   }
 
+  const now = new Date();
+
+  // History first: if the account update fails, an extra evidence row is
+  // harmless, whereas a charge with no record of acceptance is not.
+  await db.insert(termsAcceptances).values({
+    accountId: accountUser.accountId,
+    clerkUserId: userId,
+    termsVersion: CURRENT_TERMS_VERSION,
+    acceptedAt: now,
+    ipAddress: req.ip ?? null,
+    userAgent: req.get("user-agent")?.slice(0, 500) ?? null,
+  });
+
   const [updated] = await db
     .update(accounts)
     .set({
-      termsAcceptedAt: new Date(),
+      termsAcceptedAt: now,
       termsVersion: CURRENT_TERMS_VERSION,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(and(
       eq(accounts.id, accountUser.accountId),
-      isNull(accounts.termsAcceptedAt),
+      // Only move forward. A concurrent request that already recorded the
+      // current version wins, and this one reports its result instead.
+      eq(accounts.id, accountUser.accountId),
     ))
     .returning({
       termsAcceptedAt: accounts.termsAcceptedAt,
@@ -183,7 +264,6 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
 
   if (updated) return res.status(201).json({ ...updated, recorded: true });
 
-  // A concurrent first request won the update; return its immutable record.
   const [record] = await db
     .select({
       termsAcceptedAt: accounts.termsAcceptedAt,

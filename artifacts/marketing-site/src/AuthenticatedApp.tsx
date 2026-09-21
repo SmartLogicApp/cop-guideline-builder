@@ -18,6 +18,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import BillingPage from '@/pages/billing';
+import AcceptTermsPage from '@/pages/accept-terms';
 import { Route, Switch, useLocation } from 'wouter';
 import './auth.css';
 
@@ -192,6 +193,17 @@ function Billing() {
   );
 }
 
+function AcceptTerms() {
+  return (
+    <>
+      <Show when="signed-in">
+        <AcceptTermsPage />
+      </Show>
+      <Show when="signed-out"><RedirectToSignIn /></Show>
+    </>
+  );
+}
+
 function Router() {
   return (
     <Switch>
@@ -199,6 +211,7 @@ function Router() {
       <Route path="/sign-up/*?" component={SignUpPage} />
       <Route path="/app" component={ComplianceWorkspace} />
       <Route path="/billing" component={Billing} />
+      <Route path="/accept-terms" component={AcceptTerms} />
       <Route component={NotFound} />
     </Switch>
   );

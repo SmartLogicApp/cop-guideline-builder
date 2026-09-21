@@ -1,3 +1,4 @@
+import { CONTACT_EMAIL_SUPPORT } from '@/lib/contact';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@clerk/react';
 import {
@@ -43,7 +44,7 @@ type TokenUsageData = {
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const workspaceUrl = `${basePath}/app`;
-const supportEmail = 'CMSComplianceGaurdian@outlook.com';
+const supportEmail = CONTACT_EMAIL_SUPPORT;
 
 function formatNumber(value: number) {
   return value.toLocaleString('en-US');

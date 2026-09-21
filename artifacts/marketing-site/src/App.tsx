@@ -27,6 +27,7 @@ function RouteBoundary() {
     : location;
   const needsAuth = normalizedLocation === '/app'
     || normalizedLocation === '/billing'
+    || normalizedLocation === '/accept-terms'
     || normalizedLocation === '/sign-in'
     || normalizedLocation.startsWith('/sign-in/')
     || normalizedLocation === '/sign-up'

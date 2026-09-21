@@ -65,6 +65,27 @@ export const tokenUsage = pgTable("token_usage", {
   createdAt:       timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
+// ── Terms acceptance history ────────────────────────────────────────────────
+// accounts.terms_version / terms_accepted_at hold the CURRENT accepted version,
+// which is what the checkout gate reads. This table is the append-only record
+// of every acceptance, so a customer who accepted 1.0 and later 2.0 leaves
+// evidence of both. Rows are never updated or deleted.
+export const termsAcceptances = pgTable("terms_acceptances", {
+  id:           uuid("id").primaryKey().defaultRandom(),
+  accountId:    uuid("account_id").references(() => accounts.id, { onDelete: "cascade" }).notNull(),
+  clerkUserId:  text("clerk_user_id").notNull(),          // who clicked, not just which facility
+  termsVersion: text("terms_version").notNull(),
+  acceptedAt:   timestamp("accepted_at", { withTimezone: true }).defaultNow().notNull(),
+  // Standard clickwrap evidence. Nullable so the flow works if you choose not
+  // to collect them — see terms-v2 review notes before enabling in production,
+  // as the Privacy Policy needs to cover what is stored.
+  ipAddress:    text("ip_address"),
+  userAgent:    text("user_agent"),
+}, (table) => [
+  index("terms_acceptances_account_id_idx").on(table.accountId),
+  index("terms_acceptances_version_idx").on(table.termsVersion),
+]);
+
 export const gapHistory = pgTable("gap_history", {
   id:             text("id").primaryKey(),
   clerkUserId:    text("clerk_user_id"),
@@ -90,8 +111,9 @@ export const ecfrCacheEntries = pgTable("ecfr_cache_entries", {
   updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export type Account     = typeof accounts.$inferSelect;
-export type AccountUser = typeof accountUsers.$inferSelect;
+export type Account         = typeof accounts.$inferSelect;
+export type AccountUser     = typeof accountUsers.$inferSelect;
+export type TermsAcceptance = typeof termsAcceptances.$inferSelect;
 export type AdminUser   = typeof adminUsers.$inferSelect;
 export type TokenUsage  = typeof tokenUsage.$inferSelect;
 

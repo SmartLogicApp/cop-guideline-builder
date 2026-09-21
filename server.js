@@ -9,12 +9,12 @@ app.use(express.json({ type: ["application/json", "text/plain"] }));
 const CFR_PARTS = {
   hospital: { title: 42, part: 482, label: "42 CFR 482 – Conditions of Participation: Hospitals" },
   cah:      { title: 42, part: 485, label: "42 CFR 485 – Conditions of Participation: CAH" },
-  snf:      { title: 42, part: 483, label: "42 CFR 483 – Conditions of Participation: SNF" },
+  snf:      { title: 42, part: 483, label: "42 CFR 483 – Requirements for Long Term Care Facilities" },
   hha:      { title: 42, part: 484, label: "42 CFR 484 – Conditions of Participation: HHA" },
   hospice:  { title: 42, part: 418, label: "42 CFR 418 – Conditions of Participation: Hospice" },
   asc:      { title: 42, part: 416, label: "42 CFR 416 – Conditions for Coverage: ASC" },
   esrd:     { title: 42, part: 494, label: "42 CFR 494 – Conditions for Coverage: ESRD" },
-  rhc:      { title: 42, part: 491, label: "42 CFR 491 – Conditions of Participation: RHC/FQHC" },
+  rhc:      { title: 42, part: 491, label: "42 CFR 491 – Conditions for Certification: RHC/FQHC" },
 };
 
 const MAX_XML_BYTES  = 500_000;

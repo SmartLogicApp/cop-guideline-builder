@@ -40,6 +40,13 @@ async function syncSubscription(subscription: SubscriptionLike) {
     ),
     subscriptionCancelAtPeriodEnd: subscription.cancel_at_period_end,
     subscriptionCanceledAt: timestamp(subscription.canceled_at),
+    // Mirror Stripe's trial end onto the account so one column answers
+    // "when does this trial end" whether the trial was created locally at
+    // signup or by Stripe at checkout. Only written when Stripe reports one,
+    // so an account's original signup trial date is never blanked.
+    ...(subscription.trial_end
+      ? { trialEndsAt: timestamp(subscription.trial_end) }
+      : {}),
     updatedAt: new Date(),
   }).where(accountId
     ? eq(accounts.id, accountId)

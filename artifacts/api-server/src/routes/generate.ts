@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Response } from "express";
+import rateLimit from "express-rate-limit";
 import {
   GenerateWithAnthropicBody,
 } from "@workspace/api-zod";
@@ -51,7 +52,40 @@ function sendGenerationEvent(
 }
 
 // POST /api/generate — paid access only; requireAuth also identifies usage owner.
-router.post("/generate", requireAuth, requireActiveSubscription, async (req, res): Promise<void> => {
+/**
+ * Per-account abuse guard, distinct from the IP limiter in app.ts.
+ *
+ * The IP limiter (10/minute) stops a burst from one machine. This one stops a
+ * single account grinding away for hours — a script left in a loop, a scheduled
+ * job someone points at the API — which is the case that could actually cost
+ * real money while token usage is included in the flat fee.
+ *
+ * It is deliberately generous: 120 generations an hour is far beyond what a
+ * compliance team does by hand, so a legitimate heavy user never meets it.
+ * This is not a pricing cap and must not be tuned into one — if usage ever
+ * needs limiting for cost reasons, that belongs in metered billing, disclosed
+ * at checkout, not in a rate limiter that returns an error mid-survey-prep.
+ * Override with GENERATE_ACCOUNT_HOURLY_MAX.
+ */
+const accountHourlyMax = (() => {
+  const parsed = Number.parseInt(process.env.GENERATE_ACCOUNT_HOURLY_MAX?.trim() ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 120;
+})();
+
+const accountGenerateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: accountHourlyMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req as any).clerkUserId ?? req.ip ?? "anonymous",
+  message: {
+    error:
+      "You have made an unusually high number of generation requests in the past hour. " +
+      "Access will resume shortly. If you need a higher limit, contact support.",
+  },
+});
+
+router.post("/generate", requireAuth, accountGenerateLimiter, requireActiveSubscription, async (req, res): Promise<void> => {
   const parsed = GenerateWithAnthropicBody.safeParse(req.body);
   if (!parsed.success) {
     req.log.warn({ issueCount: parsed.error.issues.length }, "Invalid generation request");

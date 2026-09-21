@@ -8,6 +8,30 @@ import {
   trialWarningEmailHtml,
   trialWarningWindow,
 } from "../lib/trial-warning-email";
+import {
+  APP_TRIAL_STATUS,
+  STRIPE_TRIAL_STATUS,
+  isTrialStatus,
+} from "../middlewares/subscriptionAccess";
+import {
+  USAGE_ALERT_SUBJECT,
+  getAlertThresholdUsd,
+  getUsageAlertRecipient,
+  usageAlertEmailHtml,
+  type UsageAlertRow,
+} from "../lib/usage-alert";
+
+/**
+ * Sender for transactional mail. Resend's onboarding@resend.dev is a shared
+ * test domain: hospital mail filters drop it, and Resend restricts it to the
+ * account owner's own address until a domain is verified. Set
+ * TRIAL_EMAIL_FROM to a verified address on your own domain before relying
+ * on these notices reaching a customer.
+ */
+function getTrialEmailFrom(): string {
+  return process.env.TRIAL_EMAIL_FROM?.trim()
+    || "CMS Compliance Suite <onboarding@resend.dev>";
+}
 
 const router: IRouter = Router();
 
@@ -94,6 +118,87 @@ function toCsv(headers: string[], rows: (string | number | null | undefined)[][]
   return [headers, ...rows].map((r) => r.map(escape).join(",")).join("\r\n");
 }
 
+// ─── Internal AI cost monitoring ─────────────────────────────────────────────
+
+// POST /api/admin/cron/usage-alerts
+// One digest to the operator listing accounts whose month-to-date raw AI cost
+// has passed the alert threshold. Nothing is capped, throttled, billed or sent
+// to a customer — token cost is included in the subscription fee. The point is
+// to learn the real usage distribution before deciding whether metered pricing
+// is ever worth building.
+//
+// Stateless by design: a single digest means no per-account sent-flag, so this
+// can run on any schedule without a schema change or duplicate-send guard.
+router.post("/cron/usage-alerts", requireCronOrSuperAdmin, async (_req, res) => {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const thresholdUsd = getAlertThresholdUsd();
+
+  try {
+    const [allAccounts, monthRows] = await Promise.all([
+      db.select().from(accounts),
+      db.select().from(tokenUsage).where(gte(tokenUsage.createdAt, monthStart)),
+    ]);
+
+    const byAccount = new Map<string, { rawCostUsd: number; requestCount: number }>();
+    for (const row of monthRows) {
+      if (!row.accountId) continue;
+      const current = byAccount.get(row.accountId) ?? { rawCostUsd: 0, requestCount: 0 };
+      current.rawCostUsd += row.rawCostUsd ?? 0;
+      current.requestCount += 1;
+      byAccount.set(row.accountId, current);
+    }
+
+    const rows: UsageAlertRow[] = [];
+    for (const account of allAccounts) {
+      const usage = byAccount.get(account.id);
+      if (!usage || usage.rawCostUsd < thresholdUsd) continue;
+      rows.push({
+        facilityName: account.facilityName,
+        ccn: account.ccn,
+        rawCostUsd: usage.rawCostUsd,
+        requestCount: usage.requestCount,
+      });
+    }
+    rows.sort((a, b) => b.rawCostUsd - a.rawCostUsd);
+
+    if (rows.length === 0) {
+      return res.json({
+        ok: true,
+        matched: 0,
+        thresholdUsd,
+        sent: false,
+        note: "No account is over the threshold; no email sent.",
+      });
+    }
+
+    const { ReplitConnectors } = await import("@replit/connectors-sdk");
+    const connectors = new ReplitConnectors();
+    const emailResponse = await connectors.proxy("resend", "/emails", {
+      method: "POST",
+      body: JSON.stringify({
+        from: getTrialEmailFrom(),
+        to: [getUsageAlertRecipient()],
+        subject: USAGE_ALERT_SUBJECT,
+        html: usageAlertEmailHtml({
+          rows,
+          thresholdUsd,
+          monthLabel: now.toLocaleString("en-US", { month: "long", year: "numeric" }),
+          totalAccounts: allAccounts.length,
+        }),
+      }),
+    });
+    if (!emailResponse.ok) throw new Error(await emailResponse.text());
+
+    return res.json({ ok: true, matched: rows.length, thresholdUsd, sent: true });
+  } catch (error: any) {
+    return res.status(502).json({
+      ok: false,
+      error: error?.message ?? "Usage alert failed",
+    });
+  }
+});
+
 // ─── Platform stats ───────────────────────────────────────────────────────────
 
 // POST /api/admin/cron/trial-warnings
@@ -111,7 +216,7 @@ router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) =>
       .select()
       .from(accounts)
       .where(and(
-        eq(accounts.subscriptionStatus, "trial"),
+        inArray(accounts.subscriptionStatus, [APP_TRIAL_STATUS, STRIPE_TRIAL_STATUS]),
         gte(accounts.trialEndsAt, start),
         lt(accounts.trialEndsAt, end),
         isNull(accounts.trialWarningEmailSentAt),
@@ -155,7 +260,7 @@ router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) =>
         const emailResponse = await connectors.proxy("resend", "/emails", {
           method: "POST",
           body: JSON.stringify({
-            from: "CMS Compliance Suite <onboarding@resend.dev>",
+            from: getTrialEmailFrom(),
             to: [recipient],
             subject: TRIAL_WARNING_SUBJECT,
             html: trialWarningEmailHtml({
@@ -205,10 +310,10 @@ router.get("/stats", requireAnyAdmin, async (req, res) => {
     const now = new Date();
     const active  = allAccounts.filter((a) => a.subscriptionStatus === "active").length;
     const trial   = allAccounts.filter((a) =>
-      a.subscriptionStatus === "trial" && a.trialEndsAt != null && a.trialEndsAt > now
+      isTrialStatus(a.subscriptionStatus) && a.trialEndsAt != null && a.trialEndsAt > now
     ).length;
     const expired = allAccounts.filter((a) =>
-      a.subscriptionStatus === "trial" && (a.trialEndsAt == null || a.trialEndsAt <= now)
+      isTrialStatus(a.subscriptionStatus) && (a.trialEndsAt == null || a.trialEndsAt <= now)
     ).length;
     const cancelled = allAccounts.filter((a) => a.subscriptionStatus === "cancelled").length;
 
