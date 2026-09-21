@@ -25,20 +25,32 @@ export type TermsVersion = {
 export const TERMS_VERSIONS: readonly TermsVersion[] = [
   {
     version: "2026-08-13",
-    publishedOn: "2026-09-07",
+    publishedOn: "2026-08-13",
     published: true,
     summary:
-      "Version 1.0. Pre-launch. Paid billing not active; sections 13–15 reserved. " +
-      "NOTE: this version string predates the document it identifies, which is " +
-      "why versions are now explicit. Retained exactly as recorded for customers " +
-      "who accepted it.",
+      "Version 1.0. Pre-launch. Paid billing not active. Scoped the subscription " +
+      "to a single CMS-certified Facility and forbade use on behalf of any other " +
+      "facility. Superseded by 2026-09-21. Retained exactly as recorded for " +
+      "customers who accepted it.",
+  },
+  {
+    version: "2026-09-21",
+    publishedOn: "2026-09-21",
+    published: true,
+    summary:
+      "Version 1.1. Paid billing still not active. Corrects two things Version 1.0 " +
+      "got wrong: the subscription unit is an Account registered to a Provider " +
+      "Identifier (CCN, NPI, CLIA, or one the Service issues), not a CMS-certified " +
+      "Facility, and a consulting Customer may deliver Output to its own clients; " +
+      "and the contact addresses, which pointed at a misspelled mailbox that does " +
+      "not exist. Re-acceptance is required because the scope of the licence changed.",
   },
   {
     version: "2.0",
     publishedOn: "",
     published: false, // flip to true when counsel approves and the document ships
     summary:
-      "Paid billing active. $299 per facility per month, $3,588 annually, " +
+      "Paid billing active. $299 per Account per month, $3,588 annually, " +
       "30-day trial with card up front, token cost included, fair use, " +
       "15-day deactivation notice, cancellation via the Stripe portal.",
   },
@@ -47,10 +59,16 @@ export const TERMS_VERSIONS: readonly TermsVersion[] = [
 /**
  * The version customers must have accepted to be charged.
  *
- * This stays at 1.0 until Terms 2.0 is published. Moving it early would make
- * the checkout gate demand acceptance of a document nobody can read.
+ * Only ever move this to a version whose document is published and readable —
+ * moving it early makes the checkout gate demand acceptance of something
+ * nobody can see. It stays at 1.1 until Terms 2.0 clears counsel.
+ *
+ * Moving it to 1.1 makes needsAcceptance() true for anyone who accepted 1.0,
+ * which is the intended effect: 1.1 widens who may hold a subscription and
+ * what a consulting Customer may do with Output, so the earlier acceptance no
+ * longer describes the licence on offer.
  */
-export const CURRENT_TERMS_VERSION = "2026-08-13";
+export const CURRENT_TERMS_VERSION = "2026-09-21";
 
 export function getTermsVersion(version: string): TermsVersion | undefined {
   return TERMS_VERSIONS.find((entry) => entry.version === version);

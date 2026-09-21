@@ -37,7 +37,6 @@ type TokenUsageData = {
     outputTokens: number;
     totalTokens: number;
     requestCount: number;
-    totalAdditionalChargeUsd: number;
     monthLabel: string;
   };
 };
@@ -48,13 +47,6 @@ const supportEmail = CONTACT_EMAIL_SUPPORT;
 
 function formatNumber(value: number) {
   return value.toLocaleString('en-US');
-}
-
-function formatCharge(value: number) {
-  return value.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  });
 }
 
 function subscriptionLabel(data: SubscriptionData | null) {
@@ -378,22 +370,12 @@ export default function BillingPage() {
             )}
 
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-              <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-950">AI usage estimate</h2>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    This is an activity estimate only. Usage is not currently invoiced.
-                  </p>
-                </div>
-                <div className="text-left sm:text-right">
-                  <p className="text-3xl font-bold text-slate-950">
-                    ${formatCharge(usage?.totalAdditionalChargeUsd ?? 0)}
-                  </p>
-                  <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Estimated additional usage
-                  </p>
-                </div>
-              </div>
+              <h2 className="text-lg font-bold text-slate-950">About your AI usage</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                AI usage is included in your subscription. The request and token counts
+                above are shown so you can see your own activity &mdash; they are not an
+                amount owed, and nothing above is billed separately from your monthly fee.
+              </p>
             </section>
           </>
         )}

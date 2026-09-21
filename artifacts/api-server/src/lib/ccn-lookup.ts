@@ -1,3 +1,5 @@
+import { identifierError, isValidCcn } from "./provider-identifier.ts";
+
 export interface CmsDataset {
   id: string;
   ccnField: string;
@@ -43,15 +45,21 @@ const HOSPITAL_DATASET_TYPES = new Set([
   "childrens",
 ]);
 
+/**
+ * @deprecated CCN-only. Use `isValidIdentifier(type, …)` from
+ * ./provider-identifier.js, which also covers NPI and CLIA. Kept so the CCN
+ * format contract has one definition and one test, wherever it is called from.
+ */
 export function isValidProviderIdentifier(identifier: string, institutionType?: string): boolean {
-  if (institutionType === "asc") return /^[A-Z0-9]{10}$/.test(identifier);
-  return /^[A-Z0-9]{6}$/.test(identifier);
+  return isValidCcn(identifier, institutionType);
 }
 
+/**
+ * @deprecated CCN-only. Use `identifierError(type, …)` from
+ * ./provider-identifier.js.
+ */
 export function providerIdentifierError(institutionType?: string): string {
-  return institutionType === "asc"
-    ? "ASC CMS Certification Number must be exactly 10 alphanumeric characters"
-    : "CCN must be exactly 6 alphanumeric characters";
+  return identifierError("ccn", institutionType);
 }
 
 function datasetsForInstitution(institutionType?: string): readonly CmsDataset[] {

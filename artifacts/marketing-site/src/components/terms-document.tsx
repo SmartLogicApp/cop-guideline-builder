@@ -17,11 +17,20 @@ import { termsV1 } from '@/legal/terms-v1';
  */
 
 const DOCUMENTS: Record<string, string> = {
+  // 1.0 and 1.1 render the same source. The 1.1 change was to the scope of the
+  // licence and the contact addresses, both of which live in the source
+  // document, so there is one file and two version labels pointing at it —
+  // rather than a frozen copy of 1.0, which would immediately drift.
+  //
+  // This is correct only while no customer has accepted 1.0 against a document
+  // that has since changed. If that ever stops being true, 1.0 must be snapshot
+  // to its own file before the shared source is edited again.
   '2026-08-13': termsV1,
+  '2026-09-21': termsV1,
   // '2.0': termsV2,
 };
 
-export const CLIENT_CURRENT_TERMS_VERSION = '2026-08-13';
+export const CLIENT_CURRENT_TERMS_VERSION = '2026-09-21';
 
 function renderInline(text: string): ReactNode[] {
   return text.split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) =>

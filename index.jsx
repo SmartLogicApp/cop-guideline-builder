@@ -3877,7 +3877,7 @@ Rules:
 // ─── Legal Content ────────────────────────────────────────────────────────────
 
 const TERMS = `TERMS OF SERVICE
-Last updated: August 13, 2026
+Last updated: September 21, 2026
 
 1. ACCEPTANCE OF TERMS
 By accessing or using the CMS Compliance Suite ("the Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not access or use the Service.
@@ -3885,27 +3885,35 @@ By accessing or using the CMS Compliance Suite ("the Service"), you agree to be 
 2. DEFINITIONS
 As used in these Terms:
 
-"Facility" means a single, distinct physical location or CMS-certified site operated under one CMS Certification Number (CCN) or equivalent regulatory identifier.
+"Customer" means the organization that registers an Account — a healthcare provider or supplier, a physician practice, a laboratory, or a consulting or advisory firm.
 
-"Organization" means a legal entity (e.g., a health system or management company) that may own or operate one or more Facilities.
+"Provider Identifier" means the identifier under which an Account is registered: a CMS Certification Number (CCN) for a certified provider or supplier, a National Provider Identifier (NPI) for a practice or individual provider, a CLIA number for a laboratory, or, where Customer holds none of these, an identifier issued by the Service.
 
-"Subscription" means an active, paid plan that licenses access to the Service for one Facility.
+"Account" means a single subscription to the Service, registered to one Provider Identifier. A Provider Identifier may be registered to one Account only.
 
-"Authorized User" means an individual employed by, or acting on behalf of, a single licensed Facility who has been granted access credentials under that Facility's Subscription.
+"Subscription" means an active, paid plan that licenses access to the Service for one Account.
+
+"Authorized User" means an individual employed by, or acting on behalf of, Customer who has been granted access credentials under Customer's Subscription.
 
 3. ACCOUNT USE AND LOGIN RESTRICTIONS
 
-3.1 One Subscription, One Facility. Login credentials issued under a Subscription are licensed for use in connection with the single Facility to which that Subscription applies. Credentials may not be shared, distributed, or otherwise made available for use by, or on behalf of, any other Facility, location, or entity — including other Facilities within the same Organization — without a corresponding, separately paid Subscription for that Facility.
+3.1 One Subscription, One Customer. Credentials issued under a Subscription are licensed to the Customer that registered the Account, for use by that Customer's Authorized Users. They may not be shared with, distributed to, or made available for use by any person or entity outside Customer's own organization.
 
-3.2 Authorized Users. A Facility may designate multiple individual users to access its Subscription (e.g., compliance officer, administrator, department heads), provided all such users are acting on behalf of the single licensed Facility. This section does not limit the number of individual staff members at one Facility who may use the Service; it limits use to that one Facility.
+3.2 What an Account covers. Where Customer is a healthcare provider or supplier, the Subscription is for Customer's own compliance work. Where Customer is a consulting or advisory firm, the Subscription is for Customer's own professional practice, and Customer may use and deliver Output to its clients as part of the services Customer provides to them.
 
-3.3 Monitoring for Compliance. CMS Compliance Suite may monitor account usage patterns, including login timestamps, IP addresses, and approximate geographic location, for the purpose of verifying compliance with this Section 3. This monitoring is used solely to enforce these Terms and is not shared for any other purpose except as required by law.
+Customer may not register an Account on behalf of, or in the name of, another organization, and may not resell, sublicense, or otherwise provide access to the Service to third parties. A client of a consulting Customer who wants their own direct access to the Service needs their own Subscription.
 
-3.4 Suspected Violations. If CMS Compliance Suite reasonably believes that login credentials issued under a single Facility Subscription are being used by, or on behalf of, more than one Facility, CMS Compliance Suite may: (a) request written confirmation from the Organization regarding account usage; (b) require the Organization to purchase additional Subscriptions to bring usage into compliance; and/or (c) suspend or terminate the Subscription without refund if the Organization fails to remedy the violation within fifteen (15) days of written notice.
+3.3 Authorized Users. Customer may designate multiple individual users (for example, compliance officer, administrator, department heads), provided all such users are acting on behalf of Customer. This section does not limit how many of Customer's staff may use the Service.
 
-3.5 No Waiver by Inaction. CMS Compliance Suite's failure to enforce this Section 3 in any instance does not waive its right to enforce it in any other instance.
+3.4 Scope is contractual. The Service does not technically restrict which providers Output may be generated for. The limits in this Section 3 are contractual obligations, and Customer is responsible for observing them.
 
-For multi-facility or enterprise pricing inquiries, contact: CMSComplianceGaurdian@outlook.com
+3.5 Monitoring for Compliance. CMS Compliance Suite records which provider types and, where supplied, which facilities Output is generated for, together with login timestamps, for the purpose of understanding usage and verifying compliance with this Section 3. This information is used solely for those purposes and is not shared for any other purpose except as required by law.
+
+3.6 Suspected Violations. If CMS Compliance Suite reasonably believes that credentials issued under a Subscription are being used by, or on behalf of, an organization other than Customer, CMS Compliance Suite may: (a) request written confirmation from Customer regarding account usage; (b) require additional Subscriptions to bring usage into compliance; and/or (c) suspend or terminate the Subscription without refund if Customer fails to remedy the violation within fifteen (15) days of written notice.
+
+3.7 No Waiver by Inaction. CMS Compliance Suite's failure to enforce this Section 3 in any instance does not waive its right to enforce it in any other instance.
+
+For multi-facility, enterprise, or consulting-firm pricing inquiries, contact: CMSComplianceGuardian@Outlook.com
 
 4. SUBSCRIPTION AND PAYMENT TERMS
 
@@ -3951,11 +3959,11 @@ The Service, including its design, prompts, and logic, is proprietary. Generated
 
 12. TERMINATION
 
-12.1 By You. You may cancel your Subscription at any time through your account settings or by contacting CMSComplianceGaurdian@outlook.com. Cancellation takes effect at the end of the current billing period; no refunds are issued for any unused portion of the period.
+12.1 By You. You may cancel your Subscription at any time through your account settings or by contacting CMSComplianceGuardianHelp@Outlook.com. Cancellation takes effect at the end of the current billing period; no refunds are issued for any unused portion of the period.
 
 12.2 By Us. CMS Compliance Suite may suspend or terminate your account immediately, without prior notice or refund, if you breach these Terms (including Section 3), provide false information at registration, or engage in conduct that CMS Compliance Suite reasonably determines to be harmful to other users, the Service, or third parties.
 
-12.3 Effect of Termination. Upon termination, your right to access the Service ceases immediately. Data stored in your browser's local storage (e.g., gap analysis history) remains accessible locally but cannot be recovered from our servers after account deletion. To request permanent deletion of your account data, contact CMSComplianceGaurdian@outlook.com.
+12.3 Effect of Termination. Upon termination, your right to access the Service ceases immediately. Data stored in your browser's local storage (e.g., gap analysis history) remains accessible locally but cannot be recovered from our servers after account deletion. To request permanent deletion of your account data, contact CMSComplianceGuardian@Outlook.com.
 
 13. DISCLAIMER OF WARRANTIES
 THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. CMS COP COMPLIANCE SUITE DOES NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR SECURE.
@@ -3979,7 +3987,7 @@ Your use of the Service is also governed by our Privacy Policy, incorporated her
 We reserve the right to modify these Terms at any time. We will provide notice of material changes by updating the "Last Updated" date at the top of this document. Continued use of the Service after the effective date of any change constitutes acceptance of the revised Terms.
 
 20. CONTACT
-Questions about these Terms may be directed to: CMSComplianceGaurdian@outlook.com`;
+Questions about these Terms may be directed to: CMSComplianceGuardian@Outlook.com`;
 
 const PRIVACY = `PRIVACY POLICY
 Last updated: September 6, 2026
@@ -4009,7 +4017,7 @@ Uploaded policy files are parsed in your browser. The extracted policy text, org
 The Service does not place uploaded policies, extracted policy text, organization-specific analysis, generated policy documents, or proprietary recommendations into its permanent application database or permanent file/object storage. Results must be downloaded before the temporary session ends. Older gap-analysis data created by prior releases in permanent browser local storage is removed when the updated scanner opens.
 
 5. FEEDBACK EMAILS
-If you use the "Share Feedback" button, your email client will open a pre-addressed message to CMSComplianceGaurdian@outlook.com. We receive only what you choose to write. We do not use third-party email tracking.
+If you use the "Share Feedback" button, your email client will open a pre-addressed message to CMSComplianceGuardian@Outlook.com. We receive only what you choose to write. We do not use third-party email tracking.
 
 6. AI PROCESSING
 Text you submit for analysis (policy documents, compliance topics, provider type, and department/unit) is sent to Anthropic's API only to perform the analysis or generation you request. CMS Compliance Suite does not use that content to train its own models. Anthropic's handling of API data is governed by Anthropic's applicable API terms and privacy documentation. Do not submit PHI or content you are not authorized to process.
@@ -4029,13 +4037,13 @@ Account data is transmitted over HTTPS. Login events are logged for license comp
 The Service is intended for healthcare compliance professionals and is not directed at children under 13. We do not knowingly collect information from children.
 
 11. CALIFORNIA PRIVACY RIGHTS (CCPA)
-If you are a California resident, you have the following rights under the California Consumer Privacy Act (CCPA): (a) the right to know what personal information we collect, use, and disclose about you; (b) the right to request deletion of your personal information, subject to certain exceptions; and (c) the right to opt out of the sale of your personal information — we do not sell personal information. To exercise these rights, contact us at CMSComplianceGaurdian@outlook.com with the subject line "CCPA Privacy Request." We will respond within 45 days. Note that certain information may be retained as required by law or to complete transactions you have requested (e.g., billing records during or after an active Subscription period). We will not discriminate against you for exercising any of your CCPA rights.
+If you are a California resident, you have the following rights under the California Consumer Privacy Act (CCPA): (a) the right to know what personal information we collect, use, and disclose about you; (b) the right to request deletion of your personal information, subject to certain exceptions; and (c) the right to opt out of the sale of your personal information — we do not sell personal information. To exercise these rights, contact us at CMSComplianceGuardian@Outlook.com with the subject line "CCPA Privacy Request." We will respond within 45 days. Note that certain information may be retained as required by law or to complete transactions you have requested (e.g., billing records during or after an active Subscription period). We will not discriminate against you for exercising any of your CCPA rights.
 
 12. CHANGES TO THIS POLICY
 We may update this Privacy Policy from time to time. The "last updated" date at the top will reflect any changes. Continued use of the Service after changes constitutes acceptance of the updated Policy.
 
 13. CONTACT
-For privacy questions or concerns, contact: CMSComplianceGaurdian@outlook.com`;
+For privacy questions or concerns, contact: CMSComplianceGuardian@Outlook.com`;
 
 // ─── Legal Modal ──────────────────────────────────────────────────────────────
 
@@ -4074,7 +4082,7 @@ function Footer({ onTerms, onPrivacy }) {
       <div style={{ display: "flex", gap: "16px" }}>
         <button onClick={onTerms} style={{ background: "none", border: "none", fontSize: "12px", color: "#64748B", cursor: "pointer", textDecoration: "underline", padding: 0 }}>Terms of Service</button>
         <button onClick={onPrivacy} style={{ background: "none", border: "none", fontSize: "12px", color: "#64748B", cursor: "pointer", textDecoration: "underline", padding: 0 }}>Privacy Policy</button>
-        <a href="mailto:CMSComplianceGaurdian@outlook.com" style={{ fontSize: "12px", color: "#64748B", textDecoration: "underline" }}>Contact</a>
+        <a href="mailto:CMSComplianceGuardian@Outlook.com" style={{ fontSize: "12px", color: "#64748B", textDecoration: "underline" }}>Contact</a>
       </div>
     </div>
   );
@@ -4088,7 +4096,7 @@ const TRIAL_END_PLANS = [
     price: "Coming soon",
     priceSuffix: "",
     description: "Paid subscriptions are not active yet. Review your billing status or contact support for access help.",
-    features: ["Unlimited staff users", "1 facility / CCN", "All compliance tools", "AI gap scanning", "Priority support"],
+    features: ["Unlimited staff users", "One account per organization", "All compliance tools", "AI gap scanning", "Priority support"],
     highlight: true,
   },
 ];
@@ -4540,7 +4548,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
                 style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "8px 14px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
                 💳 Billing
               </a>
-              <a href="mailto:CMSComplianceGaurdian@outlook.com?subject=CMS Compliance Suite Feedback&body=Provider type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
+              <a href="mailto:CMSComplianceGuardian@Outlook.com?subject=CMS Compliance Suite Feedback&body=Provider type tested:%0ATabs used:%0AWhat worked well:%0AWhat could be improved:%0AOther suggestions:"
                 style={{ display: "inline-block", padding: "8px 14px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
                 ✉ Share Feedback
               </a>

@@ -7,7 +7,6 @@ interface TokenUsageData {
     outputTokens: number;
     totalTokens: number;
     requestCount: number;
-    totalAdditionalChargeUsd: number;
     monthLabel: string;
   };
 }
@@ -22,13 +21,6 @@ const cardStyle = {
 
 function formatNumber(value: number) {
   return value.toLocaleString("en-US");
-}
-
-function formatCharge(value: number) {
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  });
 }
 
 export default function BillingPage() {
@@ -89,23 +81,20 @@ export default function BillingPage() {
                   fontSize: "12px",
                 }}
               >
-                {usage?.monthLabel ?? "This month"} · Billed in addition to your
-                base plan
+                {usage?.monthLabel ?? "This month"} · Included in your
+                subscription
               </p>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <strong
+            <div style={{ textAlign: "right", maxWidth: "260px" }}>
+              <span
                 style={{
-                  display: "block",
-                  color: "hsl(213 76% 29%)",
-                  fontSize: "28px",
-                  lineHeight: 1,
+                  color: "#64748B",
+                  fontSize: "12px",
+                  lineHeight: 1.5,
                 }}
               >
-                ${usage ? formatCharge(usage.totalAdditionalChargeUsd) : "—"}
-              </strong>
-              <span style={{ color: "#94A3B8", fontSize: "11px" }}>
-                additional charge
+                These figures show your own activity. They are not an amount
+                owed and are not billed separately.
               </span>
             </div>
           </div>

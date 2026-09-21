@@ -148,7 +148,13 @@ router.post("/checkout", requireAuth, async (req, res) => {
       name: account.facilityName,
       ...(email ? { email } : {}),
       "metadata[accountId]": account.id,
+      // `ccn` is kept as the key so existing Stripe views and any saved filters
+      // keep working, but the value is whichever identifier this account has.
+      // `identifierType` is what says which kind it is — without it, a
+      // consultant's CONS-… identifier reads as a malformed CCN in the Stripe
+      // dashboard.
       "metadata[ccn]": account.ccn,
+      "metadata[identifierType]": account.identifierType,
       "metadata[clerkUserId]": clerkUserId,
     });
     const customer = await stripe.request<{ id: string }>("/v1/customers", {
@@ -180,9 +186,11 @@ router.post("/checkout", requireAuth, async (req, res) => {
     client_reference_id: account.id,
     "metadata[accountId]": account.id,
     "metadata[ccn]": account.ccn,
+    "metadata[identifierType]": account.identifierType,
     "metadata[clerkUserId]": clerkUserId,
     "subscription_data[metadata][accountId]": account.id,
     "subscription_data[metadata][ccn]": account.ccn,
+    "subscription_data[metadata][identifierType]": account.identifierType,
     "subscription_data[metadata][clerkUserId]": clerkUserId,
   });
   const session = await stripe.request<{ url: string | null }>("/v1/checkout/sessions", {
@@ -271,15 +279,21 @@ router.post("/portal", requireAuth, async (req, res) => {
   return res.json({ url: portalSession.url });
 });
 
-// GET /api/billing/token-usage — current month aggregate for the user's account
+// GET /api/billing/token-usage — current month activity for the user's account.
+//
+// This response is customer-facing, so it carries NO money. AI token cost is
+// included in the subscription fee (Terms 13.6), and the cost figures behind it
+// — raw provider cost and the markup applied to it — are internal operating
+// data that no customer should receive, not even in a devtools network tab.
+// The operator view of the same numbers lives at GET /api/admin/token-usage and
+// in the cost-alert digest, both behind an admin guard.
 router.get("/token-usage", requireAuth, async (req, res) => {
   const membership = await getUserAccount((req as any).clerkUserId);
   const account = membership?.account;
   if (!account) return res.json({
     currentMonth: {
       inputTokens: 0, outputTokens: 0, totalTokens: 0,
-      requestCount: 0, rawCostUsd: 0, markupUsd: 0,
-      totalAdditionalChargeUsd: 0, monthLabel: currentMonthLabel(),
+      requestCount: 0, monthLabel: currentMonthLabel(),
     },
   });
 
@@ -298,24 +312,17 @@ router.get("/token-usage", requireAuth, async (req, res) => {
 
   const inputTokens  = rows.reduce((s, r) => s + (r.inputTokens  ?? 0), 0);
   const outputTokens = rows.reduce((s, r) => s + (r.outputTokens ?? 0), 0);
-  const rawCostUsd   = rows.reduce((s, r) => s + (r.rawCostUsd   ?? 0), 0);
-  const markupUsd    = rows.reduce((s, r) => s + (r.markedUpCostUsd ?? 0), 0) - rawCostUsd;
 
   return res.json({
     currentMonth: {
       inputTokens,
       outputTokens,
-      totalTokens:              inputTokens + outputTokens,
-      requestCount:             rows.length,
-      rawCostUsd:               round(rawCostUsd),
-      markupUsd:                round(markupUsd),
-      totalAdditionalChargeUsd: round(rawCostUsd + markupUsd),
-      monthLabel:               currentMonthLabel(),
+      totalTokens:  inputTokens + outputTokens,
+      requestCount: rows.length,
+      monthLabel:   currentMonthLabel(),
     },
   });
 });
-
-function round(n: number) { return Math.round(n * 1_000_000) / 1_000_000; }
 
 function currentMonthLabel() {
   return new Date().toLocaleString("en-US", { month: "long", year: "numeric" });

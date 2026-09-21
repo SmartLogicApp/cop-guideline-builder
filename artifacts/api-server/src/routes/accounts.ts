@@ -5,11 +5,21 @@ import { accounts, accountUsers, termsAcceptances } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import {
   lookupCCN,
-  isValidProviderIdentifier,
-  providerIdentifierError,
   MANUAL_VERIFICATION_MESSAGE,
   MANUAL_VERIFICATION_TYPES,
 } from "../lib/ccn-lookup.js";
+import {
+  DEFAULT_IDENTIFIER_TYPE,
+  IDENTIFIER_TYPES,
+  type IdentifierType,
+  generateConsultantIdentifier,
+  identifierError,
+  identifierLabel,
+  isIdentifierType,
+  isValidIdentifier,
+  normalizeIdentifier,
+  supportsCmsLookup,
+} from "../lib/provider-identifier.js";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription.js";
 
 import {
@@ -19,6 +29,12 @@ import {
 } from "../lib/terms-versions.js";
 
 const router: IRouter = Router();
+
+/** Postgres 23505 — the unique constraint rejected the row. */
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null
+    && (error as { code?: unknown }).code === "23505";
+}
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 
@@ -30,18 +46,39 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   (req as any).clerkEmail = (auth as any)?.sessionClaims?.email ?? null;
   return next();
 }
-// GET /api/accounts/validate-ccn?ccn=XXXXXX&institutionType=TYPE
+// GET /api/accounts/validate-ccn?ccn=XXXXXX&institutionType=TYPE&identifierType=ccn
+//
+// The name is kept for the existing client. `identifierType` is optional and
+// defaults to "ccn", so a caller that predates NPI and CLIA support behaves
+// exactly as it did.
 router.get("/validate-ccn", requireAuth, async (req, res) => {
-  const ccn = (req.query.ccn as string | undefined)?.trim().toUpperCase();
+  const raw = req.query.ccn as string | undefined;
   const institutionType = (req.query.institutionType as string | undefined)?.trim().toLowerCase();
-  if (!ccn || !isValidProviderIdentifier(ccn, institutionType)) {
-    return res.status(400).json({ error: providerIdentifierError(institutionType) });
+  const requestedType = req.query.identifierType as string | undefined;
+
+  if (requestedType !== undefined && !isIdentifierType(requestedType)) {
+    return res.status(400).json({
+      error: `identifierType must be one of: ${IDENTIFIER_TYPES.join(", ")}`,
+    });
+  }
+  const idType: IdentifierType = requestedType ?? DEFAULT_IDENTIFIER_TYPE;
+
+  // Consultants never type an identifier — one is issued at registration —
+  // so there is nothing here to validate or look up.
+  if (idType === "consultant") {
+    return res.status(400).json({ error: identifierError("consultant") });
   }
 
-  const existing = await db.select().from(accounts).where(eq(accounts.ccn, ccn)).limit(1);
+  const identifier = raw ? normalizeIdentifier(raw) : "";
+  if (!identifier || !isValidIdentifier(idType, identifier, institutionType)) {
+    return res.status(400).json({ error: identifierError(idType, institutionType) });
+  }
+
+  const existing = await db.select().from(accounts).where(eq(accounts.ccn, identifier)).limit(1);
   if (existing.length) {
     return res.json({
-      ccn,
+      ccn: identifier,
+      identifierType: existing[0].identifierType,
       alreadyRegistered: true,
       facilityName: existing[0].facilityName,
       facilityType: existing[0].facilityType,
@@ -52,23 +89,31 @@ router.get("/validate-ccn", requireAuth, async (req, res) => {
     });
   }
 
-  if (institutionType && MANUAL_VERIFICATION_TYPES.has(institutionType)) {
+  // Only a CCN can be checked against CMS Care Compare. An NPI or CLIA number
+  // is format-checked and then reviewed by hand — claiming otherwise would be
+  // telling the buyer we verified something we did not.
+  if (!supportsCmsLookup(idType)
+      || (institutionType && MANUAL_VERIFICATION_TYPES.has(institutionType))) {
     return res.json({
-      ccn,
+      ccn: identifier,
+      identifierType: idType,
       alreadyRegistered: false,
       found: false,
       facilityName: null,
       state: null,
       city: null,
-      facilityType: institutionType,
+      facilityType: institutionType ?? null,
       verificationMode: "manual",
-      message: MANUAL_VERIFICATION_MESSAGE,
+      message: supportsCmsLookup(idType)
+        ? MANUAL_VERIFICATION_MESSAGE
+        : `CMS Care Compare does not cover ${identifierLabel(idType)} lookups. You can continue with registration and the account will be reviewed manually.`,
     });
   }
 
-  const info = await lookupCCN(ccn, institutionType);
+  const info = await lookupCCN(identifier, institutionType);
   return res.json({
-    ccn,
+    ccn: identifier,
+    identifierType: idType,
     alreadyRegistered: false,
     ...info,
     verificationMode: info.found ? "automatic" : "manual",
@@ -275,21 +320,49 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
   return res.json({ ...record, recorded: false });
 });
 
-// POST /api/accounts/register — register a CCN account and link the current user
+// POST /api/accounts/register — register an account and link the current user.
+//
+// The identifier may be a CCN (certified facilities), an NPI (practices and
+// individual providers), a CLIA number (labs), or — for a consultant who has
+// none of those — one this endpoint issues. Whichever it is, the account gets
+// exactly one, and it is what a second user from the same organisation joins
+// on, so one organisation means one subscription.
 router.post("/register", requireAuth, async (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const email  = (req as any).clerkEmail as string | null;
-  const { ccn, facilityName, facilityType, state, city } = req.body as {
-    ccn: string; facilityName: string; facilityType?: string; state?: string; city?: string;
+  const { ccn, identifierType, facilityName, facilityType, state, city } = req.body as {
+    ccn?: string; identifierType?: string; facilityName: string;
+    facilityType?: string; state?: string; city?: string;
   };
 
-  if (!ccn || !facilityName) {
-    return res.status(400).json({ error: "ccn and facilityName are required" });
+  if (identifierType !== undefined && !isIdentifierType(identifierType)) {
+    return res.status(400).json({
+      error: `identifierType must be one of: ${IDENTIFIER_TYPES.join(", ")}`,
+    });
+  }
+  const idType: IdentifierType = identifierType ?? DEFAULT_IDENTIFIER_TYPE;
+
+  if (!facilityName?.trim()) {
+    return res.status(400).json({ error: "facilityName is required" });
   }
 
-  const normalCCN = ccn.trim().toUpperCase();
-  if (!isValidProviderIdentifier(normalCCN, facilityType)) {
-    return res.status(400).json({ error: providerIdentifierError(facilityType) });
+  // A consultant supplies no identifier; every other type must.
+  if (idType !== "consultant" && !ccn) {
+    return res.status(400).json({
+      error: `${identifierLabel(idType)} is required`,
+    });
+  }
+
+  let normalIdentifier: string;
+  if (idType === "consultant") {
+    // Ignore anything the client sent: a self-chosen consultant identifier
+    // could collide with, or impersonate, a real one.
+    normalIdentifier = generateConsultantIdentifier();
+  } else {
+    normalIdentifier = normalizeIdentifier(ccn as string);
+    if (!isValidIdentifier(idType, normalIdentifier, facilityType)) {
+      return res.status(400).json({ error: identifierError(idType, facilityType) });
+    }
   }
 
   // Check if this user already has an account
@@ -299,23 +372,40 @@ router.post("/register", requireAuth, async (req, res) => {
     return res.status(409).json({ error: "You are already linked to a facility account" });
   }
 
-  // Get or create the CCN account
-  let [account] = await db.select().from(accounts).where(eq(accounts.ccn, normalCCN)).limit(1);
+  // Get or create the account for this identifier.
+  let [account] = await db.select().from(accounts)
+    .where(eq(accounts.ccn, normalIdentifier)).limit(1);
   const isFirstUser = !account;
 
   if (!account) {
     const trialEnds = new Date();
     trialEnds.setDate(trialEnds.getDate() + 30);
 
-    [account] = await db.insert(accounts).values({
-      ccn:              normalCCN,
-      facilityName:     facilityName.trim(),
-      facilityType:     facilityType ?? null,
-      state:            state ?? null,
-      city:             city ?? null,
+    const values = {
+      facilityName:       facilityName.trim(),
+      facilityType:       facilityType ?? null,
+      state:              state ?? null,
+      city:               city ?? null,
+      identifierType:     idType,
       subscriptionStatus: "trial",
-      trialEndsAt:      trialEnds,
-    }).returning();
+      trialEndsAt:        trialEnds,
+    };
+
+    if (idType === "consultant") {
+      // The unique constraint, not the generator, decides. Retry on collision.
+      for (let attempt = 0; attempt < 5 && !account; attempt += 1) {
+        try {
+          [account] = await db.insert(accounts)
+            .values({ ...values, ccn: normalIdentifier }).returning();
+        } catch (error) {
+          if (!isUniqueViolation(error) || attempt === 4) throw error;
+          normalIdentifier = generateConsultantIdentifier();
+        }
+      }
+    } else {
+      [account] = await db.insert(accounts)
+        .values({ ...values, ccn: normalIdentifier }).returning();
+    }
   }
 
   // Link this user to the account

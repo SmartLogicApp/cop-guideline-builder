@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { timingSafeEqual } from "node:crypto";
 import { db } from "@workspace/db";
 import { adminUsers, accounts, accountUsers, tokenUsage } from "@workspace/db";
 import { eq, and, gte, lt, desc, isNull, inArray } from "drizzle-orm";
@@ -54,10 +55,37 @@ function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
   return next();
 }
 
+/**
+ * The secret an external scheduler presents to run the cron endpoints.
+ *
+ * This has to be handed to whatever service calls them — a scheduled job, a CI
+ * runner, an uptime pinger — so it must NOT be the secret that signs sessions.
+ * Sharing SESSION_SECRET with a third party means a compromise there is a
+ * compromise of every session, and it makes the two impossible to rotate
+ * independently. CRON_SECRET is therefore preferred; SESSION_SECRET remains a
+ * fallback only so an existing schedule keeps working until CRON_SECRET is set.
+ *
+ * Set CRON_SECRET and the fallback stops being consulted.
+ */
+function getSchedulerSecret(): string | undefined {
+  return process.env.CRON_SECRET?.trim() || process.env.SESSION_SECRET?.trim() || undefined;
+}
+
+/** Constant-time compare, so a wrong token can't be found a byte at a time. */
+function secretsMatch(presented: string, expected: string): boolean {
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
 function requireCronOrSuperAdmin(req: Request, res: Response, next: NextFunction) {
   const authorization = req.get("authorization");
-  const schedulerSecret = process.env.SESSION_SECRET;
-  if (schedulerSecret && authorization === `Bearer ${schedulerSecret}`) return next();
+  const schedulerSecret = getSchedulerSecret();
+  if (schedulerSecret && authorization?.startsWith("Bearer ")
+      && secretsMatch(authorization.slice("Bearer ".length), schedulerSecret)) {
+    return next();
+  }
   return requireSuperAdmin(req, res, next);
 }
 
@@ -355,13 +383,31 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
       ),
     ]);
 
-    const tokenByAccount = new Map<string, { requests: number; rawCost: number; totalCharge: number }>();
+    // Alongside cost, count how many distinct facilities and provider types
+    // each account generated for this month. Nothing is blocked on these —
+    // they exist to answer whether a subscription is serving the one facility
+    // it registered or a dozen, which the app does not otherwise record.
+    // Both come from unverified client input, so read them as a signal to
+    // look into, never as proof.
+    type AccountUsage = {
+      requests: number;
+      rawCost: number;
+      totalCharge: number;
+      facilities: Set<string>;
+      institutions: Set<string>;
+    };
+    const tokenByAccount = new Map<string, AccountUsage>();
     for (const row of allTokenRows) {
       if (!row.accountId) continue;
-      const cur = tokenByAccount.get(row.accountId) ?? { requests: 0, rawCost: 0, totalCharge: 0 };
+      const cur = tokenByAccount.get(row.accountId) ?? {
+        requests: 0, rawCost: 0, totalCharge: 0,
+        facilities: new Set<string>(), institutions: new Set<string>(),
+      };
       cur.requests++;
       cur.rawCost    += row.rawCostUsd ?? 0;
       cur.totalCharge += row.markedUpCostUsd ?? 0;
+      if (row.facilityLabel) cur.facilities.add(row.facilityLabel.toLowerCase());
+      if (row.institution) cur.institutions.add(row.institution);
       tokenByAccount.set(row.accountId, cur);
     }
 
@@ -372,11 +418,15 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
     }
 
     const clients = allAccounts.map((a) => {
-      const tok = tokenByAccount.get(a.id) ?? { requests: 0, rawCost: 0, totalCharge: 0 };
+      const tok = tokenByAccount.get(a.id) ?? {
+        requests: 0, rawCost: 0, totalCharge: 0,
+        facilities: new Set<string>(), institutions: new Set<string>(),
+      };
       return {
         id:                  a.id,
         facilityName:        a.facilityName,
         ccn:                 a.ccn,
+        identifierType:      a.identifierType,
         facilityType:        a.facilityType,
         state:               a.state,
         subscriptionStatus:  a.subscriptionStatus,
@@ -389,6 +439,15 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
           requests:      tok.requests,
           rawCostUsd:    Math.round(tok.rawCost    * 1e6) / 1e6,
           totalChargeUsd: Math.round(tok.totalCharge * 1e6) / 1e6,
+          // Distinct facilities and provider types this account generated for.
+          // distinctFacilities stays 0 until the client starts sending a
+          // facility label; distinctProviderTypes works from today, because
+          // institutionValue is already on every request. An account showing
+          // hospital, snf and hospice in one month is plainly serving more
+          // than the facility it registered.
+          distinctFacilities:    tok.facilities.size,
+          distinctProviderTypes: tok.institutions.size,
+          providerTypes:         [...tok.institutions].sort(),
         },
       };
     });
@@ -489,9 +548,9 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
       for (const u of allUsers) {
         if (u.accountId) userCount.set(u.accountId, (userCount.get(u.accountId) ?? 0) + 1);
       }
-      const headers = ["Facility Name", "CCN", "Type", "State", "City", "Subscription Status", "Trial End Date", "Registered", "User Count"];
+      const headers = ["Facility Name", "Identifier", "Identifier Type", "Type", "State", "City", "Subscription Status", "Trial End Date", "Registered", "User Count"];
       const rows = allAccounts.map((a) => [
-        a.facilityName, a.ccn, a.facilityType, a.state, a.city,
+        a.facilityName, a.ccn, a.identifierType, a.facilityType, a.state, a.city,
         a.subscriptionStatus,
         a.trialEndsAt ? new Date(a.trialEndsAt).toLocaleDateString("en-US") : "",
         a.createdAt ? new Date(a.createdAt).toLocaleDateString("en-US") : "",
@@ -509,14 +568,24 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
       const byAccount = new Map<string, any>();
       for (const row of allTokenRows) {
         const aid = row.accountId ?? "__unknown__";
-        const cur = byAccount.get(aid) ?? { facilityName: accountMap.get(aid)?.facilityName ?? "(unlinked)", ccn: accountMap.get(aid)?.ccn ?? "—", requests: 0, inputTokens: 0, outputTokens: 0, rawCost: 0, totalCharge: 0 };
+        const cur = byAccount.get(aid) ?? {
+          facilityName: accountMap.get(aid)?.facilityName ?? "(unlinked)",
+          ccn: accountMap.get(aid)?.ccn ?? "—",
+          requests: 0, inputTokens: 0, outputTokens: 0, rawCost: 0, totalCharge: 0,
+          facilities: new Set<string>(), institutions: new Set<string>(),
+        };
         cur.requests++; cur.inputTokens += row.inputTokens ?? 0; cur.outputTokens += row.outputTokens ?? 0;
         cur.rawCost += row.rawCostUsd ?? 0; cur.totalCharge += row.markedUpCostUsd ?? 0;
+        if (row.facilityLabel) cur.facilities.add(row.facilityLabel.toLowerCase());
+        if (row.institution) cur.institutions.add(row.institution);
         byAccount.set(aid, cur);
       }
-      const headers = ["Facility Name", "CCN", "Month", "AI Requests", "Input Tokens", "Output Tokens", "Total Tokens", "API Cost (USD)", "50% Markup (USD)", "Total Charge (USD)"];
+      const headers = ["Facility Name", "CCN", "Month", "AI Requests", "Distinct Facilities", "Provider Types", "Input Tokens", "Output Tokens", "Total Tokens", "API Cost (USD)", "50% Markup (USD)", "Total Charge (USD)"];
       const rows = [...byAccount.values()].sort((a, b) => b.totalCharge - a.totalCharge).map((v) => [
-        v.facilityName, v.ccn, label, v.requests, v.inputTokens, v.outputTokens,
+        v.facilityName, v.ccn, label, v.requests,
+        v.facilities.size,
+        [...v.institutions].sort().join(" / "),
+        v.inputTokens, v.outputTokens,
         v.inputTokens + v.outputTokens,
         (v.rawCost).toFixed(6), (v.totalCharge - v.rawCost).toFixed(6), (v.totalCharge).toFixed(6),
       ]);

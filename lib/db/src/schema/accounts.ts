@@ -2,7 +2,17 @@ import { pgTable, uuid, text, timestamp, boolean, integer, doublePrecision, json
 
 export const accounts = pgTable("accounts", {
   id:                   uuid("id").primaryKey().defaultRandom(),
+  // The account's single required identifier. Historically always a CMS
+  // Certification Number — hence the column name, kept so no live data moves —
+  // but it now holds whichever identifier the buyer actually has. Read it
+  // together with identifierType; on its own it does not say what it is.
+  // Required and unique on purpose: this is the key the register endpoint
+  // looks accounts up by, so it is what keeps one organisation on one
+  // subscription. See api-server/src/lib/provider-identifier.ts.
   ccn:                  text("ccn").unique().notNull(),
+  // "ccn" | "npi" | "clia" | "consultant". Defaults to ccn, which is correct
+  // for every row that existed before this column did.
+  identifierType:       text("identifier_type").default("ccn").notNull(),
   facilityName:         text("facility_name").notNull(),
   facilityType:         text("facility_type"),
   state:                text("state"),
@@ -56,6 +66,20 @@ export const tokenUsage = pgTable("token_usage", {
   clerkUserId:     text("clerk_user_id").notNull(),
   model:           text("model").notNull(),
   feature:         text("feature"),                              // optional: "guidelines" | "policy" | "inspection" | "gap"
+  // What this generation was FOR, as opposed to who ran it.
+  //
+  // Nothing in the app ties a generation to the account's registered facility:
+  // the provider type comes from a picker in the browser and the facility name
+  // is free text inside the prompt. So one subscription can produce documents
+  // for any number of facilities, and until these two columns existed there
+  // was no record that it had. They block nothing — they are here so the
+  // question "does a typical account serve one facility or nine?" can be
+  // answered from data rather than guessed at.
+  //
+  // Both are client-asserted and unverified. Treat them as a signal worth
+  // looking at, never as proof of what a customer did.
+  institution:     text("institution"),                          // provider type: "hospital" | "snf" | "hospice" | …
+  facilityLabel:   text("facility_label"),                       // the specific facility, when the client names one
   inputTokens:     integer("input_tokens").notNull().default(0),
   outputTokens:    integer("output_tokens").notNull().default(0),
   inputCostUsd:    doublePrecision("input_cost_usd").notNull().default(0),

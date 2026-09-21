@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { requireAuth } from "./accounts";
 import { requireActiveSubscription } from "../middlewares/requireActiveSubscription";
 import { getEcfrSource, isProviderContentAvailable } from "@workspace/cms-compliance-data";
+import { readFacilityLabel } from "../lib/facility-label";
 import { createEcfrService } from "../services/ecfr";
 import { ecfrDatabaseAdapter } from "../services/ecfr-database-adapter";
 import {
@@ -100,6 +101,10 @@ router.post("/generate", requireAuth, accountGenerateLimiter, requireActiveSubsc
     return;
   }
 
+  // Which facility this generation is for. Unverified client input, sanitised
+  // in lib/facility-label.ts, recorded but never gating the request.
+  const facilityLabel = readFacilityLabel(req.body);
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     req.log.error("ANTHROPIC_API_KEY is not configured");
@@ -189,6 +194,8 @@ router.post("/generate", requireAuth, accountGenerateLimiter, requireActiveSubsc
           accountId: accountUser?.accountId ?? null,
           clerkUserId,
           model: GENERATION_MODEL,
+          institution: parsed.data.institutionValue ?? null,
+          facilityLabel,
           inputTokens,
           outputTokens,
           inputCostUsd: costs.inputCostUsd,

@@ -224,7 +224,7 @@ export default function LandingPage() {
                 </CardHeader>
                 <CardContent className="flex-1">
                   <ul className="space-y-4 text-sm leading-6 text-slate-600">
-                    <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-primary" /> All staff at one facility (per CCN)</li>
+                    <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-primary" /> All of your staff, on one account</li>
                     <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-primary" /> Compliance Guidelines</li>
                     <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-primary" /> Policy Templates</li>
                     <li className="flex gap-x-3"><CheckCircle2 className="h-6 w-5 flex-none text-primary" /> Inspection Readiness Checklists</li>
