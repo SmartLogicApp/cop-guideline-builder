@@ -4273,6 +4273,7 @@ function AffiliateAdminSection({ basePath, month }) {
   const [enrollError, setEnrollError] = useState("");
   const [form, setForm] = useState({ referralCode: "", companyName: "", contactName: "", email: "" });
   const [reloadKey, setReloadKey] = useState(0);
+  const [approvingId, setApprovingId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -4302,6 +4303,44 @@ function AffiliateAdminSection({ basePath, month }) {
       });
     return () => { cancelled = true; };
   }, [basePath, month, reloadKey]);
+
+  /**
+   * Approve a pending application: assign the real referral code and put the
+   * rate in effect.
+   *
+   * Prompts for the code rather than generating one, because the code is
+   * permanent, appears on the affiliate's printed material, and is the thing
+   * attribution is decided by. It is the operator's decision, made once.
+   */
+  async function approve(row) {
+    const suggested = row.companyName
+      .toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
+    const code = window.prompt(
+      `Approve ${row.companyName} at 20%.\n\n` +
+      `Assign their permanent referral code. This appears in their links and can never be ` +
+      `changed or reused once active.`,
+      suggested,
+    );
+    if (!code) return;
+
+    setApprovingId(row.id);
+    setError('');
+    try {
+      const response = await fetch(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/approve`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ referralCode: code, commissionRatePct: 20 }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Unable to approve');
+      setReloadKey((k) => k + 1);
+    } catch (approveError) {
+      setError(approveError.message || 'Unable to approve');
+    } finally {
+      setApprovingId(null);
+    }
+  }
 
   async function enroll(event) {
     event.preventDefault();
@@ -4371,6 +4410,41 @@ function AffiliateAdminSection({ basePath, month }) {
           </div>
         ))}
       </div>
+
+      {/*
+        Pending applications sit ABOVE the affiliate table rather than inside
+        it. An application that goes unreviewed is a partner who concluded the
+        programme is not real — so it needs to be the first thing seen, not a
+        row with a different status badge among twenty others.
+      */}
+      {rows.some((r) => r.status === "pending") && (
+        <div style={{ marginBottom: "14px", border: "1px solid rgba(96,165,250,0.4)", background: "rgba(96,165,250,0.1)", borderRadius: "8px", padding: "12px 14px" }}>
+          <div style={{ color: "#93C5FD", fontWeight: 800, fontSize: "12px", letterSpacing: "0.4px", textTransform: "uppercase", marginBottom: "8px" }}>
+            {rows.filter((r) => r.status === "pending").length} application
+            {rows.filter((r) => r.status === "pending").length === 1 ? "" : "s"} awaiting review
+          </div>
+          <div style={{ display: "grid", gap: "7px" }}>
+            {rows.filter((r) => r.status === "pending").map((row) => (
+              <div key={row.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "7px", padding: "9px 11px" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#fff", fontSize: "12.5px", fontWeight: 700 }}>{row.companyName}</div>
+                  <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "10.5px" }}>
+                    {row.contactName ? `${row.contactName} · ` : ""}{row.email}
+                    {row.createdAt ? ` · applied ${new Date(row.createdAt).toLocaleDateString("en-US")}` : ""}
+                  </div>
+                </div>
+                <button
+                  onClick={() => void approve(row)}
+                  disabled={approvingId === row.id}
+                  style={{ padding: "6px 14px", background: "#34D399", border: "none", borderRadius: "6px", color: "#062B20", fontSize: "12px", fontWeight: 800, cursor: approvingId === row.id ? "wait" : "pointer", whiteSpace: "nowrap", opacity: approvingId === row.id ? 0.6 : 1 }}
+                >
+                  {approvingId === row.id ? "Approving…" : "Approve at 20%"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {stats?.lapsingAffiliates > 0 && (
         <div style={{ fontSize: "11.5px", color: "#FBBF24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "7px", padding: "8px 11px", marginBottom: "12px" }}>

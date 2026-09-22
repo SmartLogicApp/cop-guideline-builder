@@ -67,6 +67,110 @@ function affiliateSummaryFields(row: typeof affiliates.$inferSelect, now: Date) 
   };
 }
 
+// ─── POST /api/affiliates/apply — PUBLIC ─────────────────────────────────────
+
+/**
+ * The only unauthenticated endpoint in this file. Everything below it is
+ * admin-only; this one is the affiliate programme's front door, and it is
+ * written defensively because of that.
+ *
+ * THE APPLICANT DOES NOT CHOOSE THEIR REFERRAL CODE. This is the important
+ * decision here, and it is deliberate:
+ *
+ *  - A code is the thing attribution is decided by. Letting a stranger pick one
+ *    invites squatting on the obvious codes, and worse, on codes that look
+ *    official — an applicant who claimed "CMS" or "MEDICARE" would be handing
+ *    themselves a code that implies endorsement.
+ *  - Codes are permanent and never reused (see the schema), so a bad code
+ *    chosen at application time could not be cleaned up later without
+ *    orphaning attribution.
+ *
+ * So the applicant gets a provisional code derived from their company name,
+ * and the operator sets the real one when approving. The provisional code
+ * attributes nothing, because a "pending" affiliate never accrues commission
+ * (see lib/affiliate-accrual.ts).
+ *
+ * An application also grants NOTHING. It creates a pending row for the operator
+ * to review. No portal access, no commission, no rate.
+ */
+router.post("/apply", async (req, res) => {
+  const body = req.body ?? {};
+  const companyName = typeof body.companyName === "string" ? body.companyName.trim() : "";
+  const contactName = typeof body.contactName === "string" ? body.contactName.trim() : "";
+  const email = typeof body.email === "string" ? body.email.trim() : "";
+  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
+  const about = typeof body.about === "string" ? body.about.trim().slice(0, 2000) : "";
+
+  if (companyName.length < 2 || companyName.length > 200) {
+    return res.status(400).json({ error: "Please enter your company or practice name." });
+  }
+  if (!/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(email) || email.length > 200) {
+    return res.status(400).json({ error: "Please enter a valid email address." });
+  }
+  if (contactName.length > 200 || phone.length > 50) {
+    return res.status(400).json({ error: "One of those fields is too long." });
+  }
+
+  try {
+    // One application per email. Returns the same 200 either way — an endpoint
+    // that said "already applied" would let anyone test whether a given company
+    // is in the programme.
+    const [existing] = await db.select({ id: affiliates.id })
+      .from(affiliates).where(eq(affiliates.email, email)).limit(1);
+    if (existing) {
+      return res.status(200).json({ ok: true, received: true });
+    }
+
+    const assignedCode = await provisionalReferralCode(companyName);
+
+    await db.insert(affiliates).values({
+      referralCode: assignedCode,
+      companyName,
+      contactName: contactName || null,
+      email,
+      phone: phone || null,
+      status: "pending",
+      // No rate is in effect until approval. Recorded as 0 rather than 20 so a
+      // pending applicant cannot accrue anything even if their status were
+      // flipped by mistake without a deliberate rate decision.
+      commissionRatePct: 0,
+      rateEffectiveAt: new Date(),
+      adminNotes: about ? `Application note: ${about}` : null,
+    });
+
+    return res.status(201).json({ ok: true, received: true });
+  } catch (error: any) {
+    // Unique violation on the provisional code — vanishingly unlikely given the
+    // random suffix, and not the applicant's problem. Same shape as success so
+    // the endpoint reveals nothing about internal state.
+    if (error?.code === "23505") return res.status(200).json({ ok: true, received: true });
+    return res.status(500).json({ error: "We could not record your application. Please email us instead." });
+  }
+});
+
+/**
+ * A provisional, non-colliding code from the company name.
+ *
+ * Never shown to the applicant and never used for real attribution — the
+ * operator replaces it at approval. It exists only because referral_code is
+ * NOT NULL, and a nullable code would mean every query that matches an account
+ * to an affiliate has to handle null, which is how an account ends up
+ * attributed to whichever pending application happened to have no code.
+ */
+async function provisionalReferralCode(companyName: string): Promise<string> {
+  const base = normalizeReferralCode(companyName.replace(/[^A-Za-z0-9]+/g, "-"))
+    ?.replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "APPLICANT";
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const suffix = Math.random().toString(36).slice(2, 7).toUpperCase();
+    const candidate = `PENDING-${base}-${suffix}`.slice(0, 64);
+    const [clash] = await db.select({ id: affiliates.id })
+      .from(affiliates).where(eq(affiliates.referralCode, candidate)).limit(1);
+    if (!clash) return candidate;
+  }
+  return `PENDING-${Date.now().toString(36).toUpperCase()}`;
+}
+
 // ─── GET /api/affiliates — the admin list ────────────────────────────────────
 
 /**
@@ -368,6 +472,87 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
   }
 });
 
+// ─── POST /api/affiliates/:id/approve — pending → active ─────────────────────
+
+/**
+ * Approve an application: assign the real referral code and put the rate in
+ * effect.
+ *
+ * This is the ONLY place a referral code may be changed, and only while the
+ * affiliate is still "pending". Once active, the code is frozen — PATCH refuses
+ * it — because changing a live code orphans every account already attributed to
+ * it, with no way afterwards to tell which customers were whose.
+ *
+ * Approval is also where the commission rate first becomes non-zero. An
+ * applicant sits at 0% until a human decides otherwise, so an application that
+ * is never reviewed can never quietly start earning.
+ */
+router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
+  const requestedCode = normalizeReferralCode(req.body?.referralCode);
+  const ratePct = Number.isFinite(Number(req.body?.commissionRatePct))
+    ? Number(req.body.commissionRatePct)
+    : 20;
+
+  if (!COMMISSION_RATE_LADDER.includes(ratePct as any) || ratePct <= 0) {
+    return res.status(400).json({ error: "Approve at 20% or 10% (§14)." });
+  }
+  if (!requestedCode || !isValidReferralCode(requestedCode)) {
+    return res.status(400).json({
+      error: "A referral code is required to approve — 2–64 characters, letters, digits and hyphens.",
+      code: "INVALID_REFERRAL_CODE",
+    });
+  }
+
+  try {
+    const [row] = await db.select().from(affiliates)
+      .where(eq(affiliates.id, String(req.params.id))).limit(1);
+    if (!row) return res.status(404).json({ error: "Affiliate not found" });
+    if (row.status !== "pending") {
+      return res.status(409).json({
+        error: `This affiliate is already ${row.status}. Only a pending application can be approved.`,
+      });
+    }
+
+    const now = new Date();
+    const [updated] = await db.update(affiliates)
+      .set({
+        referralCode: requestedCode,
+        status: "active",
+        commissionRatePct: ratePct,
+        rateEffectiveAt: now,
+        updatedAt: now,
+      })
+      // Guarded on status so two operators approving at once cannot both
+      // assign a code; the second finds no pending row and gets the 409 below.
+      .where(and(eq(affiliates.id, row.id), eq(affiliates.status, "pending")))
+      .returning();
+
+    if (!updated) {
+      return res.status(409).json({ error: "That application was already approved." });
+    }
+
+    await db.insert(affiliateRateChanges).values({
+      affiliateId: row.id,
+      fromPct: row.commissionRatePct,
+      toPct: ratePct,
+      reason: "enrollment",
+      note: `Approved; code assigned: ${requestedCode}`,
+      changedBy: (req as any).clerkUserId ?? null,
+      effectiveAt: now,
+    });
+
+    return res.json(updated);
+  } catch (error: any) {
+    if (error?.code === "23505") {
+      return res.status(409).json({
+        error: "That referral code is already in use. Codes are never reused, including after termination.",
+        code: "REFERRAL_CODE_TAKEN",
+      });
+    }
+    return res.status(500).json({ error: error?.message ?? "Unable to approve affiliate" });
+  }
+});
+
 // ─── POST /api/affiliates/:id/rate — deliberate rate change (§15) ────────────
 
 router.post("/:id/rate", requireSuperAdmin, async (req, res) => {
@@ -482,14 +667,24 @@ router.post("/commissions/:commissionId/reverse", requireSuperAdmin, async (req,
   }
 });
 
-// ─── POST /api/affiliates/maturity-sweep — pending → payable (§24) ───────────
+// ─── POST /api/affiliates/cron/maturity-sweep — pending → payable (§24) ──────
 
 /**
  * Promotes commissions whose 60-day holdback has elapsed.
  *
+ * Guarded by requireCronOrSuperAdmin, matching the other scheduled endpoints in
+ * routes/admin.ts, so an external scheduler can run it with CRON_SECRET. That
+ * matters more than it looks: without something calling this on a schedule,
+ * commissions accrue and then sit at "pending" forever. Every quarterly payout
+ * would come out empty, and the failure is silent — no error, no alert, just an
+ * affiliate who is never paid.
+ *
  * Idempotent and safe to run on any schedule: it selects on payableAt and the
  * current status, so running it twice in a day, or not at all for a month,
- * produces the same end state. Nothing here pays anybody.
+ * produces the same end state. Nothing here pays anybody; it only moves money
+ * out of the holdback into "awaiting the next payout".
+ *
+ * Suggested schedule: daily. Nothing breaks if it runs hourly or weekly.
  */
 router.post("/cron/maturity-sweep", requireCronOrSuperAdmin, async (_req, res) => {
   try {

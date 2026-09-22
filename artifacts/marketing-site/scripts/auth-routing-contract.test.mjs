@@ -212,3 +212,50 @@ test('homepage links preserve the configured site base path', () => {
   assert.match(landingSource, /<a href=\{TERMS_URL\}[^>]*>Terms of Service<\/a>/);
   assert.match(landingSource, /<a href=\{PRIVACY_URL\}[^>]*>Privacy Policy<\/a>/);
 });
+test('the affiliate programme page is public and reachable from the site footer', () => {
+  // An affiliate is not a customer. Putting the programme behind sign-in would
+  // exclude exactly the consultants and associations it exists to reach — and
+  // the failure is invisible, because the page still "works" for anyone already
+  // logged in, which is everyone who tests it.
+  const router = componentBody(appSource, 'PublicRouter');
+  assert.match(
+    router,
+    /<Route path="\/affiliates" component=\{AffiliatesPage\} \/>/,
+    'affiliates must be registered in the PUBLIC router',
+  );
+
+  // The needsAuth allowlist gates the authenticated shell. /affiliates must not
+  // appear there, unlike /register.
+  const needsAuthBlock = appSource.slice(
+    appSource.indexOf('const needsAuth'),
+    appSource.indexOf('return needsAuth'),
+  );
+  assert.doesNotMatch(
+    needsAuthBlock,
+    /'\/affiliates'/,
+    'the affiliate page must not require authentication',
+  );
+
+  // A program nobody can find recruits nobody.
+  assert.match(landingSource, /const AFFILIATES_URL = siteUrl\("\/affiliates"\)/);
+  assert.match(landingSource, /href=\{AFFILIATES_URL\}/);
+});
+
+test('the affiliate application posts to the public apply endpoint', async () => {
+  const affiliatesPage = await readFile(new URL('../src/pages/affiliates.tsx', import.meta.url), 'utf8');
+  assert.match(affiliatesPage, /api\/affiliates\/apply/);
+  assert.match(affiliatesPage, /method:\s*'POST'/);
+
+  // The applicant must not be asked to choose a referral code — the server
+  // assigns it at approval. A field here would make the form lie about what
+  // happens, and invite squatting on official-looking codes.
+  assert.doesNotMatch(
+    affiliatesPage,
+    /id="referralCode"|name="referralCode"/,
+    'the application form must not collect a referral code',
+  );
+
+  // The terms that REDUCE pay have to appear before someone signs up, not after.
+  assert.match(affiliatesPage, /steps down from 20% to 10%/, 'the inactivity step-down must be disclosed');
+  assert.match(affiliatesPage, /60-day holdback/i, 'the holdback must be disclosed');
+});

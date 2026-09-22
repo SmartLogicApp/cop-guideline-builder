@@ -101,6 +101,26 @@ const generateLimiter = rateLimit({
 });
 app.use("/api/generate", generateLimiter);
 
+/**
+ * The affiliate application form is the only unauthenticated write endpoint in
+ * the API, so it is the only one a stranger can call in a loop. Without a limit
+ * here, anyone could fill the affiliates table with junk applications — which
+ * costs nothing to send and real time to clean up, and would bury a genuine
+ * applicant in the operator's review queue.
+ *
+ * Five per hour per IP is far above what a real applicant needs (they apply
+ * once) and far below what makes flooding worthwhile.
+ */
+const affiliateApplyLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,
+  max:             5,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: "Too many applications from this location. Please email us instead." },
+  skip:            (req) => req.method !== "POST",
+});
+app.use("/api/affiliates/apply", affiliateApplyLimiter);
+
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use("/api", router);
 

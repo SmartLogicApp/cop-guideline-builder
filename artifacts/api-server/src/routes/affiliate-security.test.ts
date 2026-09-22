@@ -21,23 +21,117 @@ const routes = readFileSync(new URL("./affiliates.ts", import.meta.url), "utf8")
 const accrual = readFileSync(new URL("../lib/affiliate-accrual.ts", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../../../../lib/db/src/schema/affiliates.ts", import.meta.url), "utf8");
 const webhooks = readFileSync(new URL("../webhookHandlers.ts", import.meta.url), "utf8");
+const app = readFileSync(new URL("../app.ts", import.meta.url), "utf8");
+
+/**
+ * Strip comments before asserting on behaviour.
+ *
+ * Without this, a test that forbids a phrase in a RESPONSE also forbids it in
+ * the comment explaining why the response avoids it — so documenting a defence
+ * would break the test that protects it. Comments describe the code; they are
+ * not the code.
+ */
+function codeOnly(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
 
 // ─── Every affiliate route is admin-guarded ──────────────────────────────────
 
-test("no affiliate route is reachable without an admin guard", () => {
+test("exactly one affiliate route is public, and it is the application form", () => {
   // Commission amounts and customer attribution live behind these routes. A
   // handler registered without a guard is a data leak, and the mistake is a
   // one-word omission that reviews miss.
-  const handlers = [...routes.matchAll(/router\.(get|post|patch|delete|put)\(\s*("[^"]*")\s*,\s*([A-Za-z_$][\w$]*)/g)];
-  assert.ok(handlers.length >= 12, `expected the affiliate routes to be present, found ${handlers.length}`);
+  //
+  // "/apply" is the deliberate exception — the programme needs a front door.
+  // This test pins the exception to exactly that one path, so a second
+  // unguarded route can never be added without failing here.
+  const handlers = [...routes.matchAll(/router\.(get|post|patch|delete|put)\(\s*"([^"]*)"\s*,\s*([A-Za-z_$][\w$]*)/g)];
+  assert.ok(handlers.length >= 14, `expected the affiliate routes to be present, found ${handlers.length}`);
 
   const guards = new Set(["requireAnyAdmin", "requireSuperAdmin", "requireCronOrSuperAdmin"]);
+  const publicPaths: string[] = [];
   for (const [, method, path, secondArg] of handlers) {
-    assert.ok(
-      guards.has(secondArg!),
-      `${method!.toUpperCase()} ${path} is not guarded — second argument is "${secondArg}"`,
-    );
+    if (!guards.has(secondArg!)) publicPaths.push(`${method!.toUpperCase()} ${path}`);
   }
+  assert.deepEqual(
+    publicPaths,
+    ["POST /apply"],
+    "the ONLY public affiliate route may be the application form",
+  );
+});
+
+test("the public application form cannot grant anything", () => {
+  const apply = routes.slice(routes.indexOf('router.post("/apply"'), routes.indexOf('async function provisionalReferralCode'));
+
+  // An applicant must not choose their own code. A stranger picking "CMS" or
+  // "MEDICARE" would hand themselves a code implying endorsement — and codes
+  // are permanent, so it could not be cleaned up without orphaning attribution.
+  //
+  // Asserted as "the request body's referralCode is never read here" rather
+  // than "referralCode: is not assigned from the body". The narrower version
+  // missed `referralCode: normalize(body.referralCode) || code` — wrapping the
+  // read in a function call walked straight past it. The field never being
+  // touched is the property that actually holds.
+  // Two assertions, because either alone has a hole. The first forbids reading
+  // the field from the request at all; the second pins the value written to the
+  // column to the server-generated variable. An attempt like
+  // `referralCode: normalize(body.referralCode) || assignedCode` fails both —
+  // the earlier, narrower check missed exactly that shape.
+  assert.doesNotMatch(
+    codeOnly(apply),
+    /(?:req\.)?body\s*(?:\.\s*referralCode|\[\s*["']referralCode)/,
+    "the apply handler must never read a referral code from the request",
+  );
+  assert.match(
+    codeOnly(apply),
+    /referralCode:\s*assignedCode\s*,/,
+    "the stored code must be the server-generated provisional one, nothing else",
+  );
+  assert.match(apply, /provisionalReferralCode\(/);
+
+  // Pending, and at 0% — so an unreviewed application cannot quietly earn.
+  assert.match(apply, /status:\s*"pending"/);
+  assert.match(apply, /commissionRatePct:\s*0/);
+
+  // Status must never be taken from the request body on this endpoint.
+  assert.doesNotMatch(apply, /status:\s*(body|req)\./);
+});
+
+test("the application form does not reveal who is already in the programme", () => {
+  // A distinct "already applied" response would let anyone probe whether a
+  // given company or email is an affiliate.
+  const apply = codeOnly(routes.slice(routes.indexOf('router.post("/apply"'), routes.indexOf('async function provisionalReferralCode')));
+  assert.doesNotMatch(apply, /already (applied|exists|enrolled)/i);
+  assert.match(apply, /received:\s*true/);
+  // The duplicate-email branch specifically must return the same success shape
+  // as a new application. Scoped to that branch — a broader pattern would also
+  // match the input-validation 400s above it, which are fine and necessary.
+  assert.match(
+    apply,
+    /if \(existing\) \{\s*return res\.status\(200\)/,
+    "a duplicate application must answer 200, identically to a new one",
+  );
+});
+
+test("the public application endpoint is rate limited", () => {
+  // The only unauthenticated write in the API, so the only one a stranger can
+  // call in a loop. Unlimited, it buries a real applicant in junk.
+  assert.match(app, /app\.use\("\/api\/affiliates\/apply",\s*affiliateApplyLimiter\)/);
+  assert.match(app, /const affiliateApplyLimiter = rateLimit\(/);
+});
+
+test("a referral code can only be assigned while the affiliate is pending", () => {
+  // Changing a live code orphans every account already attributed to it, with
+  // no way afterwards to tell which customers were whose.
+  const approve = routes.slice(routes.indexOf('router.post("/:id/approve"'), routes.indexOf('router.post("/:id/rate"'));
+  assert.match(approve, /row\.status !== "pending"/, "approval must refuse a non-pending affiliate");
+  assert.match(approve, /eq\(affiliates\.status,\s*"pending"\)/, "the update must be guarded on status");
+
+  // PATCH must still refuse referralCode outright.
+  const patch = routes.slice(routes.indexOf('router.patch("/:id"'), routes.indexOf('router.post("/:id/approve"'));
+  assert.doesNotMatch(patch, /referralCode/, "PATCH must never change a referral code");
 });
 
 test("guards are imported from the shared module, not redefined locally", () => {
@@ -170,6 +264,28 @@ test("settling a payout claims commissions with a guarded update", () => {
 
 test("a quarter cannot be paid twice for the same affiliate", () => {
   assert.match(routes, /A \$\{bounds\.label\} payout already exists/);
+});
+
+// ─── The holdback sweep must be reachable by a scheduler ─────────────────────
+
+test("the maturity sweep can be run by an external scheduler", () => {
+  // Without something calling this on a schedule, commissions accrue and sit at
+  // "pending" forever: every quarterly payout comes out empty and nothing
+  // errors. An affiliate simply never gets paid. Requiring an interactive admin
+  // login to run it is how that becomes permanent.
+  assert.match(
+    routes,
+    /router\.post\(\s*"\/cron\/maturity-sweep"\s*,\s*requireCronOrSuperAdmin/,
+    "the sweep must accept CRON_SECRET, not require an interactive admin",
+  );
+});
+
+test("the sweep only promotes commissions whose holdback has actually elapsed", () => {
+  const sweep = routes.slice(routes.indexOf('router.post("/cron/maturity-sweep"'));
+  const body = sweep.slice(0, 1200);
+  assert.match(body, /eq\(affiliateCommissions\.status,\s*"pending"\)/);
+  assert.match(body, /lt\(affiliateCommissions\.payableAt,\s*now\)/, "§24 — 60 days must have passed");
+  assert.doesNotMatch(body, /"paid"/, "the sweep must never mark anything paid");
 });
 
 // ─── No bank details anywhere in the schema ──────────────────────────────────

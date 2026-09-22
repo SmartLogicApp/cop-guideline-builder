@@ -10,6 +10,7 @@ const SIGN_UP_URL = siteUrl("/sign-up");
 const SIGN_IN_URL = siteUrl("/sign-in");
 const TERMS_URL = siteUrl("/terms");
 const PRIVACY_URL = siteUrl("/privacy");
+const AFFILIATES_URL = siteUrl("/affiliates");
 const CONTACT_URL = mailto(CONTACT_EMAIL_MAIN, "Enterprise Inquiry");
 
 const fadeIn = {
@@ -253,6 +254,7 @@ export default function LandingPage() {
             <div className="flex gap-6 text-sm text-slate-500">
               <a href={SIGN_IN_URL} className="hover:text-slate-900 transition-colors">Sign In</a>
               <a href={SIGN_UP_URL} className="hover:text-slate-900 transition-colors">Sign Up</a>
+              <a href={AFFILIATES_URL} className="hover:text-slate-900 transition-colors">Affiliate Program</a>
               <a href={CONTACT_URL} target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 transition-colors">Contact</a>
             </div>
           </div>
@@ -267,6 +269,7 @@ export default function LandingPage() {
                 <a href={TERMS_URL} className="hover:text-slate-900">Terms of Service</a>
                 <a href={PRIVACY_URL} className="hover:text-slate-900">Privacy Policy</a>
                 <a href={`${TERMS_URL}#billing`} className="hover:text-slate-900">Billing &amp; Cancellation</a>
+                <a href={AFFILIATES_URL} className="hover:text-slate-900">Affiliate Program</a>
                 <a href={mailto(CONTACT_EMAIL_SUPPORT)} className="hover:text-slate-900">Support</a>
               </nav>
             </div>
