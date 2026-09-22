@@ -6,15 +6,31 @@ type StripeRequestOptions = {
   idempotencyKey?: string;
 };
 
-export async function stripeRequest<T>(
-  path: string,
-  options: StripeRequestOptions = {},
-): Promise<T> {
-  const directSecret = (
+/**
+ * The secret key for the current environment, or null when it is not set.
+ *
+ * Exported so callers can ask "is Stripe usable?" before trying to use it.
+ * routes/billing.ts wants to answer a missing key with a 503 the customer can
+ * understand rather than a 500 thrown from inside a request it already began.
+ */
+export function getStripeSecretKey(): string | null {
+  const secret = (
     process.env.NODE_ENV === "production"
       ? process.env.STRIPE_LIVE_SECRET_KEY
       : process.env.STRIPE_TEST_SECRET_KEY
   )?.trim();
+  return secret ? secret : null;
+}
+
+export function isStripeConfigured(): boolean {
+  return getStripeSecretKey() !== null;
+}
+
+export async function stripeRequest<T>(
+  path: string,
+  options: StripeRequestOptions = {},
+): Promise<T> {
+  const directSecret = getStripeSecretKey();
   if (!directSecret) {
     throw new Error(
       process.env.NODE_ENV === "production"

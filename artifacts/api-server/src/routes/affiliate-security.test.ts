@@ -1,0 +1,196 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+/**
+ * Source-contract tests for the affiliate money path.
+ *
+ * These read the source rather than executing it. They exist because the
+ * properties they protect are the ones that fail SILENTLY and EXPENSIVELY: a
+ * commission paid twice, an affiliate route added without a guard, a rate
+ * recalculated on read. None of those throw. None of them show up in a smoke
+ * test. They show up when a quarterly payout is wrong and somebody has to
+ * reconstruct three months of ledger by hand.
+ *
+ * A source test cannot prove the code is correct. It can prove a specific
+ * defence has not been deleted, which is the failure mode that actually
+ * happens during a refactor.
+ */
+
+const routes = readFileSync(new URL("./affiliates.ts", import.meta.url), "utf8");
+const accrual = readFileSync(new URL("../lib/affiliate-accrual.ts", import.meta.url), "utf8");
+const schema = readFileSync(new URL("../../../../lib/db/src/schema/affiliates.ts", import.meta.url), "utf8");
+const webhooks = readFileSync(new URL("../webhookHandlers.ts", import.meta.url), "utf8");
+
+// ─── Every affiliate route is admin-guarded ──────────────────────────────────
+
+test("no affiliate route is reachable without an admin guard", () => {
+  // Commission amounts and customer attribution live behind these routes. A
+  // handler registered without a guard is a data leak, and the mistake is a
+  // one-word omission that reviews miss.
+  const handlers = [...routes.matchAll(/router\.(get|post|patch|delete|put)\(\s*("[^"]*")\s*,\s*([A-Za-z_$][\w$]*)/g)];
+  assert.ok(handlers.length >= 12, `expected the affiliate routes to be present, found ${handlers.length}`);
+
+  const guards = new Set(["requireAnyAdmin", "requireSuperAdmin", "requireCronOrSuperAdmin"]);
+  for (const [, method, path, secondArg] of handlers) {
+    assert.ok(
+      guards.has(secondArg!),
+      `${method!.toUpperCase()} ${path} is not guarded — second argument is "${secondArg}"`,
+    );
+  }
+});
+
+test("guards are imported from the shared module, not redefined locally", () => {
+  // A local copy is how one guard ends up weaker than the other. This is the
+  // same failure that produced an unguarded return-URL helper in admin.ts.
+  assert.match(routes, /from\s+"\.\.\/lib\/admin-guards\.js"/);
+  assert.doesNotMatch(routes, /function\s+require(AnyAdmin|SuperAdmin)/);
+});
+
+test("writes that move money require a super-admin, not any admin", () => {
+  for (const path of ['"/"', '"/:id/rate"', '"/:id/commissions"', '"/payouts"']) {
+    const pattern = new RegExp(`router\\.(post|patch)\\(\\s*${path.replace(/[/$]/g, "\\$&")}\\s*,\\s*requireSuperAdmin`);
+    assert.match(routes, pattern, `${path} must be super-admin only`);
+  }
+});
+
+// ─── The double-payment defence ──────────────────────────────────────────────
+
+test("the commission ledger has a unique key on the Stripe invoice", () => {
+  // Stripe redelivers webhooks. Without this constraint a redelivery pays the
+  // affiliate a second time for the same customer payment.
+  assert.match(
+    schema,
+    /stripeInvoiceId:\s*text\("stripe_invoice_id"\)\.unique\(\)/,
+    "affiliate_commissions.stripe_invoice_id must be UNIQUE",
+  );
+});
+
+test("accrual relies on the unique constraint rather than a prior lookup", () => {
+  // A check-then-insert loses the race between two concurrent deliveries.
+  assert.match(accrual, /23505/, "must catch unique_violation");
+  assert.match(accrual, /already-accrued/);
+  const insertIndex = accrual.indexOf("db.insert(affiliateCommissions)");
+  const catchIndex = accrual.indexOf('error?.code === "23505"');
+  assert.ok(insertIndex > 0 && catchIndex > insertIndex, "the 23505 catch must guard the insert");
+});
+
+test("a redelivered webhook is not an error", () => {
+  // If the duplicate path threw, Stripe would retry forever and the logs would
+  // fill with failures for payments that were handled correctly.
+  assert.match(accrual, /reason:\s*"already-accrued"/);
+});
+
+// ─── The rate is frozen at accrual ───────────────────────────────────────────
+
+test("the commission row stores the rate it accrued at", () => {
+  // §12/§13 — commissions properly earned before a rate reduction are not
+  // retroactively reduced. That is only possible if the rate lives on the row.
+  assert.match(schema, /ratePct:\s*integer\("rate_pct"\)\.notNull\(\)/);
+});
+
+test("nothing recalculates a stored commission from the affiliate's current rate", () => {
+  // The read paths must SUM stored amounts. A single `computeCommissionUsd`
+  // applied to an existing row during a report would silently restate history
+  // every time an affiliate's rate changed.
+  const reportSection = routes.slice(routes.indexOf("reports/download"));
+  assert.doesNotMatch(
+    reportSection,
+    /computeCommissionUsd/,
+    "reports must read commission_usd, never recompute it",
+  );
+  // The rate-change handler must not touch existing commission rows.
+  const rateHandler = routes.slice(routes.indexOf('router.post("/:id/rate"'), routes.indexOf('router.post("/:id/commissions"'));
+  assert.doesNotMatch(rateHandler, /update\(affiliateCommissions\)/);
+});
+
+// ─── The activity clock (§10) ────────────────────────────────────────────────
+
+test("only a new customer's first payment moves the activity clock", () => {
+  // §10 — "Payments received from customers previously referred by Affiliate
+  // do not restart, extend, or renew the activity period." A recurring monthly
+  // invoice must not keep an otherwise inactive affiliate at 20% forever.
+  assert.match(accrual, /recordQualifyingReferralIfFirst/);
+  assert.match(accrual, /prior\.length\s*!==\s*1/, "must accrue only on the account's first commission row");
+  assert.match(accrual, /lastQualifyingReferralAt/);
+});
+
+test("an out-of-order webhook cannot drag the activity clock backwards", () => {
+  assert.match(accrual, /current\.getTime\(\)\s*>=\s*paidAt\.getTime\(\)/);
+});
+
+// ─── Reversals (§25) ─────────────────────────────────────────────────────────
+
+test("a commission cannot be reversed twice", () => {
+  // A second reversal of a paid commission would deduct the same money from
+  // the affiliate's next payout twice.
+  assert.match(accrual, /isNull\(affiliateCommissions\.reversedAt\)/);
+  assert.match(routes, /inArray\(affiliateCommissions\.status,\s*\["pending",\s*"payable",\s*"paid"\]\)/);
+});
+
+test("a reversal requires a stated reason", () => {
+  const reverseHandler = routes.slice(routes.indexOf('router.post("/commissions/:commissionId/reverse"'));
+  assert.match(reverseHandler.slice(0, 800), /A reason is required/);
+});
+
+// ─── The webhook cannot break a customer payment ─────────────────────────────
+
+test("affiliate accrual can never fail the payment webhook", () => {
+  // The customer's money has already moved. An affiliate bookkeeping error
+  // must not make Stripe retry, or make the subscription sync look failed.
+  const succeededCase = webhooks.slice(
+    webhooks.indexOf('case "invoice.payment_succeeded"'),
+    webhooks.indexOf('case "charge.refunded"'),
+  );
+  assert.ok(succeededCase.length > 0, "the invoice.payment_succeeded case must exist");
+  assert.match(succeededCase, /try\s*{/);
+  assert.match(succeededCase, /catch\s*\(error\)/);
+});
+
+test("refunds and chargebacks both reverse the commission", () => {
+  assert.match(webhooks, /case "charge\.refunded":/);
+  assert.match(webhooks, /case "charge\.dispute\.created":/);
+  assert.match(webhooks, /reverseCommissionForInvoice/);
+});
+
+// ─── Payout settlement ───────────────────────────────────────────────────────
+
+test("settling a payout claims commissions with a guarded update", () => {
+  // Two operators clicking at once must not both settle the same rows, and the
+  // payout total must come from what was actually claimed rather than from the
+  // preview.
+  const payoutHandler = routes.slice(
+    routes.indexOf('router.post("/payouts"'),
+    routes.indexOf('router.patch("/payouts/:payoutId"'),
+  );
+  assert.match(payoutHandler, /eq\(affiliateCommissions\.status,\s*"payable"\)/);
+  assert.match(payoutHandler, /\.returning\(\{\s*commissionUsd/);
+  assert.match(payoutHandler, /claimed\.map/, "the total must be summed from the claimed rows");
+});
+
+test("a quarter cannot be paid twice for the same affiliate", () => {
+  assert.match(routes, /A \$\{bounds\.label\} payout already exists/);
+});
+
+// ─── No bank details anywhere in the schema ──────────────────────────────────
+
+test("the schema stores no bank or card numbers", () => {
+  for (const forbidden of [/account_number/i, /routing_number/i, /card_number/i, /\biban\b/i, /\bssn\b/i, /tax_id/i]) {
+    assert.doesNotMatch(schema, forbidden, `schema must not contain ${forbidden}`);
+  }
+  // Tax status is a DATE, never the form itself — a W-9 carries a TIN.
+  assert.match(schema, /taxInfoReceivedAt:\s*timestamp/);
+});
+
+// ─── §29 — what an affiliate may be shown about a customer ───────────────────
+
+test("customer identifiers are never selected into an affiliate-facing shape", () => {
+  // §29 forbids showing an affiliate the customer's Provider Identifier,
+  // billing details, users, content or usage. The admin routes may select
+  // accounts.ccn; any future portal handler must not.
+  const portalSection = routes.includes("/portal/")
+    ? routes.slice(routes.indexOf("/portal/"))
+    : "";
+  assert.doesNotMatch(portalSection, /accounts\.ccn/);
+  assert.doesNotMatch(portalSection, /accounts\.stripeCustomerId/);
+});

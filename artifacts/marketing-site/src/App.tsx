@@ -25,8 +25,12 @@ function RouteBoundary() {
   const normalizedLocation = location.length > 1
     ? location.replace(/\/+$/, '')
     : location;
+  // Must stay in sync with the route table in AuthenticatedApp.tsx. A route
+  // registered there but missing here renders the public router instead, and
+  // the page 404s for a signed-in user.
   const needsAuth = normalizedLocation === '/app'
     || normalizedLocation === '/billing'
+    || normalizedLocation === '/register'
     || normalizedLocation === '/accept-terms'
     || normalizedLocation === '/sign-in'
     || normalizedLocation.startsWith('/sign-in/')

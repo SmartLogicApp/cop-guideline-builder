@@ -19,6 +19,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import BillingPage from '@/pages/billing';
 import AcceptTermsPage from '@/pages/accept-terms';
+import RegisterPage from '@/pages/register';
 import { Route, Switch, useLocation } from 'wouter';
 import './auth.css';
 
@@ -204,6 +205,17 @@ function AcceptTerms() {
   );
 }
 
+function Register() {
+  return (
+    <>
+      <Show when="signed-in">
+        <RegisterPage />
+      </Show>
+      <Show when="signed-out"><RedirectToSignIn /></Show>
+    </>
+  );
+}
+
 function Router() {
   return (
     <Switch>
@@ -211,6 +223,7 @@ function Router() {
       <Route path="/sign-up/*?" component={SignUpPage} />
       <Route path="/app" component={ComplianceWorkspace} />
       <Route path="/billing" component={Billing} />
+      <Route path="/register" component={Register} />
       <Route path="/accept-terms" component={AcceptTerms} />
       <Route component={NotFound} />
     </Switch>

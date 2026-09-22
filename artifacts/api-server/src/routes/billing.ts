@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Request } from "express";
+import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { accounts, accountUsers, tokenUsage } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
@@ -6,18 +6,26 @@ import { requireAuth } from "./accounts";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription";
 import { isTrialStatus } from "../middlewares/subscriptionAccess";
 import { getTrialPeriodDays, isPaymentAcceptanceEnabled } from "../lib/payment-config";
+import { getReturnBase } from "../lib/return-base.js";
 import { CURRENT_TERMS_VERSION, needsAcceptance } from "../lib/terms-versions";
-import { getConfiguredStripePriceId, stripeRequest } from "../stripeClient";
+import { getConfiguredStripePriceId, isStripeConfigured, stripeRequest } from "../stripeClient";
 import { syncStripeSubscriptionById } from "../webhookHandlers";
 
 const router: IRouter = Router();
 
-async function getStripeOptional() {
-  try {
-    return { request: stripeRequest };
-  } catch {
-    return null;
-  }
+/**
+ * Stripe, or null when it is not configured.
+ *
+ * This used to be a try/catch around `return { request: stripeRequest }` — an
+ * expression that cannot throw, because stripeRequest is a function reference
+ * and calling it is what fails. So the catch was dead, this never returned
+ * null, and the 503 guards at both call sites were unreachable: a missing
+ * secret key surfaced instead as an unhandled throw from inside the request.
+ *
+ * Now it asks the question it was always meant to ask.
+ */
+function getStripeOptional() {
+  return isStripeConfigured() ? { request: stripeRequest } : null;
 }
 
 // Helper: get the user's account
@@ -30,14 +38,9 @@ async function getUserAccount(clerkUserId: string) {
   return account ? { account, accountUser: au } : null;
 }
 
-function getReturnBase(req: Request) {
-  const configured = process.env.PUBLIC_APP_URL?.trim();
-  if (configured) return configured.replace(/\/$/, "");
-  const protocol = String(req.headers["x-forwarded-proto"] ?? req.protocol ?? "https").split(",")[0];
-  const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "").split(",")[0].trim();
-  if (!/^[a-z0-9.-]+(?::\d+)?$/i.test(host)) throw new Error("Unable to determine a safe return URL.");
-  return `${protocol}://${host}`;
-}
+// getReturnBase now lives in lib/return-base.ts — see the import at the top.
+// It moved because routes/admin.ts had grown its own copy without the host
+// guard, and one guarded implementation is safer than two that can drift.
 
 // GET /api/billing/subscription
 router.get("/subscription", requireAuth, async (req, res) => {

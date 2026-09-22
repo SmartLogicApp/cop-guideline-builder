@@ -132,8 +132,15 @@ export default function AcceptTermsPage() {
     return (
       <Shell>
         <p className="text-slate-700">
-          Register your facility first — the acceptance is recorded against the facility account.
+          Register your organization first — the acceptance is recorded against the account, so
+          there needs to be one before you can accept.
         </p>
+        <a
+          href={`${basePath}/register`}
+          className="mt-6 inline-block rounded-lg bg-teal-800 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-900"
+        >
+          Register your organization
+        </a>
       </Shell>
     );
   }

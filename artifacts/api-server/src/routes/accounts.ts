@@ -2,7 +2,8 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { accounts, accountUsers, termsAcceptances } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, ne, isNull } from "drizzle-orm";
+import { normalizeReferralCode } from "../lib/affiliate-commission.js";
 import {
   lookupCCN,
   MANUAL_VERIFICATION_MESSAGE,
@@ -20,6 +21,7 @@ import {
   normalizeIdentifier,
   supportsCmsLookup,
 } from "../lib/provider-identifier.js";
+import { LEGACY_INSTITUTION_TYPES } from "@workspace/cms-compliance-data";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription.js";
 
 import {
@@ -46,6 +48,28 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   (req as any).clerkEmail = (auth as any)?.sessionClaims?.email ?? null;
   return next();
 }
+// GET /api/accounts/provider-types
+//
+// The provider-type list the registration form offers. It lives in
+// @workspace/cms-compliance-data, which the marketing site does not depend on,
+// so it is served rather than bundled — one list, one source, no second copy to
+// drift. Requires auth only because registration does; nothing here is secret.
+//
+// `contentStatus` matters to the caller: generation is refused for provider
+// types whose CMS content is not yet verified, so the form warns at signup
+// rather than letting someone register and discover it later.
+router.get("/provider-types", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  return res.json({
+    providerTypes: LEGACY_INSTITUTION_TYPES.map((type) => ({
+      value:         type.value,
+      label:         type.label,
+      cfr:           type.cfr,
+      contentStatus: type.contentStatus,
+    })),
+  });
+});
+
 // GET /api/accounts/validate-ccn?ccn=XXXXXX&institutionType=TYPE&identifierType=ccn
 //
 // The name is kept for the existing client. `identifierType` is optional and
@@ -299,8 +323,20 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
     .where(and(
       eq(accounts.id, accountUser.accountId),
       // Only move forward. A concurrent request that already recorded the
-      // current version wins, and this one reports its result instead.
-      eq(accounts.id, accountUser.accountId),
+      // current version wins, and this one reports its result instead —
+      // handled by the select below when nothing comes back from here.
+      //
+      // Both halves are needed: in SQL `termsVersion != 'x'` is NULL rather
+      // than true when the column is NULL, so an account that has never
+      // accepted would be excluded by the inequality on its own. That is the
+      // common case — termsVersion has no default.
+      //
+      // This previously repeated the id predicate instead, which is a no-op:
+      // the guard the comment describes did not exist and the last writer won.
+      or(
+        isNull(accounts.termsVersion),
+        ne(accounts.termsVersion, CURRENT_TERMS_VERSION),
+      ),
     ))
     .returning({
       termsAcceptedAt: accounts.termsAcceptedAt,
@@ -325,15 +361,31 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
 // The identifier may be a CCN (certified facilities), an NPI (practices and
 // individual providers), a CLIA number (labs), or — for a consultant who has
 // none of those — one this endpoint issues. Whichever it is, the account gets
-// exactly one, and it is what a second user from the same organisation joins
-// on, so one organisation means one subscription.
+// exactly one, and it is unique, so one organisation means one subscription.
+//
+// This endpoint CREATES accounts. It does not join existing ones: see the
+// comment at the identifier lookup below for why that distinction is a
+// security boundary and not a convenience. Adding a user to an existing
+// account needs an invitation flow, which does not exist yet.
 router.post("/register", requireAuth, async (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const email  = (req as any).clerkEmail as string | null;
-  const { ccn, identifierType, facilityName, facilityType, state, city } = req.body as {
+  const { ccn, identifierType, facilityName, facilityType, state, city, referralCode } = req.body as {
     ccn?: string; identifierType?: string; facilityName: string;
-    facilityType?: string; state?: string; city?: string;
+    facilityType?: string; state?: string; city?: string; referralCode?: string;
   };
+
+  // Affiliate attribution. Recorded on the account at creation and never
+  // afterwards, so a referrer cannot be added or swapped once money is moving.
+  //
+  // Normalised through the SAME function the affiliate lookup uses. That is the
+  // whole point of sharing it: a code normalised one way here and another way
+  // at lookup is a customer attributed to nobody, and the failure is invisible
+  // until an affiliate asks where their commission went.
+  //
+  // Still unverified client input. It is stored as given; whether it matches a
+  // real affiliate is decided later, by the accrual path, not here.
+  const normalReferral = normalizeReferralCode(referralCode);
 
   if (identifierType !== undefined && !isIdentifierType(identifierType)) {
     return res.status(400).json({
@@ -372,47 +424,88 @@ router.post("/register", requireAuth, async (req, res) => {
     return res.status(409).json({ error: "You are already linked to a facility account" });
   }
 
-  // Get or create the account for this identifier.
+  // Self-registration creates an account. It never joins an existing one.
+  //
+  // This used to be get-or-create: if the identifier already existed, the
+  // caller was linked to that account as a member. CMS Certification Numbers
+  // are PUBLIC — they are published in CMS Care Compare — so that let anyone
+  // with a Clerk account type a hospital's CCN and be handed that hospital's
+  // subscription, generated policies and gap-assessment results.
+  //
+  // Joining an existing account must be initiated by that account, not by the
+  // person asking to join. Until an invitation flow exists, the answer is no.
+  // Do not restore the get-or-create behaviour to support multi-user
+  // facilities; build invitations instead.
   let [account] = await db.select().from(accounts)
     .where(eq(accounts.ccn, normalIdentifier)).limit(1);
-  const isFirstUser = !account;
 
-  if (!account) {
-    const trialEnds = new Date();
-    trialEnds.setDate(trialEnds.getDate() + 30);
+  if (account) {
+    return res.status(409).json({
+      error:
+        `That ${identifierLabel(idType)} is already registered. For security, an ` +
+        `existing account can only add users by invitation — ask an administrator ` +
+        `on that account to invite you.`,
+      code: "IDENTIFIER_ALREADY_REGISTERED",
+    });
+  }
 
-    const values = {
-      facilityName:       facilityName.trim(),
-      facilityType:       facilityType ?? null,
-      state:              state ?? null,
-      city:               city ?? null,
-      identifierType:     idType,
-      subscriptionStatus: "trial",
-      trialEndsAt:        trialEnds,
-    };
+  const trialEnds = new Date();
+  trialEnds.setDate(trialEnds.getDate() + 30);
 
-    if (idType === "consultant") {
-      // The unique constraint, not the generator, decides. Retry on collision.
-      for (let attempt = 0; attempt < 5 && !account; attempt += 1) {
-        try {
-          [account] = await db.insert(accounts)
-            .values({ ...values, ccn: normalIdentifier }).returning();
-        } catch (error) {
-          if (!isUniqueViolation(error) || attempt === 4) throw error;
-          normalIdentifier = generateConsultantIdentifier();
-        }
+  const values = {
+    facilityName:       facilityName.trim(),
+    facilityType:       facilityType ?? null,
+    state:              state ?? null,
+    city:               city ?? null,
+    identifierType:     idType,
+    referralCode:       normalReferral,
+    subscriptionStatus: "trial",
+    trialEndsAt:        trialEnds,
+  };
+
+  if (idType === "consultant") {
+    // The unique constraint, not the generator, decides. Retry on collision.
+    for (let attempt = 0; attempt < 5 && !account; attempt += 1) {
+      try {
+        [account] = await db.insert(accounts)
+          .values({ ...values, ccn: normalIdentifier }).returning();
+      } catch (error) {
+        if (!isUniqueViolation(error) || attempt === 4) throw error;
+        normalIdentifier = generateConsultantIdentifier();
       }
-    } else {
+    }
+  } else {
+    // A second request racing with this one loses on the unique index rather
+    // than silently joining the winner's account — the same rule as above,
+    // enforced by the database instead of by the read a few lines up.
+    try {
       [account] = await db.insert(accounts)
         .values({ ...values, ccn: normalIdentifier }).returning();
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      return res.status(409).json({
+        error:
+          `That ${identifierLabel(idType)} is already registered. For security, an ` +
+          `existing account can only add users by invitation — ask an administrator ` +
+          `on that account to invite you.`,
+        code: "IDENTIFIER_ALREADY_REGISTERED",
+      });
     }
   }
 
-  // Link this user to the account
+  if (!account) {
+    req.log?.error({ idType }, "Account insert returned no row");
+    return res.status(500).json({ error: "We could not create your account. Please try again." });
+  }
+
+  // Link this user to the account they just created. Always admin: self-
+  // registration no longer joins an existing account, so the registrant is by
+  // definition the first user. When invitations exist, invited users get
+  // "member" through that path, not this one.
   const [accountUser] = await db.insert(accountUsers).values({
     clerkUserId: userId,
     accountId:   account.id,
-    role:        isFirstUser ? "admin" : "member",
+    role:        "admin",
     email:       email ?? null,
   }).returning();
 

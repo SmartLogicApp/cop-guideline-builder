@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
@@ -83,6 +84,69 @@ test('billing is authenticated and gates Stripe actions on server availability',
   assert.doesNotMatch(workspaceSource, /href=\{`\$\{basePath\}\/admin`\}/);
   assert.doesNotMatch(workspaceSource, /Continue for \$299\/month/);
   assert.match(workspaceSource, /View billing and access options/);
+});
+
+test('registration is routed, authenticated, and reachable from the workspace', () => {
+  // Registration is the only path that creates an account. Before it existed,
+  // POST /api/accounts/register had no caller and a new customer landed on a
+  // dead end. These four assertions are the wiring that keeps it reachable.
+  const routeBoundary = componentBody(appSource, 'RouteBoundary');
+  const register = componentBody(authenticatedAppSource, 'Register');
+
+  // A route registered in AuthenticatedApp but missing from the RouteBoundary
+  // allowlist renders the PUBLIC router instead, and 404s for a signed-in user.
+  assert.match(
+    routeBoundary,
+    /normalizedLocation === ['"]\/register['"]/,
+    'Expected /register in the authenticated path allowlist in App.tsx',
+  );
+  assert.match(
+    authenticatedAppSource,
+    /<Route path="\/register" component=\{Register\} \/>/,
+    'Expected /register to be registered in the authenticated route table',
+  );
+  assert.match(register, /<Show when="signed-in">\s*<RegisterPage \/>/);
+  assert.match(register, /<Show when="signed-out"><RedirectToSignIn \/><\/Show>/);
+
+  // A signed-in user with no account row must be sent to registration, not to
+  // the trial-ended screen. Getting this wrong tells a customer on their first
+  // visit that a trial they never had has expired.
+  assert.match(
+    workspaceSource,
+    /NeedsRegistrationScreen registerUrl=\{`\$\{basePath\}\/register`\}/,
+    'Expected the workspace to route unregistered users to /register',
+  );
+  // The isActive half of the guard keeps admins, who have access without an
+  // account row, out of the registration screen.
+  assert.match(
+    workspaceSource,
+    /!accountData\?\.account && !accountData\?\.isActive/,
+    'Expected the registration guard to consider access as well as account',
+  );
+});
+
+test('terms acceptance is reachable from registration and from the checkout refusal', () => {
+  // /accept-terms had no inbound link anywhere in the codebase, while checkout
+  // refused to proceed without it. Both ends are asserted here.
+  const acceptTermsSource = readFileSync(
+    new URL('../src/pages/accept-terms.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    acceptTermsSource,
+    /href=\{`\$\{basePath\}\/register`\}/,
+    'Expected the unregistered state on /accept-terms to link to /register',
+  );
+  assert.match(
+    billingSource,
+    /TERMS_ACCEPTANCE_REQUIRED/,
+    'Expected billing to recognise the checkout terms refusal',
+  );
+  assert.match(
+    billingSource,
+    /window\.location\.assign\(`\$\{basePath\}\/accept-terms`\)/,
+    'Expected the terms refusal to send the customer to /accept-terms',
+  );
 });
 
 test('Clerk path routing keeps callback subpaths and post-auth app redirects valid', () => {

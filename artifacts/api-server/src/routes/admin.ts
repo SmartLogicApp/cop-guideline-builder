@@ -1,9 +1,15 @@
-import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { timingSafeEqual } from "node:crypto";
+import { Router, type IRouter } from "express";
+import { getReturnBase } from "../lib/return-base.js";
+import {
+  getSuperAdminIds,
+  requireAnyAdmin,
+  requireCronOrSuperAdmin,
+  requireSuperAdmin,
+} from "../lib/admin-guards.js";
+import { monthBounds, toCsv } from "../lib/report-format.js";
 import { db } from "@workspace/db";
 import { adminUsers, accounts, accountUsers, tokenUsage } from "@workspace/db";
 import { eq, and, gte, lt, desc, isNull, inArray } from "drizzle-orm";
-import { getAuth } from "@clerk/express";
 import {
   TRIAL_WARNING_SUBJECT,
   trialWarningEmailHtml,
@@ -36,115 +42,10 @@ function getTrialEmailFrom(): string {
 
 const router: IRouter = Router();
 
-// ─── Super-admin IDs (env var) ───────────────────────────────────────────────
-
-function getSuperAdminIds(): string[] {
-  return (process.env.ADMIN_CLERK_USER_IDS ?? "")
-    .split(",").map((s) => s.trim()).filter(Boolean);
-}
-
-// ─── requireSuperAdmin — env-var only ────────────────────────────────────────
-
-function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
-  const auth = getAuth(req as any);
-  const userId = auth?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  if (!getSuperAdminIds().includes(userId))
-    return res.status(403).json({ error: "Super-admin access required" });
-  (req as any).clerkUserId = userId;
-  return next();
-}
-
-/**
- * The secret an external scheduler presents to run the cron endpoints.
- *
- * This has to be handed to whatever service calls them — a scheduled job, a CI
- * runner, an uptime pinger — so it must NOT be the secret that signs sessions.
- * Sharing SESSION_SECRET with a third party means a compromise there is a
- * compromise of every session, and it makes the two impossible to rotate
- * independently. CRON_SECRET is therefore preferred; SESSION_SECRET remains a
- * fallback only so an existing schedule keeps working until CRON_SECRET is set.
- *
- * Set CRON_SECRET and the fallback stops being consulted.
- */
-function getSchedulerSecret(): string | undefined {
-  return process.env.CRON_SECRET?.trim() || process.env.SESSION_SECRET?.trim() || undefined;
-}
-
-/** Constant-time compare, so a wrong token can't be found a byte at a time. */
-function secretsMatch(presented: string, expected: string): boolean {
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
-function requireCronOrSuperAdmin(req: Request, res: Response, next: NextFunction) {
-  const authorization = req.get("authorization");
-  const schedulerSecret = getSchedulerSecret();
-  if (schedulerSecret && authorization?.startsWith("Bearer ")
-      && secretsMatch(authorization.slice("Bearer ".length), schedulerSecret)) {
-    return next();
-  }
-  return requireSuperAdmin(req, res, next);
-}
-
-// ─── requireAnyAdmin — env-var OR active DB admin ────────────────────────────
-
-async function requireAnyAdmin(req: Request, res: Response, next: NextFunction) {
-  const auth = getAuth(req as any);
-  const userId = auth?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-  // Super-admin check first (no DB hit)
-  if (getSuperAdminIds().includes(userId)) {
-    (req as any).clerkUserId = userId;
-    (req as any).isSuperAdmin = true;
-    return next();
-  }
-
-  // DB-managed admin check
-  try {
-    const [row] = await db
-      .select()
-      .from(adminUsers)
-      .where(and(eq(adminUsers.clerkUserId, userId), eq(adminUsers.isActive, true)))
-      .limit(1);
-
-    if (!row) return res.status(403).json({ error: "Admin access required" });
-    (req as any).clerkUserId = userId;
-    (req as any).isSuperAdmin = false;
-    next();
-  } catch {
-    res.status(500).json({ error: "Auth check failed" });
-  }
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function monthBounds(monthStr?: string): { start: Date; end: Date; label: string } {
-  let start: Date;
-  if (monthStr && /^\d{4}-\d{2}$/.test(monthStr)) {
-    const [y, m] = monthStr.split("-").map(Number);
-    start = new Date(y, m - 1, 1);
-  } else {
-    const now = new Date();
-    start = new Date(now.getFullYear(), now.getMonth(), 1);
-  }
-  const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
-  const label = start.toLocaleString("en-US", { month: "long", year: "numeric" });
-  return { start, end, label };
-}
-
-function toCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
-  const escape = (v: string | number | null | undefined) => {
-    const s = v == null ? "" : String(v);
-    return s.includes(",") || s.includes('"') || s.includes("\n")
-      ? `"${s.replace(/"/g, '""')}"`
-      : s;
-  };
-  return [headers, ...rows].map((r) => r.map(escape).join(",")).join("\r\n");
-}
+// Guards (requireSuperAdmin / requireCronOrSuperAdmin / requireAnyAdmin) and
+// the report helpers (monthBounds / toCsv) now live in ../lib/admin-guards.ts
+// and ../lib/report-format.ts, so routes/affiliates.ts uses the same ones
+// rather than a second copy that could drift weaker. Imported at the top.
 
 // ─── Internal AI cost monitoring ─────────────────────────────────────────────
 
@@ -234,10 +135,17 @@ router.post("/cron/usage-alerts", requireCronOrSuperAdmin, async (_req, res) => 
 router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) => {
   const now = new Date();
   const { start, end } = trialWarningWindow(now);
-  const protocol = req.get("x-forwarded-proto") ?? req.protocol;
-  const host = req.get("x-forwarded-host") ?? req.get("host");
-  if (!host) return res.status(400).json({ error: "Unable to determine billing URL" });
-  const billingUrl = `${protocol}://${host}/billing`;
+  // This URL goes into an email we send to a CUSTOMER, so it must not be built
+  // from raw request headers: Host and X-Forwarded-Host are attacker-controlled,
+  // and a trial-expiry notice with the right sender and the wrong host is a
+  // ready-made phishing mail. getReturnBase prefers PUBLIC_APP_URL and
+  // otherwise refuses anything that is not plainly a hostname.
+  let billingUrl: string;
+  try {
+    billingUrl = `${getReturnBase(req)}/billing`;
+  } catch {
+    return res.status(400).json({ error: "Unable to determine billing URL" });
+  }
 
   try {
     const candidates = await db
@@ -626,7 +534,14 @@ router.post("/reports/email", requireAnyAdmin, async (req, res) => {
   if (!recipients.length) return res.status(400).json({ error: "At least one recipient email is required" });
 
   try {
-    const downloadUrl = `${req.headers["x-forwarded-proto"] ?? "https"}://${req.headers["x-forwarded-host"] ?? req.headers.host}/api/admin/reports/download?type=${type}&month=${month ?? ""}`;
+    // Host headers are attacker-controlled, and this URL is emailed to our own
+    // administrators — an unguarded one is a phishing link with our wording on
+    // it. getReturnBase prefers PUBLIC_APP_URL and otherwise refuses a host
+    // that is not plainly a hostname. Query values are encoded for the same
+    // reason: they arrive from the request body.
+    const downloadUrl =
+      `${getReturnBase(req)}/api/admin/reports/download` +
+      `?type=${encodeURIComponent(type)}&month=${encodeURIComponent(month ?? "")}`;
     const { start, end, label } = monthBounds(month);
 
     const [allAccounts, allTokenRows] = await Promise.all([

@@ -30,6 +30,14 @@ export const accounts = pgTable("accounts", {
   trialWarningEmailSentAt: timestamp("trial_warning_email_sent_at", { withTimezone: true }),
   termsAcceptedAt:      timestamp("terms_accepted_at", { withTimezone: true }),
   termsVersion:         text("terms_version"),
+  // Which affiliate, if any, this account is attributed to. Captured from the
+  // signup URL at registration and never changed afterwards — attribution that
+  // can be edited later is attribution that will be argued about later.
+  //
+  // Recorded now, before any affiliate programme exists, because it is the one
+  // piece of affiliate data that cannot be backfilled: an account registered
+  // without it has no recoverable referrer. Nothing reads this column yet.
+  referralCode:         text("referral_code"),
   createdAt:            timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt:            timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });

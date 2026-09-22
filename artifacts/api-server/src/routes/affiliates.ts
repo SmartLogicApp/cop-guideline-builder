@@ -1,0 +1,854 @@
+import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import {
+  accounts,
+  affiliates,
+  affiliateCommissions,
+  affiliatePayouts,
+  affiliateRateChanges,
+} from "@workspace/db";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
+import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
+import {
+  activityStatus,
+  activityWindow,
+  assemblePayout,
+  computeCommissionUsd,
+  COMMISSION_RATE_LADDER,
+  holdbackEndsAt,
+  isValidReferralCode,
+  MINIMUM_PAYOUT_USD,
+  normalizeReferralCode,
+  pendingRateReductions,
+  quarterBounds,
+  quarterOf,
+  roundUsd,
+} from "../lib/affiliate-commission.js";
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AFFILIATE ROUTES — mounted at /api/affiliates
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Everything here is ADMIN-ONLY. The affiliate's own view of their figures is
+ * a separate, deliberately narrower surface (see the §29 note on
+ * GET /portal/summary at the bottom of this file) because §29 lists exactly
+ * what an affiliate may see about a referred customer and exactly what they
+ * may not. Serving both audiences from one set of handlers would mean that
+ * limit lived in a filter somebody has to remember to apply.
+ *
+ * Money is never recalculated on read. Commission rows carry the rate and the
+ * amount they accrued with (§12/§13 protect commissions already earned), so
+ * these handlers sum stored values and never re-derive them from the
+ * affiliate's current rate.
+ */
+
+const router: IRouter = Router();
+
+// ─── Shared shaping ──────────────────────────────────────────────────────────
+
+/** Statuses that represent money still owed, as opposed to settled or void. */
+const OUTSTANDING_STATUSES = ["pending", "payable"] as const;
+
+function affiliateSummaryFields(row: typeof affiliates.$inferSelect, now: Date) {
+  const clock = {
+    currentRatePct: row.commissionRatePct,
+    lastQualifyingReferralAt: row.lastQualifyingReferralAt ?? null,
+    rateEffectiveAt: row.rateEffectiveAt ?? row.createdAt ?? now,
+  };
+  const window = activityWindow(clock);
+  return {
+    activityStatus: activityStatus(clock, now),
+    activityPeriodEndsAt: window.activityPeriodEndsAt,
+    graceEndsAt: window.graceEndsAt,
+    /** Non-empty means a reduction is DUE but has not been applied yet. */
+    pendingReductions: pendingRateReductions(clock, now),
+  };
+}
+
+// ─── GET /api/affiliates — the admin list ────────────────────────────────────
+
+/**
+ * One row per affiliate with their attribution and commission rollup.
+ *
+ * Deliberately three queries and an in-memory join rather than one grouped SQL
+ * statement: the programme is small enough that this is not a performance
+ * question, and the shape mirrors GET /api/admin/clients, which an operator
+ * reads side by side with this.
+ */
+router.get("/", requireAnyAdmin, async (req, res) => {
+  const now = new Date();
+  try {
+    const rows = await db.select().from(affiliates).orderBy(desc(affiliates.createdAt));
+    if (rows.length === 0) return res.json([]);
+
+    const ids = rows.map((r) => r.id);
+
+    const [referredCounts, commissionRollup] = await Promise.all([
+      db
+        .select({
+          referralCode: accounts.referralCode,
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) filter (where ${accounts.subscriptionStatus} = 'active')::int`,
+        })
+        .from(accounts)
+        .groupBy(accounts.referralCode),
+      db
+        .select({
+          affiliateId: affiliateCommissions.affiliateId,
+          status: affiliateCommissions.status,
+          total: sql<number>`coalesce(sum(${affiliateCommissions.commissionUsd}), 0)`,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(affiliateCommissions)
+        .where(inArray(affiliateCommissions.affiliateId, ids))
+        .groupBy(affiliateCommissions.affiliateId, affiliateCommissions.status),
+    ]);
+
+    const referredByCode = new Map(
+      referredCounts
+        .filter((r) => r.referralCode)
+        .map((r) => [r.referralCode as string, { total: r.total, active: r.active }]),
+    );
+
+    const commissionsById = new Map<string, Record<string, { total: number; count: number }>>();
+    for (const row of commissionRollup) {
+      const bucket = commissionsById.get(row.affiliateId) ?? {};
+      bucket[row.status] = { total: Number(row.total) || 0, count: row.count };
+      commissionsById.set(row.affiliateId, bucket);
+    }
+
+    return res.json(rows.map((row) => {
+      const referred = referredByCode.get(row.referralCode) ?? { total: 0, active: 0 };
+      const buckets = commissionsById.get(row.id) ?? {};
+      const sumOf = (...statuses: string[]) =>
+        money(statuses.reduce((sum, s) => sum + (buckets[s]?.total ?? 0), 0));
+
+      return {
+        id: row.id,
+        referralCode: row.referralCode,
+        companyName: row.companyName,
+        contactName: row.contactName,
+        email: row.email,
+        status: row.status,
+        commissionRatePct: row.commissionRatePct,
+        lastQualifyingReferralAt: row.lastQualifyingReferralAt,
+        taxInfoReceivedAt: row.taxInfoReceivedAt,
+        enrollmentSignedAt: row.enrollmentSignedAt,
+        subscriptionFeeWaived: row.subscriptionFeeWaived,
+        createdAt: row.createdAt,
+        referredAccounts: referred.total,
+        activeReferredAccounts: referred.active,
+        commissions: {
+          pendingUsd:  sumOf("pending"),
+          payableUsd:  sumOf("payable"),
+          paidUsd:     sumOf("paid"),
+          reversedUsd: sumOf("reversed"),
+          lifetimeEarnedUsd: sumOf("pending", "payable", "paid"),
+        },
+        ...affiliateSummaryFields(row, now),
+      };
+    }));
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to load affiliates" });
+  }
+});
+
+// ─── GET /api/affiliates/stats — the panel header ────────────────────────────
+
+router.get("/stats", requireAnyAdmin, async (req, res) => {
+  const { start, end, label } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
+  const now = new Date();
+  try {
+    const [affiliateRows, monthCommissions, outstanding, monthSignups] = await Promise.all([
+      db.select().from(affiliates),
+      db.select().from(affiliateCommissions)
+        .where(and(gte(affiliateCommissions.accruedAt, start), lt(affiliateCommissions.accruedAt, end))),
+      db.select({
+        status: affiliateCommissions.status,
+        total: sql<number>`coalesce(sum(${affiliateCommissions.commissionUsd}), 0)`,
+      }).from(affiliateCommissions)
+        .where(inArray(affiliateCommissions.status, [...OUTSTANDING_STATUSES]))
+        .groupBy(affiliateCommissions.status),
+      db.select({ total: sql<number>`count(*)::int` })
+        .from(accounts)
+        .where(and(
+          sql`${accounts.referralCode} is not null`,
+          gte(accounts.createdAt, start),
+          lt(accounts.createdAt, end),
+        )),
+    ]);
+
+    const outstandingByStatus = new Map(outstanding.map((r) => [r.status, Number(r.total) || 0]));
+    const lapsing = affiliateRows.filter((row) => {
+      const state = affiliateSummaryFields(row, now).activityStatus;
+      return state === "in-grace" || state === "lapsed";
+    }).length;
+
+    return res.json({
+      monthLabel: label,
+      totalAffiliates:   affiliateRows.length,
+      activeAffiliates:  affiliateRows.filter((r) => r.status === "active").length,
+      pendingAffiliates: affiliateRows.filter((r) => r.status === "pending").length,
+      /** Affiliates inside the §11 grace period or already past it. */
+      lapsingAffiliates: lapsing,
+      thisMonth: {
+        referredSignups: monthSignups[0]?.total ?? 0,
+        commissionsAccruedUsd: money(
+          monthCommissions
+            .filter((c) => c.status !== "reversed" && c.status !== "cancelled")
+            .reduce((sum, c) => sum + (c.commissionUsd ?? 0), 0),
+        ),
+        qualifyingRevenueUsd: money(
+          monthCommissions
+            .filter((c) => c.status !== "reversed" && c.status !== "cancelled")
+            .reduce((sum, c) => sum + (c.qualifyingRevenueUsd ?? 0), 0),
+        ),
+      },
+      outstanding: {
+        /** §24 — accrued but still inside the 60-day holdback. */
+        pendingUsd: money(outstandingByStatus.get("pending") ?? 0),
+        /** Holdback elapsed; awaiting the next quarterly payout (§8). */
+        payableUsd: money(outstandingByStatus.get("payable") ?? 0),
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to load affiliate stats" });
+  }
+});
+
+// ─── GET /api/affiliates/:id — one affiliate in full ─────────────────────────
+
+router.get("/:id", requireAnyAdmin, async (req, res) => {
+  const now = new Date();
+  try {
+    const [row] = await db.select().from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
+    if (!row) return res.status(404).json({ error: "Affiliate not found" });
+
+    const [referred, commissions, payouts, rateChanges] = await Promise.all([
+      db.select({
+        id: accounts.id,
+        facilityName: accounts.facilityName,
+        subscriptionStatus: accounts.subscriptionStatus,
+        createdAt: accounts.createdAt,
+      }).from(accounts).where(eq(accounts.referralCode, row.referralCode)).orderBy(desc(accounts.createdAt)),
+      db.select().from(affiliateCommissions)
+        .where(eq(affiliateCommissions.affiliateId, row.id))
+        .orderBy(desc(affiliateCommissions.accruedAt)).limit(500),
+      db.select().from(affiliatePayouts)
+        .where(eq(affiliatePayouts.affiliateId, row.id))
+        .orderBy(desc(affiliatePayouts.createdAt)),
+      db.select().from(affiliateRateChanges)
+        .where(eq(affiliateRateChanges.affiliateId, row.id))
+        .orderBy(desc(affiliateRateChanges.effectiveAt)),
+    ]);
+
+    return res.json({
+      ...row,
+      ...affiliateSummaryFields(row, now),
+      referredAccounts: referred,
+      commissions,
+      payouts,
+      rateChanges,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to load affiliate" });
+  }
+});
+
+// ─── POST /api/affiliates — enroll ───────────────────────────────────────────
+
+router.post("/", requireSuperAdmin, async (req, res) => {
+  const {
+    referralCode, companyName, contactName, email, phone,
+    commissionRatePct, enrollmentSignedAt, enrollmentVersion, agreementVersion,
+    subscriptionFeeWaived, adminNotes, status,
+  } = req.body ?? {};
+
+  const code = normalizeReferralCode(referralCode);
+  if (!code || !isValidReferralCode(code)) {
+    return res.status(400).json({
+      error: "Referral code must be 2–64 characters, letters, digits and hyphens, starting with a letter or digit.",
+      code: "INVALID_REFERRAL_CODE",
+    });
+  }
+  if (typeof companyName !== "string" || !companyName.trim()) {
+    return res.status(400).json({ error: "Company name is required." });
+  }
+  if (typeof email !== "string" || !email.includes("@")) {
+    return res.status(400).json({ error: "A contact email is required." });
+  }
+
+  const rate = Number.isFinite(Number(commissionRatePct)) ? Number(commissionRatePct) : 20;
+  if (!COMMISSION_RATE_LADDER.includes(rate as any)) {
+    return res.status(400).json({
+      error: `Commission rate must be one of ${COMMISSION_RATE_LADDER.join(", ")} (§14).`,
+    });
+  }
+
+  try {
+    const now = new Date();
+    const [created] = await db.insert(affiliates).values({
+      referralCode: code,
+      companyName: companyName.trim(),
+      contactName: typeof contactName === "string" ? contactName.trim() || null : null,
+      email: email.trim(),
+      phone: typeof phone === "string" ? phone.trim() || null : null,
+      status: status === "active" ? "active" : "pending",
+      commissionRatePct: rate,
+      rateEffectiveAt: now,
+      enrollmentSignedAt: enrollmentSignedAt ? new Date(enrollmentSignedAt) : null,
+      enrollmentVersion: typeof enrollmentVersion === "string" ? enrollmentVersion : null,
+      agreementVersion: typeof agreementVersion === "string" ? agreementVersion : null,
+      subscriptionFeeWaived: subscriptionFeeWaived === true,
+      adminNotes: typeof adminNotes === "string" ? adminNotes : null,
+    }).returning();
+
+    await db.insert(affiliateRateChanges).values({
+      affiliateId: created!.id,
+      fromPct: rate,
+      toPct: rate,
+      reason: "enrollment",
+      changedBy: (req as any).clerkUserId ?? null,
+      effectiveAt: now,
+    });
+
+    return res.status(201).json(created);
+  } catch (error: any) {
+    // Unique violation on referral_code. Caught rather than pre-checked because
+    // two enrollments can race a check-then-insert, and a reused code silently
+    // attributes new customers to whoever printed the old flyer.
+    if (error?.code === "23505") {
+      return res.status(409).json({
+        error: "That referral code is already in use. Codes are never reused, including after termination.",
+        code: "REFERRAL_CODE_TAKEN",
+      });
+    }
+    return res.status(500).json({ error: error?.message ?? "Unable to create affiliate" });
+  }
+});
+
+// ─── PATCH /api/affiliates/:id ───────────────────────────────────────────────
+
+/**
+ * Editable fields only. `referralCode` is NOT among them: changing a live code
+ * orphans every account already attributed to it, and there is no way to tell
+ * afterwards which customers were whose. A mistyped code is fixed by creating
+ * the correct affiliate and reassigning deliberately.
+ */
+router.patch("/:id", requireSuperAdmin, async (req, res) => {
+  const patch: Record<string, unknown> = {};
+  const body = req.body ?? {};
+
+  for (const field of ["companyName", "contactName", "email", "phone", "payoutMethod", "payoutReference", "adminNotes"]) {
+    if (typeof body[field] === "string") patch[field] = body[field].trim() || null;
+  }
+  if (["pending", "active", "suspended", "terminated"].includes(body.status)) patch.status = body.status;
+  if (typeof body.subscriptionFeeWaived === "boolean") patch.subscriptionFeeWaived = body.subscriptionFeeWaived;
+  if (body.taxInfoReceivedAt !== undefined) {
+    patch.taxInfoReceivedAt = body.taxInfoReceivedAt ? new Date(body.taxInfoReceivedAt) : null;
+  }
+  if (body.enrollmentSignedAt !== undefined) {
+    patch.enrollmentSignedAt = body.enrollmentSignedAt ? new Date(body.enrollmentSignedAt) : null;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return res.status(400).json({ error: "No editable fields supplied." });
+  }
+  patch.updatedAt = new Date();
+
+  try {
+    const [updated] = await db.update(affiliates).set(patch)
+      .where(eq(affiliates.id, String(req.params.id))).returning();
+    if (!updated) return res.status(404).json({ error: "Affiliate not found" });
+    return res.json(updated);
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to update affiliate" });
+  }
+});
+
+// ─── POST /api/affiliates/:id/rate — deliberate rate change (§15) ────────────
+
+router.post("/:id/rate", requireSuperAdmin, async (req, res) => {
+  const toPct = Number(req.body?.commissionRatePct);
+  const reason = typeof req.body?.reason === "string" ? req.body.reason : "manual";
+  if (!COMMISSION_RATE_LADDER.includes(toPct as any)) {
+    return res.status(400).json({ error: `Rate must be one of ${COMMISSION_RATE_LADDER.join(", ")} (§14).` });
+  }
+
+  try {
+    const [row] = await db.select().from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
+    if (!row) return res.status(404).json({ error: "Affiliate not found" });
+    if (row.commissionRatePct === toPct) return res.json(row);
+
+    const now = new Date();
+    const [updated] = await db.update(affiliates)
+      .set({ commissionRatePct: toPct, rateEffectiveAt: now, updatedAt: now })
+      .where(eq(affiliates.id, row.id)).returning();
+
+    await db.insert(affiliateRateChanges).values({
+      affiliateId: row.id,
+      fromPct: row.commissionRatePct,
+      toPct,
+      reason: ["inactivity", "restoration", "manual"].includes(reason) ? reason : "manual",
+      note: typeof req.body?.note === "string" ? req.body.note : null,
+      changedBy: (req as any).clerkUserId ?? null,
+      effectiveAt: now,
+    });
+
+    // Existing commission rows are untouched on purpose — §12 and §13 both say
+    // commissions properly earned before a reduction are not retroactively
+    // reduced, and the rate is frozen on each row for exactly this reason.
+    return res.json(updated);
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to change rate" });
+  }
+});
+
+// ─── POST /api/affiliates/:id/commissions — manual adjustment ────────────────
+
+/**
+ * A hand-entered commission or correction. The normal path is the Stripe
+ * webhook; this exists for the cases §22 anticipates — a payment taken outside
+ * Stripe, a negotiated adjustment, a correction after a dispute.
+ *
+ * Writes a NEW row rather than editing an existing one, so the ledger stays
+ * append-mostly and the original accrual remains visible next to its correction.
+ */
+router.post("/:id/commissions", requireSuperAdmin, async (req, res) => {
+  const qualifyingRevenueUsd = Number(req.body?.qualifyingRevenueUsd);
+  const accountId = req.body?.accountId;
+  if (!Number.isFinite(qualifyingRevenueUsd) || qualifyingRevenueUsd <= 0) {
+    return res.status(400).json({ error: "qualifyingRevenueUsd must be a positive number." });
+  }
+  if (typeof accountId !== "string" || !accountId) {
+    return res.status(400).json({ error: "accountId is required — a commission is always tied to a customer." });
+  }
+
+  try {
+    const [row] = await db.select().from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
+    if (!row) return res.status(404).json({ error: "Affiliate not found" });
+
+    const accruedAt = req.body?.accruedAt ? new Date(req.body.accruedAt) : new Date();
+    const ratePct = Number.isFinite(Number(req.body?.ratePct))
+      ? Number(req.body.ratePct)
+      : row.commissionRatePct;
+
+    const [created] = await db.insert(affiliateCommissions).values({
+      affiliateId: row.id,
+      accountId,
+      qualifyingRevenueUsd: roundUsd(qualifyingRevenueUsd),
+      ratePct,
+      commissionUsd: computeCommissionUsd(qualifyingRevenueUsd, ratePct),
+      status: "pending",
+      accruedAt,
+      payableAt: holdbackEndsAt(accruedAt),
+      source: `manual:${(req as any).clerkUserId ?? "admin"}`,
+    }).returning();
+
+    return res.status(201).json(created);
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to record commission" });
+  }
+});
+
+// ─── POST /api/affiliates/commissions/:commissionId/reverse (§25) ────────────
+
+router.post("/commissions/:commissionId/reverse", requireSuperAdmin, async (req, res) => {
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!reason) {
+    return res.status(400).json({ error: "A reason is required — a reversal has to be explainable later." });
+  }
+  try {
+    const now = new Date();
+    // Guarded so an already-reversed row cannot be reversed twice, which would
+    // double-deduct from the affiliate's next payout.
+    const [updated] = await db.update(affiliateCommissions)
+      .set({ status: "reversed", reversedAt: now, reversalReason: reason })
+      .where(and(
+        eq(affiliateCommissions.id, String(req.params.commissionId)),
+        inArray(affiliateCommissions.status, ["pending", "payable", "paid"]),
+      ))
+      .returning();
+    if (!updated) {
+      return res.status(409).json({
+        error: "That commission is not in a reversible state — it may already be reversed or cancelled.",
+      });
+    }
+    return res.json(updated);
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to reverse commission" });
+  }
+});
+
+// ─── POST /api/affiliates/maturity-sweep — pending → payable (§24) ───────────
+
+/**
+ * Promotes commissions whose 60-day holdback has elapsed.
+ *
+ * Idempotent and safe to run on any schedule: it selects on payableAt and the
+ * current status, so running it twice in a day, or not at all for a month,
+ * produces the same end state. Nothing here pays anybody.
+ */
+router.post("/cron/maturity-sweep", requireCronOrSuperAdmin, async (_req, res) => {
+  try {
+    const now = new Date();
+    const promoted = await db.update(affiliateCommissions)
+      .set({ status: "payable" })
+      .where(and(
+        eq(affiliateCommissions.status, "pending"),
+        lt(affiliateCommissions.payableAt, now),
+      ))
+      .returning({ id: affiliateCommissions.id });
+    return res.json({ ok: true, promoted: promoted.length });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Maturity sweep failed" });
+  }
+});
+
+// ─── GET /api/affiliates/payouts/preview?quarter=YYYY-Qn (§8) ────────────────
+
+/**
+ * What each affiliate would be paid for a quarter, without writing anything.
+ *
+ * A preview rather than a create-then-review, because assembling a payout is
+ * the moment errors become money. The operator sees the figures, and the
+ * separate POST is what commits them.
+ */
+router.get("/payouts/preview", requireAnyAdmin, async (req, res) => {
+  const label = typeof req.query.quarter === "string" ? req.query.quarter : quarterOf(new Date());
+  const bounds = quarterBounds(label);
+  if (!bounds) return res.status(400).json({ error: "quarter must look like 2026-Q1." });
+
+  try {
+    const [affiliateRows, payable, reversals, priorCarried] = await Promise.all([
+      db.select().from(affiliates),
+      db.select().from(affiliateCommissions).where(and(
+        eq(affiliateCommissions.status, "payable"),
+        lt(affiliateCommissions.payableAt, bounds.end),
+      )),
+      // Reversals of ALREADY PAID commissions inside this quarter — these are
+      // the §25 deductions. Reversals of unpaid rows need no adjustment: the
+      // row simply never becomes payable.
+      db.select().from(affiliateCommissions).where(and(
+        eq(affiliateCommissions.status, "reversed"),
+        gte(affiliateCommissions.reversedAt, bounds.start),
+        lt(affiliateCommissions.reversedAt, bounds.end),
+        sql`${affiliateCommissions.paidAt} is not null`,
+      )),
+      db.select().from(affiliatePayouts).where(eq(affiliatePayouts.status, "carried")),
+    ]);
+
+    const byAffiliate = new Map<string, { lines: { commissionUsd: number }[]; reversed: number; carried: number }>();
+    const bucket = (id: string) => {
+      let b = byAffiliate.get(id);
+      if (!b) { b = { lines: [], reversed: 0, carried: 0 }; byAffiliate.set(id, b); }
+      return b;
+    };
+    for (const row of payable) bucket(row.affiliateId).lines.push({ commissionUsd: row.commissionUsd ?? 0 });
+    for (const row of reversals) bucket(row.affiliateId).reversed += row.commissionUsd ?? 0;
+    for (const row of priorCarried) bucket(row.affiliateId).carried += row.netUsd ?? 0;
+
+    const rows = affiliateRows
+      .map((affiliate) => {
+        const b = byAffiliate.get(affiliate.id);
+        if (!b || (b.lines.length === 0 && b.reversed === 0 && b.carried === 0)) return null;
+        const assembly = assemblePayout(b.lines, b.reversed, b.carried);
+        return {
+          affiliateId: affiliate.id,
+          referralCode: affiliate.referralCode,
+          companyName: affiliate.companyName,
+          taxInfoOnFile: affiliate.taxInfoReceivedAt != null,
+          payoutMethod: affiliate.payoutMethod,
+          commissionCount: b.lines.length,
+          ...assembly,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      .sort((a, b) => b.netUsd - a.netUsd);
+
+    return res.json({
+      quarter: bounds.label,
+      minimumPayoutUsd: MINIMUM_PAYOUT_USD,
+      rows,
+      totals: {
+        payableNowUsd: money(rows.filter((r) => r.meetsMinimum).reduce((s, r) => s + r.netUsd, 0)),
+        carryingForwardUsd: money(rows.filter((r) => !r.meetsMinimum).reduce((s, r) => s + r.netUsd, 0)),
+        affiliatesPaid: rows.filter((r) => r.meetsMinimum).length,
+        /**
+         * §18 — Company may require tax information before paying. Surfaced so
+         * the operator sees a blocked payout before the quarter closes rather
+         * than on the day they try to send the money.
+         */
+        blockedOnTaxInfo: rows.filter((r) => r.meetsMinimum && !r.taxInfoOnFile).length,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to preview payouts" });
+  }
+});
+
+// ─── POST /api/affiliates/payouts — commit one affiliate's quarter ───────────
+
+/**
+ * Turns a previewed quarter into a payout row and stamps its commissions paid.
+ *
+ * One affiliate per call, on purpose. A single "close the quarter" button that
+ * writes every affiliate at once is one mis-click away from marking money paid
+ * that was never sent, and there is no clean undo for that — the commissions
+ * are stamped and the ledger says they were settled.
+ *
+ * Commissions are claimed with a guarded UPDATE (status must still be
+ * "payable"), so two operators clicking at once cannot both settle the same
+ * rows. The payout's gross is then summed from what was ACTUALLY claimed,
+ * not from the preview — otherwise a row claimed by the other request would
+ * still be paid for here.
+ */
+router.post("/payouts", requireSuperAdmin, async (req, res) => {
+  const affiliateId = req.body?.affiliateId;
+  const label = typeof req.body?.quarter === "string" ? req.body.quarter : quarterOf(new Date());
+  const bounds = quarterBounds(label);
+  if (typeof affiliateId !== "string" || !affiliateId) {
+    return res.status(400).json({ error: "affiliateId is required." });
+  }
+  if (!bounds) return res.status(400).json({ error: "quarter must look like 2026-Q1." });
+
+  try {
+    const [affiliate] = await db.select().from(affiliates).where(eq(affiliates.id, affiliateId)).limit(1);
+    if (!affiliate) return res.status(404).json({ error: "Affiliate not found" });
+
+    const [existing] = await db.select().from(affiliatePayouts).where(and(
+      eq(affiliatePayouts.affiliateId, affiliateId),
+      eq(affiliatePayouts.periodLabel, bounds.label),
+      inArray(affiliatePayouts.status, ["draft", "approved", "paid"]),
+    )).limit(1);
+    if (existing) {
+      return res.status(409).json({
+        error: `A ${bounds.label} payout already exists for this affiliate.`,
+        payout: existing,
+      });
+    }
+
+    const [payout] = await db.insert(affiliatePayouts).values({
+      affiliateId,
+      periodLabel: bounds.label,
+      status: "draft",
+      createdBy: (req as any).clerkUserId ?? null,
+      notes: typeof req.body?.notes === "string" ? req.body.notes : null,
+    }).returning();
+
+    // Claim the rows. Guarded on status so a concurrent commit cannot settle
+    // the same commission twice.
+    const claimed = await db.update(affiliateCommissions)
+      .set({ status: "paid", payoutId: payout!.id, paidAt: new Date() })
+      .where(and(
+        eq(affiliateCommissions.affiliateId, affiliateId),
+        eq(affiliateCommissions.status, "payable"),
+        lt(affiliateCommissions.payableAt, bounds.end),
+      ))
+      .returning({ commissionUsd: affiliateCommissions.commissionUsd });
+
+    const carried = await db.select().from(affiliatePayouts).where(and(
+      eq(affiliatePayouts.affiliateId, affiliateId),
+      eq(affiliatePayouts.status, "carried"),
+    ));
+    const carriedBalance = carried.reduce((sum, row) => sum + (row.netUsd ?? 0), 0);
+
+    const assembly = assemblePayout(
+      claimed.map((row) => ({ commissionUsd: row.commissionUsd ?? 0 })),
+      0,
+      carriedBalance,
+    );
+
+    const [finalized] = await db.update(affiliatePayouts)
+      .set({
+        grossUsd: assembly.grossUsd,
+        adjustmentsUsd: assembly.adjustmentsUsd,
+        netUsd: assembly.netUsd,
+        status: assembly.status,
+      })
+      .where(eq(affiliatePayouts.id, payout!.id)).returning();
+
+    // Carried balances that have now been rolled into this payout are closed,
+    // so the next quarter does not count them a second time.
+    if (carried.length > 0) {
+      await db.update(affiliatePayouts)
+        .set({ status: "paid", notes: `Rolled into ${bounds.label}` })
+        .where(inArray(affiliatePayouts.id, carried.map((row) => row.id)));
+    }
+
+    return res.status(201).json({
+      ...finalized,
+      commissionsSettled: claimed.length,
+      meetsMinimum: assembly.meetsMinimum,
+      minimumPayoutUsd: MINIMUM_PAYOUT_USD,
+      taxInfoOnFile: affiliate.taxInfoReceivedAt != null,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to create payout" });
+  }
+});
+
+// ─── PATCH /api/affiliates/payouts/:payoutId — mark approved or paid ─────────
+
+router.patch("/payouts/:payoutId", requireSuperAdmin, async (req, res) => {
+  const status = req.body?.status;
+  if (!["approved", "paid"].includes(status)) {
+    return res.status(400).json({ error: "status must be 'approved' or 'paid'." });
+  }
+  try {
+    const patch: Record<string, unknown> = { status };
+    if (status === "paid") patch.paidAt = new Date();
+    // A reference, not an account number — see the payout field comments on
+    // the affiliates table.
+    if (typeof req.body?.reference === "string") patch.reference = req.body.reference.trim() || null;
+
+    const [updated] = await db.update(affiliatePayouts).set(patch)
+      .where(eq(affiliatePayouts.id, String(req.params.payoutId))).returning();
+    if (!updated) return res.status(404).json({ error: "Payout not found" });
+    return res.json(updated);
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to update payout" });
+  }
+});
+
+// ─── GET /api/affiliates/reports/download?type=&month=|quarter= ──────────────
+
+router.get("/reports/download", requireAnyAdmin, async (req, res) => {
+  const type = typeof req.query.type === "string" ? req.query.type : "";
+  const now = new Date();
+
+  try {
+    if (type === "affiliates") {
+      const rows = await db.select().from(affiliates).orderBy(desc(affiliates.createdAt));
+      const referred = await db
+        .select({
+          referralCode: accounts.referralCode,
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) filter (where ${accounts.subscriptionStatus} = 'active')::int`,
+        })
+        .from(accounts).groupBy(accounts.referralCode);
+      const referredByCode = new Map(referred.filter((r) => r.referralCode).map((r) => [r.referralCode as string, r]));
+
+      const csv = toCsv(
+        ["Referral Code", "Company", "Contact", "Email", "Status", "Rate %", "Activity Status",
+         "Last Qualifying Referral", "Referred Accounts", "Active Referred", "Tax Info On File", "Enrolled"],
+        rows.map((r) => {
+          const ref = referredByCode.get(r.referralCode);
+          return [
+            r.referralCode, r.companyName, r.contactName, r.email, r.status, r.commissionRatePct,
+            affiliateSummaryFields(r, now).activityStatus,
+            r.lastQualifyingReferralAt?.toISOString().slice(0, 10) ?? "",
+            ref?.total ?? 0, ref?.active ?? 0,
+            r.taxInfoReceivedAt ? "yes" : "no",
+            r.createdAt?.toISOString().slice(0, 10) ?? "",
+          ];
+        }),
+      );
+      return sendCsv(res, `cop-suite-affiliates-${now.toISOString().slice(0, 10)}.csv`, csv);
+    }
+
+    if (type === "commissions") {
+      const { start, end, label } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
+      const rows = await db
+        .select({
+          accruedAt: affiliateCommissions.accruedAt,
+          payableAt: affiliateCommissions.payableAt,
+          status: affiliateCommissions.status,
+          qualifyingRevenueUsd: affiliateCommissions.qualifyingRevenueUsd,
+          ratePct: affiliateCommissions.ratePct,
+          commissionUsd: affiliateCommissions.commissionUsd,
+          referralCode: affiliates.referralCode,
+          companyName: affiliates.companyName,
+          facilityName: accounts.facilityName,
+        })
+        .from(affiliateCommissions)
+        .innerJoin(affiliates, eq(affiliateCommissions.affiliateId, affiliates.id))
+        .innerJoin(accounts, eq(affiliateCommissions.accountId, accounts.id))
+        .where(and(gte(affiliateCommissions.accruedAt, start), lt(affiliateCommissions.accruedAt, end)))
+        .orderBy(desc(affiliateCommissions.accruedAt));
+
+      const csv = toCsv(
+        ["Accrued", "Payable", "Status", "Referral Code", "Affiliate", "Customer",
+         "Qualifying Revenue USD", "Rate %", "Commission USD"],
+        rows.map((r) => [
+          r.accruedAt?.toISOString().slice(0, 10) ?? "",
+          r.payableAt?.toISOString().slice(0, 10) ?? "",
+          r.status, r.referralCode, r.companyName, r.facilityName,
+          (r.qualifyingRevenueUsd ?? 0).toFixed(2), r.ratePct, (r.commissionUsd ?? 0).toFixed(2),
+        ]),
+      );
+      return sendCsv(res, `cop-suite-affiliate-commissions-${label.replace(/ /g, "-")}.csv`, csv);
+    }
+
+    if (type === "payouts") {
+      const rows = await db
+        .select({
+          periodLabel: affiliatePayouts.periodLabel,
+          status: affiliatePayouts.status,
+          grossUsd: affiliatePayouts.grossUsd,
+          adjustmentsUsd: affiliatePayouts.adjustmentsUsd,
+          netUsd: affiliatePayouts.netUsd,
+          paidAt: affiliatePayouts.paidAt,
+          reference: affiliatePayouts.reference,
+          referralCode: affiliates.referralCode,
+          companyName: affiliates.companyName,
+        })
+        .from(affiliatePayouts)
+        .innerJoin(affiliates, eq(affiliatePayouts.affiliateId, affiliates.id))
+        .orderBy(desc(affiliatePayouts.createdAt));
+
+      const csv = toCsv(
+        ["Quarter", "Referral Code", "Affiliate", "Status", "Gross USD", "Adjustments USD", "Net USD", "Paid", "Reference"],
+        rows.map((r) => [
+          r.periodLabel, r.referralCode, r.companyName, r.status,
+          (r.grossUsd ?? 0).toFixed(2), (r.adjustmentsUsd ?? 0).toFixed(2), (r.netUsd ?? 0).toFixed(2),
+          r.paidAt?.toISOString().slice(0, 10) ?? "", r.reference ?? "",
+        ]),
+      );
+      return sendCsv(res, `cop-suite-affiliate-payouts-${now.toISOString().slice(0, 10)}.csv`, csv);
+    }
+
+    if (type === "attribution") {
+      // Every account carrying a referral code, including codes that match no
+      // affiliate — an unmatched code is a real operational problem (a customer
+      // who believes they were referred and an affiliate who will ask why they
+      // were not credited), so it belongs in the report rather than filtered out.
+      const rows = await db
+        .select({
+          facilityName: accounts.facilityName,
+          referralCode: accounts.referralCode,
+          subscriptionStatus: accounts.subscriptionStatus,
+          createdAt: accounts.createdAt,
+          state: accounts.state,
+          affiliateName: affiliates.companyName,
+        })
+        .from(accounts)
+        .leftJoin(affiliates, eq(accounts.referralCode, affiliates.referralCode))
+        .where(sql`${accounts.referralCode} is not null`)
+        .orderBy(desc(accounts.createdAt));
+
+      const csv = toCsv(
+        ["Registered", "Customer", "State", "Subscription", "Referral Code", "Matched Affiliate"],
+        rows.map((r) => [
+          r.createdAt?.toISOString().slice(0, 10) ?? "",
+          r.facilityName, r.state, r.subscriptionStatus, r.referralCode,
+          r.affiliateName ?? "— UNMATCHED CODE —",
+        ]),
+      );
+      return sendCsv(res, `cop-suite-affiliate-attribution-${now.toISOString().slice(0, 10)}.csv`, csv);
+    }
+
+    // Unlike the client report endpoint, an unknown type is an explicit error
+    // rather than an empty 200 with a blank filename.
+    return res.status(400).json({
+      error: "Unknown report type.",
+      supported: ["affiliates", "commissions", "payouts", "attribution"],
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message ?? "Unable to build report" });
+  }
+});
+
+export default router;

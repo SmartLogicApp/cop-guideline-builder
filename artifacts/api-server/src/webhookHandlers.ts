@@ -6,6 +6,10 @@ import {
   getStripeWebhookSecret,
   stripeRequest,
 } from "./stripeClient";
+import {
+  accrueCommissionForPayment,
+  reverseCommissionForInvoice,
+} from "./lib/affiliate-accrual.js";
 
 type SubscriptionLike = Stripe.Subscription & {
   current_period_start?: number;
@@ -18,6 +22,64 @@ type SubscriptionLike = Stripe.Subscription & {
 
 function timestamp(seconds: number | null | undefined) {
   return seconds ? new Date(seconds * 1000) : null;
+}
+
+/**
+ * The part of an invoice that is NOT subscription revenue (§7.1 excludes
+ * professional services, implementation and consulting fees).
+ *
+ * Identified by Stripe's own price type rather than by reading descriptions: a
+ * recurring price is subscription revenue, anything one-off is not. Guessing
+ * from a line's wording would make the commission base depend on how an
+ * invoice happened to be labelled.
+ *
+ * Returns minor units, matching every other amount on a Stripe invoice.
+ */
+function nonSubscriptionAmount(invoice: Stripe.Invoice): number {
+  const lines = invoice.lines?.data ?? [];
+  return lines.reduce((sum, line) => {
+    const price = (line as any).price ?? (line as any).pricing?.price_details;
+    const isRecurring = price?.type === "recurring" || price?.recurring != null;
+    return isRecurring ? sum : sum + (line.amount ?? 0);
+  }, 0);
+}
+
+/**
+ * Bridge from a paid Stripe invoice to the affiliate accrual.
+ *
+ * The account is found by Stripe customer ID, which is the only link that
+ * survives regardless of how the subscription was created.
+ */
+async function accrueCommissionFromInvoice(invoice: Stripe.Invoice): Promise<void> {
+  const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+  if (!customerId || !invoice.id) return;
+  if (!invoice.amount_paid || invoice.amount_paid <= 0) return;
+
+  const [account] = await db.select({ id: accounts.id })
+    .from(accounts).where(eq(accounts.stripeCustomerId, customerId)).limit(1);
+  if (!account) return;
+
+  const outcome = await accrueCommissionForPayment({
+    accountId: account.id,
+    stripeInvoiceId: invoice.id,
+    paidAt: timestamp(invoice.status_transitions?.paid_at) ?? new Date(),
+    invoice: {
+      amountPaid: invoice.amount_paid,
+      tax: (invoice as any).tax ?? (invoice as any).total_taxes?.reduce(
+        (sum: number, t: any) => sum + (t.amount ?? 0), 0) ?? 0,
+      total: invoice.total,
+      currency: invoice.currency,
+      nonSubscriptionAmount: nonSubscriptionAmount(invoice),
+    },
+  });
+
+  // Logged either way. An affiliate asking "why was this invoice not credited
+  // to me?" is answerable from the logs rather than from reasoning about it.
+  if (outcome.accrued) {
+    console.log(`[affiliate] accrued $${outcome.commissionUsd} at ${outcome.ratePct}% on invoice ${invoice.id}`);
+  } else if (outcome.reason !== "no-referral-code") {
+    console.log(`[affiliate] no accrual on invoice ${invoice.id}: ${outcome.reason}`);
+  }
 }
 
 async function syncSubscription(subscription: SubscriptionLike) {
@@ -92,6 +154,37 @@ export class WebhookHandlers {
         // Retrieve current state so duplicate or out-of-order events converge.
         const subscription = await retrieveSubscription(event.data.object as Stripe.Subscription);
         if (subscription) await syncSubscription(subscription);
+        break;
+      }
+      case "invoice.payment_succeeded": {
+        // Affiliate commission accrual. Wrapped so a failure here can never
+        // fail the webhook: the customer's payment has already succeeded, and
+        // returning an error would make Stripe retry an event that was handled
+        // correctly. A missed accrual is recoverable by hand from the invoice;
+        // a retry storm against the subscription sync is not.
+        try {
+          await accrueCommissionFromInvoice(event.data.object as Stripe.Invoice);
+        } catch (error) {
+          console.error("[affiliate] accrual failed for invoice", (event.data.object as any)?.id, error);
+        }
+        break;
+      }
+      case "charge.refunded":
+      case "charge.dispute.created": {
+        // §25 — the customer's money went back, so the commission on it is
+        // cancelled (or deducted from a future payout if already paid).
+        try {
+          const charge = event.data.object as Stripe.Charge & { invoice?: string | { id?: string } | null };
+          const invoiceId = typeof charge.invoice === "string" ? charge.invoice : charge.invoice?.id;
+          if (invoiceId) {
+            await reverseCommissionForInvoice(
+              invoiceId,
+              event.type === "charge.refunded" ? "Customer payment refunded" : "Customer chargeback",
+            );
+          }
+        } catch (error) {
+          console.error("[affiliate] reversal failed for", event.type, error);
+        }
         break;
       }
       case "invoice.payment_failed": {

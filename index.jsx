@@ -4101,6 +4101,52 @@ const TRIAL_END_PLANS = [
   },
 ];
 
+/**
+ * Shown to a signed-in user who has no account row yet.
+ *
+ * This used to fall through to TrialEndedScreen, so the first thing a brand-new
+ * customer saw — on their very first visit, seconds after signing up — was
+ * "Your 30-day trial has ended". Registration is what creates the account the
+ * trial belongs to, so until it happens there is no trial to have ended.
+ */
+function NeedsRegistrationScreen({ registerUrl, onSignOut }) {
+  return (
+    <main style={{
+      minHeight: "100dvh", background: "linear-gradient(155deg, #071A2F 0%, #0B3D8E 55%, #0D5C6B 100%)",
+      color: "#fff", fontFamily: "var(--app-font-sans, 'Inter', system-ui, sans-serif)",
+      padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{ width: "100%", maxWidth: "620px", textAlign: "center" }}>
+        <div style={{
+          width: "54px", height: "54px", borderRadius: "50%", margin: "0 auto 18px",
+          display: "grid", placeItems: "center", background: "rgba(245,197,66,0.16)",
+          border: "1px solid rgba(245,197,66,0.45)", color: "#F5C542", fontSize: "26px",
+        }} aria-hidden="true">→</div>
+        <div style={{ color: "#F5C542", fontSize: "12px", fontWeight: 800, letterSpacing: "1.5px", textTransform: "uppercase", marginBottom: "10px" }}>
+          One step left
+        </div>
+        <h1 style={{ margin: "0 0 12px", fontSize: "clamp(26px, 5vw, 40px)", lineHeight: 1.12, letterSpacing: "-1px" }}>
+          Let's set up your account
+        </h1>
+        <p style={{ margin: "0 0 28px", color: "rgba(255,255,255,0.72)", fontSize: "16px", lineHeight: 1.6 }}>
+          Tell us which organization you're with and we'll start your 30-day trial. It takes about a minute.
+        </p>
+        <a href={registerUrl} style={{
+          display: "inline-block", textDecoration: "none", borderRadius: "8px",
+          padding: "14px 28px", fontSize: "15px", fontWeight: 800,
+          background: "#F5C542", color: "#0B1F3A",
+        }}>Register your organization →</a>
+        <div style={{ marginTop: "24px" }}>
+          <button onClick={() => onSignOut?.()} style={{
+            background: "none", border: "none", color: "rgba(255,255,255,0.6)",
+            fontSize: "13px", cursor: "pointer", textDecoration: "underline",
+          }}>Sign out</button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 function TrialEndedScreen({ billingUrl, onSignOut }) {
   return (
     <main style={{
@@ -4203,9 +4249,260 @@ function AccessResolutionScreen({ failed = false, onRetry, onSignOut }) {
   );
 }
 
+// ─── Affiliate admin section (inside the Admin panel) ─────────────────────────
+
+/**
+ * The affiliate half of the Admin panel.
+ *
+ * Lives inside the existing ⚙ Admin button rather than behind a second button:
+ * clients and affiliates are two views of the same month, and an operator
+ * reconciling a commission against the revenue it came from should not have to
+ * close one panel to open the other.
+ *
+ * Read-only by default. Enrolling an affiliate and settling a payout are the
+ * two actions that move money, and both are deliberately separate clicks
+ * behind their own confirmation rather than inline edits in the table.
+ */
+function AffiliateAdminSection({ basePath, month }) {
+  const [stats, setStats] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showEnroll, setShowEnroll] = useState(false);
+  const [enrollBusy, setEnrollBusy] = useState(false);
+  const [enrollError, setEnrollError] = useState("");
+  const [form, setForm] = useState({ referralCode: "", companyName: "", contactName: "", email: "" });
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      fetch(`${basePath}/api/affiliates/stats?month=${month}`, { credentials: "include", cache: "no-store" }),
+      fetch(`${basePath}/api/affiliates`, { credentials: "include", cache: "no-store" }),
+    ])
+      .then(async ([statsResponse, listResponse]) => {
+        if (!statsResponse.ok || !listResponse.ok) throw new Error("Unable to load affiliate data");
+        return Promise.all([statsResponse.json(), listResponse.json()]);
+      })
+      .then(([statsData, listData]) => {
+        if (cancelled) return;
+        setStats(statsData);
+        setRows(Array.isArray(listData) ? listData : []);
+        setError("");
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // The tables may simply not exist yet on a database that has not been
+        // migrated. Say so plainly rather than showing an empty programme,
+        // which would look like "no affiliates" instead of "not set up".
+        setError("Could not load affiliate data. If the affiliate tables have not been created yet, run the migration first.");
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [basePath, month, reloadKey]);
+
+  async function enroll(event) {
+    event.preventDefault();
+    setEnrollBusy(true);
+    setEnrollError("");
+    try {
+      const response = await fetch(`${basePath}/api/affiliates`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, status: "active" }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Unable to enroll affiliate");
+      setForm({ referralCode: "", companyName: "", contactName: "", email: "" });
+      setShowEnroll(false);
+      setReloadKey((k) => k + 1);
+    } catch (enrollException) {
+      setEnrollError(enrollException.message || "Unable to enroll affiliate");
+    } finally {
+      setEnrollBusy(false);
+    }
+  }
+
+  function dl(type) {
+    window.open(
+      `${basePath}/api/affiliates/reports/download?type=${encodeURIComponent(type)}&month=${encodeURIComponent(month)}`,
+      "_blank",
+    );
+  }
+
+  const fN = (n) => (n != null ? Number(n).toLocaleString("en-US") : "—");
+  const fD = (n) => (n != null ? "$" + Number(n).toFixed(2) : "—");
+
+  const cell = { padding: "7px 8px", fontSize: "11.5px", color: "rgba(255,255,255,0.8)", whiteSpace: "nowrap" };
+  const head = { ...cell, fontSize: "9.5px", letterSpacing: "0.8px", textTransform: "uppercase", color: "rgba(255,255,255,0.38)", fontWeight: 700 };
+  const input = { width: "100%", padding: "7px 9px", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.16)", borderRadius: "6px", color: "#fff", fontSize: "12px" };
+
+  // The three states an operator needs to distinguish at a glance: on track,
+  // inside the §11 grace period, and past it.
+  const activityTone = {
+    active:      { color: "#86EFAC", label: "On track" },
+    "in-grace":  { color: "#FBBF24", label: "In grace" },
+    lapsed:      { color: "#FCA5A5", label: "Lapsed" },
+    "zero-rate": { color: "rgba(255,255,255,0.4)", label: "0% rate" },
+  };
+
+  return (
+    <div>
+      {error && (
+        <div role="alert" style={{ color: "#FCA5A5", fontSize: "11.5px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", borderRadius: "7px", padding: "9px 11px", marginBottom: "12px" }}>
+          {error}
+        </div>
+      )}
+
+      {/* Stats row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "14px" }}>
+        {[
+          { label: "Active Affiliates", value: fN(stats?.activeAffiliates), color: "#60A5FA" },
+          { label: "Referred Signups (month)", value: fN(stats?.thisMonth?.referredSignups), color: "#34D399" },
+          { label: "Pending (in holdback)", value: fD(stats?.outstanding?.pendingUsd), color: "#FBBF24" },
+          { label: "Payable Now", value: fD(stats?.outstanding?.payableUsd), color: "#C4B5FD" },
+        ].map((s) => (
+          <div key={s.label} style={{ background: "rgba(255,255,255,0.05)", borderRadius: "8px", padding: "11px 14px", border: "1px solid rgba(255,255,255,0.07)" }}>
+            <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.38)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", marginBottom: "5px" }}>{s.label}</div>
+            <div style={{ fontSize: "22px", fontWeight: 900, color: s.color, lineHeight: 1 }}>{loading ? "…" : s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {stats?.lapsingAffiliates > 0 && (
+        <div style={{ fontSize: "11.5px", color: "#FBBF24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "7px", padding: "8px 11px", marginBottom: "12px" }}>
+          {stats.lapsingAffiliates} affiliate{stats.lapsingAffiliates === 1 ? " is" : "s are"} in or past the 60-day grace period (§11).
+          A rate reduction is due unless they refer a new qualifying customer.
+        </div>
+      )}
+
+      {/* Reports row */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", marginBottom: "14px" }}>
+        <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", marginRight: "4px" }}>Affiliate Reports:</span>
+        {[
+          { id: "affiliates",  label: "👥 Affiliate List" },
+          { id: "commissions", label: "💵 Commissions" },
+          { id: "attribution", label: "🔗 Attribution" },
+          { id: "payouts",     label: "🏦 Payouts" },
+        ].map((r) => (
+          <button key={r.id} onClick={() => dl(r.id)} style={{ padding: "6px 14px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "6px", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+            {r.label}
+          </button>
+        ))}
+        <span style={{ flex: 1 }} />
+        <button
+          onClick={() => setShowEnroll((open) => !open)}
+          style={{ padding: "6px 14px", background: showEnroll ? "#F5C542" : "rgba(245,197,66,0.2)", border: "1px solid #F5C542", borderRadius: "6px", color: showEnroll ? "#0B1F3A" : "#F5C542", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+        >
+          {showEnroll ? "Cancel" : "+ Enroll affiliate"}
+        </button>
+      </div>
+
+      {showEnroll && (
+        <form onSubmit={enroll} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", padding: "12px", marginBottom: "14px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px", marginBottom: "9px" }}>
+            <label style={{ fontSize: "10px", color: "rgba(255,255,255,0.45)", fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase" }}>
+              Referral code
+              <input required value={form.referralCode} onChange={(e) => setForm({ ...form, referralCode: e.target.value.toUpperCase() })} placeholder="NORTHSTAR" style={{ ...input, marginTop: "4px" }} />
+            </label>
+            <label style={{ fontSize: "10px", color: "rgba(255,255,255,0.45)", fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase" }}>
+              Company
+              <input required value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} style={{ ...input, marginTop: "4px" }} />
+            </label>
+            <label style={{ fontSize: "10px", color: "rgba(255,255,255,0.45)", fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase" }}>
+              Contact name
+              <input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} style={{ ...input, marginTop: "4px" }} />
+            </label>
+            <label style={{ fontSize: "10px", color: "rgba(255,255,255,0.45)", fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase" }}>
+              Email
+              <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={{ ...input, marginTop: "4px" }} />
+            </label>
+          </div>
+          {enrollError && <div role="alert" style={{ color: "#FCA5A5", fontSize: "11px", marginBottom: "8px" }}>{enrollError}</div>}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button type="submit" disabled={enrollBusy} style={{ padding: "7px 18px", background: "#F5C542", border: "none", borderRadius: "6px", color: "#0B1F3A", fontSize: "12px", fontWeight: 800, cursor: enrollBusy ? "wait" : "pointer", opacity: enrollBusy ? 0.6 : 1 }}>
+              {enrollBusy ? "Enrolling…" : "Enroll at 20%"}
+            </button>
+            <span style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.4)" }}>
+              The referral code is permanent and is never reused — a retired code would attribute new customers to an old flyer.
+            </span>
+          </div>
+        </form>
+      )}
+
+      {/* Affiliate table */}
+      {loading ? (
+        <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "12px" }}>Loading affiliates…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "12px", padding: "14px 0" }}>
+          No affiliates enrolled yet. Signups already carry their <code style={{ color: "#F5C542" }}>?ref=</code> code, so
+          attribution starts the moment an affiliate is enrolled with a matching code.
+        </div>
+      ) : (
+        <div style={{ maxHeight: "260px", overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead style={{ position: "sticky", top: 0, background: "#0B1F3A" }}>
+              <tr>
+                <th style={{ ...head, textAlign: "left" }}>Affiliate</th>
+                <th style={{ ...head, textAlign: "left" }}>Code</th>
+                <th style={{ ...head, textAlign: "right" }}>Rate</th>
+                <th style={{ ...head, textAlign: "left" }}>Activity</th>
+                <th style={{ ...head, textAlign: "right" }}>Referred</th>
+                <th style={{ ...head, textAlign: "right" }}>Pending</th>
+                <th style={{ ...head, textAlign: "right" }}>Payable</th>
+                <th style={{ ...head, textAlign: "right" }}>Paid</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const tone = activityTone[row.activityStatus] ?? activityTone.active;
+                return (
+                  <tr key={row.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                    <td style={{ ...cell, maxWidth: "190px", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <span style={{ color: "#fff", fontWeight: 700 }}>{row.companyName}</span>
+                      {row.status !== "active" && (
+                        <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "10px", marginLeft: "6px" }}>({row.status})</span>
+                      )}
+                    </td>
+                    <td style={{ ...cell, color: "#F5C542", fontFamily: "ui-monospace, monospace" }}>{row.referralCode}</td>
+                    <td style={{ ...cell, textAlign: "right", fontWeight: 800, color: row.commissionRatePct > 0 ? "#fff" : "rgba(255,255,255,0.35)" }}>{row.commissionRatePct}%</td>
+                    <td style={{ ...cell, color: tone.color, fontWeight: 700 }}>
+                      {tone.label}
+                      {row.pendingReductions?.length > 0 && (
+                        <span title="A rate reduction is due under §12/§13" style={{ marginLeft: "5px" }}>⚠</span>
+                      )}
+                    </td>
+                    <td style={{ ...cell, textAlign: "right" }}>
+                      {fN(row.referredAccounts)}
+                      <span style={{ color: "rgba(255,255,255,0.35)" }}> / {fN(row.activeReferredAccounts)} active</span>
+                    </td>
+                    <td style={{ ...cell, textAlign: "right", color: "#FBBF24" }}>{fD(row.commissions?.pendingUsd)}</td>
+                    <td style={{ ...cell, textAlign: "right", color: "#C4B5FD", fontWeight: 700 }}>{fD(row.commissions?.payableUsd)}</td>
+                    <td style={{ ...cell, textAlign: "right", color: "rgba(255,255,255,0.5)" }}>{fD(row.commissions?.paidUsd)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.3)", marginTop: "9px", lineHeight: 1.5 }}>
+        Pending = accrued but inside the 60-day holdback (§24). Payable = holdback elapsed, awaiting the next quarterly
+        payout (§8, $100 minimum). Commissions are frozen at the rate they accrued with, so a later rate change never
+        restates money already earned (§12, §13).
+      </div>
+    </div>
+  );
+}
+
 // ─── Admin Quick Panel (super-admin only, embedded in main page) ──────────────
 
 function AdminQuickPanel({ basePath, onClose }) {
+  const [section, setSection] = useState("clients");
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [facilityUsers, setFacilityUsers] = useState([]);
@@ -4284,16 +4581,45 @@ function AdminQuickPanel({ basePath, onClose }) {
           <div>
             <div style={{ color: "#F5C542", fontWeight: 800, fontSize: "15px", letterSpacing: "-0.2px" }}>⚙ Admin Quick Access</div>
             <div style={{ color: "rgba(255,255,255,0.4)", fontSize: "11px", marginTop: "2px" }}>
-              {loading ? "Loading…" : `${stats?.monthLabel ?? month} · Platform overview`}
+              {loading ? "Loading…" : `${stats?.monthLabel ?? month} · ${section === "clients" ? "Platform overview" : "Affiliate programme"}`}
             </div>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "7px 16px", background: "#F5C542", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, fontSize: "12px", whiteSpace: "nowrap" }}>
-              Admin tools
-            </span>
+            {/* Clients and affiliates are two views of the same month, so they
+                share one panel rather than one button each. */}
+            <div role="tablist" aria-label="Admin sections" style={{ display: "inline-flex", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "7px", padding: "2px" }}>
+              {[
+                { id: "clients",    label: "Clients" },
+                { id: "affiliates", label: "Affiliates" },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  role="tab"
+                  aria-selected={section === t.id}
+                  onClick={() => setSection(t.id)}
+                  style={{
+                    padding: "5px 15px",
+                    background: section === t.id ? "#F5C542" : "transparent",
+                    border: "none",
+                    borderRadius: "5px",
+                    color: section === t.id ? "#0B1F3A" : "rgba(255,255,255,0.65)",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
             <button onClick={onClose} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "6px", color: "rgba(255,255,255,0.55)", fontSize: "16px", lineHeight: 1, padding: "4px 11px", cursor: "pointer" }}>×</button>
           </div>
         </div>
+
+        {section === "affiliates" && <AffiliateAdminSection basePath={basePath} month={month} />}
+
+        {section === "clients" && (<>
 
         {/* Stats row */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "14px" }}>
@@ -4359,6 +4685,8 @@ function AdminQuickPanel({ basePath, onClose }) {
             </div>
           )}
         </div>
+
+        </>)}
 
       </div>
     </div>
@@ -4511,6 +4839,16 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
         onSignOut={handleSignOut}
       />
     );
+  }
+
+  // No account row AND no access means this person has never registered — not
+  // that a trial expired. Sending them to registration is the difference
+  // between a working signup and a dead end on their first visit.
+  //
+  // The isActive half matters: an admin gets access without an account row, and
+  // must not be bounced into registering a facility they do not represent.
+  if (!accountData?.account && !accountData?.isActive) {
+    return <NeedsRegistrationScreen registerUrl={`${basePath}/register`} onSignOut={onSignOut} />;
   }
 
   if (!accountData?.isActive) {

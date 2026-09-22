@@ -147,7 +147,14 @@ export default function BillingPage() {
         },
         body: '{}',
       });
-      const body = await response.json() as { url?: string; error?: string };
+      const body = await response.json() as { url?: string; error?: string; code?: string };
+      // Checkout refuses until the current Terms have been accepted. Without
+      // this the customer got the refusal as a bare error string and had no
+      // way to reach the acceptance page, which nothing else links to either.
+      if (response.status === 409 && body.code === 'TERMS_ACCEPTANCE_REQUIRED') {
+        window.location.assign(`${basePath}/accept-terms`);
+        return;
+      }
       if (!response.ok || !body.url) {
         throw new Error(body.error || 'Billing could not be opened. Please try again.');
       }
