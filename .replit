@@ -85,3 +85,6 @@ STRIPE_PORTAL_CONFIGURATION_ID = "bpc_1UGPfL1UzjLE6pyH3pHAW2gn"
 PAYMENT_ACCEPTANCE_ENABLED = "false"
 STRIPE_PORTAL_CONFIGURATION_ID = "bpc_1UHP4G1UzjLE6pyH8SEgPU14"
 STRIPE_PRICE_ID = "price_1UHP4G1UzjLE6pyHTKwjYdSi"
+
+[userenv.shared]
+CLERK_EMAIL_FROM = "CMS Compliance Suite <no-reply@cmscomplianceguardian.com>"
