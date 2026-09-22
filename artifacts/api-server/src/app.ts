@@ -2,6 +2,8 @@ import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import rateLimit from "express-rate-limit";
+import { extractEmail, verifyClerkWebhook } from "./lib/clerk-webhook.js";
+import { sendViaResend } from "./lib/resend-mailer.js";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
 import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from "./middlewares/clerkProxyMiddleware";
@@ -12,6 +14,11 @@ import { HealthCheckResponse } from "@workspace/api-zod";
 import { isPaymentAcceptanceEnabled } from "./lib/payment-config";
 
 const app: Express = express();
+
+/** Express gives header values as string | string[]; take the first either way. */
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 // Trust the Replit/Cloudflare proxy so express-rate-limit reads the real IP
 // from X-Forwarded-For instead of the internal proxy address.
@@ -72,6 +79,72 @@ app.post(
       );
       return res.status(400).json({ error: "Webhook processing failed" });
     }
+  },
+);
+
+// ── Clerk email webhook (must be before express.json(), like Stripe's) ───────
+//
+// Clerk is configured with "Delivered by Clerk" OFF for its email templates, so
+// instead of sending through SendGrid's shared pool it posts the message here
+// and this application sends it through Resend. See lib/resend-mailer.ts for
+// why: Outlook silently drops the SendGrid path, which made signup impossible
+// for anyone on outlook.com or hotmail.com.
+//
+// express.raw() matters. Svix signs the exact bytes received; verifying a
+// re-serialized object never matches, because JSON.stringify does not reproduce
+// key order, unicode escaping or whitespace byte-for-byte.
+app.post(
+  "/api/clerk/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const verification = verifyClerkWebhook(
+      req.body as Buffer,
+      {
+        id: firstHeader(req.headers["svix-id"]),
+        timestamp: firstHeader(req.headers["svix-timestamp"]),
+        signature: firstHeader(req.headers["svix-signature"]),
+      },
+      process.env.CLERK_WEBHOOK_SIGNING_SECRET?.trim() ?? "",
+    );
+
+    if (!verification.ok) {
+      // 401, and deliberately without echoing the reason to the caller. An
+      // unauthenticated endpoint that explains precisely why a signature failed
+      // is a tool for forging a working one.
+      logger.warn({ reason: verification.reason }, "Clerk webhook rejected");
+      return res.status(401).json({ error: "Invalid signature" });
+    }
+
+    let event: unknown;
+    try {
+      event = JSON.parse((req.body as Buffer).toString("utf8"));
+    } catch {
+      return res.status(400).json({ error: "Malformed payload" });
+    }
+
+    const email = extractEmail(event as any);
+    // Not an email event, or not a sendable one. 200 on purpose: Clerk delivers
+    // every subscribed event type here, and answering non-2xx would make it
+    // retry events that were handled correctly by ignoring them.
+    if (!email) return res.status(200).json({ received: true, sent: false });
+
+    const result = await sendViaResend(email);
+    if (!result.sent) {
+      // 500 so Clerk retries. A verification code that failed to send is worth
+      // another attempt — the alternative is a customer staring at a sign-in
+      // screen for a code that will never arrive.
+      logger.error(
+        { slug: email.slug, status: result.status, errorMessage: result.error },
+        "Clerk email send failed",
+      );
+      return res.status(500).json({ error: "Send failed" });
+    }
+
+    // The recipient address is NOT logged. These messages carry login codes,
+    // and the pairing of address and timestamp in a log is exactly what should
+    // not be sitting in a log aggregator.
+    logger.info({ slug: email.slug, resendId: result.id }, "Clerk email sent via Resend");
+    return res.status(200).json({ received: true, sent: true });
   },
 );
 
