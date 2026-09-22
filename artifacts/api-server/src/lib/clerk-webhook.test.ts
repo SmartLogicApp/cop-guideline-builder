@@ -264,5 +264,24 @@ test("a failed send asks Clerk to retry", () => {
     appSource.indexOf('app.post(\n  "/api/clerk/webhook"'),
     appSource.indexOf("// ── Body parsers"),
   );
-  assert.match(route, /if \(!result\.sent\)[\s\S]{0,400}res\.status\(500\)/);
+  // Ordering, not proximity. Asserting the 500 sat within N characters of the
+  // guard broke when one field was added to the log line, while the defence
+  // itself was untouched -- a test that fails for the wrong reason teaches you
+  // to ignore it.
+  const guardAt = route.indexOf("if (!result.sent)");
+  const retryAt = route.indexOf("res.status(500)");
+  const successAt = route.indexOf("sent: true");
+  assert.ok(guardAt > 0, "the send-failure guard must exist");
+  assert.ok(retryAt > guardAt, "a failed send must answer 500 so Clerk retries");
+  assert.ok(retryAt < successAt, "the 500 must sit inside the failure branch");
+});
+
+test("the send failure log names which transport was used", () => {
+  // Resend is reachable two ways and they fail differently -- the connector
+  // returned 401 in production and 400 in the workspace on the same day. A
+  // failure log that omits the transport costs an hour of guessing.
+  const guardAt = appSource.indexOf("if (!result.sent)");
+  const retryAt = appSource.indexOf("res.status(500)");
+  assert.ok(guardAt > 0 && retryAt > guardAt, "the send-failure branch must exist");
+  assert.match(appSource.slice(guardAt, retryAt), /transport: result\.transport/);
 });

@@ -7,6 +7,7 @@ import {
   requireSuperAdmin,
 } from "../lib/admin-guards.js";
 import { monthBounds, toCsv } from "../lib/report-format.js";
+import { deliver } from "../lib/resend-mailer.js";
 import { db } from "@workspace/db";
 import { adminUsers, accounts, accountUsers, tokenUsage } from "@workspace/db";
 import { eq, and, gte, lt, desc, isNull, inArray } from "drizzle-orm";
@@ -37,6 +38,11 @@ import {
  */
 function getTrialEmailFrom(): string {
   return process.env.TRIAL_EMAIL_FROM?.trim()
+    // CLERK_EMAIL_FROM is already set to a verified address on our own domain
+    // for login codes. Falling back to it means these notices send correctly
+    // with no extra configuration, instead of defaulting to a shared test
+    // domain that cannot reach a customer at all.
+    || process.env.CLERK_EMAIL_FROM?.trim()
     || "CMS Compliance Suite <onboarding@resend.dev>";
 }
 
@@ -101,23 +107,18 @@ router.post("/cron/usage-alerts", requireCronOrSuperAdmin, async (_req, res) => 
       });
     }
 
-    const { ReplitConnectors } = await import("@replit/connectors-sdk");
-    const connectors = new ReplitConnectors();
-    const emailResponse = await connectors.proxy("resend", "/emails", {
-      method: "POST",
-      body: JSON.stringify({
-        from: getTrialEmailFrom(),
-        to: [getUsageAlertRecipient()],
-        subject: USAGE_ALERT_SUBJECT,
-        html: usageAlertEmailHtml({
-          rows,
-          thresholdUsd,
-          monthLabel: now.toLocaleString("en-US", { month: "long", year: "numeric" }),
-          totalAccounts: allAccounts.length,
-        }),
+    const emailResult = await deliver({
+      from: getTrialEmailFrom(),
+      to: [getUsageAlertRecipient()],
+      subject: USAGE_ALERT_SUBJECT,
+      html: usageAlertEmailHtml({
+        rows,
+        thresholdUsd,
+        monthLabel: now.toLocaleString("en-US", { month: "long", year: "numeric" }),
+        totalAccounts: allAccounts.length,
       }),
     });
-    if (!emailResponse.ok) throw new Error(await emailResponse.text());
+    if (!emailResult.sent) throw new Error(emailResult.error);
 
     return res.json({ ok: true, matched: rows.length, thresholdUsd, sent: true });
   } catch (error: any) {
@@ -171,8 +172,6 @@ router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) =>
       usersByAccount.set(user.accountId, current);
     }
 
-    const { ReplitConnectors } = await import("@replit/connectors-sdk");
-    const connectors = new ReplitConnectors();
     let sent = 0;
     let skipped = 0;
     const failed: Array<{ accountId: string; error: string }> = [];
@@ -193,20 +192,17 @@ router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) =>
       if (!claimed) continue;
 
       try {
-        const emailResponse = await connectors.proxy("resend", "/emails", {
-          method: "POST",
-          body: JSON.stringify({
-            from: getTrialEmailFrom(),
-            to: [recipient],
-            subject: TRIAL_WARNING_SUBJECT,
-            html: trialWarningEmailHtml({
-              facilityName: account.facilityName,
-              trialEndsAt: account.trialEndsAt,
-              billingUrl,
-            }),
+        const emailResult = await deliver({
+          from: getTrialEmailFrom(),
+          to: [recipient],
+          subject: TRIAL_WARNING_SUBJECT,
+          html: trialWarningEmailHtml({
+            facilityName: account.facilityName,
+            trialEndsAt: account.trialEndsAt,
+            billingUrl,
           }),
         });
-        if (!emailResponse.ok) throw new Error(await emailResponse.text());
+        if (!emailResult.sent) throw new Error(emailResult.error);
         sent++;
       } catch (error: any) {
         // Release the claim so a later scheduler run can retry a provider failure.
@@ -576,23 +572,18 @@ router.post("/reports/email", requireAnyAdmin, async (req, res) => {
       </div>
     `;
 
-    // Send via Replit Connectors (Resend integration)
-    const { ReplitConnectors } = await import("@replit/connectors-sdk");
-    const connectors = new ReplitConnectors();
-
-    const emailRes = await connectors.proxy("resend", "/emails", {
-      method: "POST",
-      body: JSON.stringify({
-        from:    "CMS Compliance Suite <onboarding@resend.dev>",
-        to:      recipients,
-        subject: `[CMS Compliance Suite] ${subjectMap[type] ?? "Report"} — ${label}`,
-        html:    htmlBody,
-      }),
+    // getTrialEmailFrom(), not a hardcoded onboarding@resend.dev. That shared
+    // test domain only delivers to the Resend account owner, so this report
+    // could never reach anyone else -- and it failed silently when it tried.
+    const emailRes = await deliver({
+      from:    getTrialEmailFrom(),
+      to:      recipients,
+      subject: `[CMS Compliance Suite] ${subjectMap[type] ?? "Report"} — ${label}`,
+      html:    htmlBody,
     });
 
-    if (!emailRes.ok) {
-      const errBody = await emailRes.text();
-      return res.status(502).json({ error: `Email provider error: ${errBody}` });
+    if (!emailRes.sent) {
+      return res.status(502).json({ error: `Email provider error: ${emailRes.error}` });
     }
 
     return res.json({ ok: true, sent: recipients.length });

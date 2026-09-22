@@ -134,7 +134,12 @@ app.post(
       // another attempt — the alternative is a customer staring at a sign-in
       // screen for a code that will never arrive.
       logger.error(
-        { slug: email.slug, status: result.status, errorMessage: result.error },
+        {
+          slug: email.slug,
+          transport: result.transport,
+          status: result.status,
+          errorMessage: result.error,
+        },
         "Clerk email send failed",
       );
       return res.status(500).json({ error: "Send failed" });
@@ -143,7 +148,10 @@ app.post(
     // The recipient address is NOT logged. These messages carry login codes,
     // and the pairing of address and timestamp in a log is exactly what should
     // not be sitting in a log aggregator.
-    logger.info({ slug: email.slug, resendId: result.id }, "Clerk email sent via Resend");
+    logger.info(
+      { slug: email.slug, transport: result.transport, resendId: result.id },
+      "Clerk email sent via Resend",
+    );
     return res.status(200).json({ received: true, sent: true });
   },
 );

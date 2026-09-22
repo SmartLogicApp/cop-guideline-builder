@@ -44,6 +44,15 @@ export type OutboundEmail = {
   text?: string;
 };
 
+/** A message with its sender already decided. See deliver(). */
+export type Deliverable = {
+  from: string;
+  to: string[];
+  subject: string;
+  html: string;
+  text?: string;
+};
+
 export type SendResult =
   | { sent: true; id?: string; transport: Transport }
   | { sent: false; status?: number; error: string; transport: Transport | "none" };
@@ -104,12 +113,36 @@ export async function sendViaResend(email: OutboundEmail): Promise<SendResult> {
     };
   }
 
-  const payload = JSON.stringify({
+  return deliver({
     from,
     to: [email.to],
     subject: email.subject,
     html: email.html,
     ...(email.text ? { text: email.text } : {}),
+  });
+}
+
+/**
+ * One message, one sender, any recipients.
+ *
+ * This is the single place in the application that talks to Resend. It exists
+ * because the trial notices, the usage alert and the admin reports each used
+ * to open their own connection to the Replit connector, so when that
+ * credential died on 2026-09-22 it took all of them down at once and none of
+ * them said so -- three separate silent failures with one cause. Routing every
+ * send through here means one transport decision, one error shape, and one
+ * place to fix when a provider changes.
+ *
+ * Callers supply their own `from` because they legitimately differ: login
+ * codes must come from a verified domain, while other notices may not.
+ */
+export async function deliver(mail: Deliverable): Promise<SendResult> {
+  const payload = JSON.stringify({
+    from: mail.from,
+    to: mail.to,
+    subject: mail.subject,
+    html: mail.html,
+    ...(mail.text ? { text: mail.text } : {}),
   });
 
   const apiKey = getResendApiKey();
