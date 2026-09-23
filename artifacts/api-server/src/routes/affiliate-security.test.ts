@@ -38,6 +38,52 @@ function codeOnly(source: string): string {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
+function routeSection(start: string, end: string): string {
+  const begin = routes.indexOf(start);
+  const finish = routes.indexOf(end, begin + start.length);
+  assert.ok(begin >= 0 && finish > begin, `missing route section: ${start}`);
+  return codeOnly(routes.slice(begin, finish));
+}
+
+test("affiliate handlers keep their own database targets after a merge", () => {
+  const apply = routeSection('router.post("/apply"', 'async function provisionalReferralCode');
+  assert.match(apply, /from\(affiliates\)\.where\(eq\(affiliates\.email,\s*email\)\)/);
+
+  const enroll = routeSection('router.post("/", requireSuperAdmin', 'router.patch("/:id"');
+  assert.match(enroll, /db\.insert\(affiliates\)/);
+  assert.doesNotMatch(enroll, /db\.insert\(affiliateCommissions\)/);
+
+  const patch = routeSection('router.patch("/:id"', 'router.post("/:id/approve"');
+  const approve = routeSection('router.post("/:id/approve"', 'router.post("/:id/rate"');
+  const rate = routeSection('router.post("/:id/rate"', 'router.post("/:id/commissions"');
+  for (const section of [patch, approve, rate]) {
+    assert.match(section, /db\.update\(affiliates\)/);
+    assert.doesNotMatch(section, /db\.update\(affiliatePayouts\)/);
+  }
+
+  const reverse = routeSection('router.post("/commissions/:commissionId/reverse"', 'router.post("/cron/maturity-sweep"');
+  assert.match(reverse, /db\.update\(affiliateCommissions\)/);
+  assert.match(reverse, /eq\(affiliateCommissions\.id,\s*String\(req\.params\.commissionId\)\)/);
+  assert.doesNotMatch(reverse, /db\.update\(affiliatePayouts\)/);
+});
+
+test("payout preview and report exports retain their distinct data shapes", () => {
+  const preview = routeSection('router.get("/payouts/preview"', 'router.post("/payouts"');
+  assert.match(preview, /req\.query\.quarter/);
+  assert.match(preview, /affiliateRows\s*\.map/);
+  assert.match(preview, /assemblePayout\(/);
+  assert.doesNotMatch(preview, /req\.body\??\.quarter/);
+
+  const reports = routeSection('router.get("/reports/download"', 'export default router');
+  assert.deepEqual(
+    [...reports.matchAll(/if \(type === "(affiliates|commissions|payouts|attribution)"\)/g)].map((match) => match[1]),
+    ["affiliates", "commissions", "payouts", "attribution"],
+  );
+  assert.match(reports, /cop-suite-affiliate-commissions-/);
+  assert.match(reports, /cop-suite-affiliate-payouts-/);
+  assert.match(reports, /cop-suite-affiliate-attribution-/);
+});
+
 // ─── Every affiliate route is admin-guarded ──────────────────────────────────
 
 test("exactly one affiliate route is public, and it is the application form", () => {
