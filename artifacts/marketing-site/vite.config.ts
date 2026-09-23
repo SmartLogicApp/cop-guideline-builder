@@ -1,10 +1,12 @@
 import path from 'path';
+import { readFileSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, type Plugin } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 import { validateProductionClerkCredentials } from './scripts/validate-clerk-credentials.mjs';
+import { buildTerms } from './src/legal/terms-v1';
 
 const rawPort = process.env.PORT;
 
@@ -22,6 +24,28 @@ if (Number.isNaN(port) || port <= 0) {
 
 const basePath = process.env.BASE_PATH;
 const buildOutDir = process.env.BUILD_OUT_DIR ?? 'dist/public';
+
+function publicTermsPlugin(): Plugin {
+  const virtualId = '\0virtual:public-terms-v1';
+  return {
+    name: 'public-terms-build-time-only',
+    resolveId(source) {
+      if (source === 'virtual:public-terms-v1') return virtualId;
+    },
+    load(id) {
+      if (id !== virtualId) return;
+      const draft = readFileSync(
+        path.resolve(
+          import.meta.dirname,
+          '../../attached_assets/Pasted--IMPLEMENTATION-NOTE-FOR-REPLIT-AGENT-DO-NOT-DISPLAY-TO_1788789158586.txt',
+        ),
+        'utf8',
+      );
+      const publicTerms = buildTerms(draft);
+      return `export const termsV1 = ${JSON.stringify(publicTerms)};`;
+    },
+  };
+}
 
 function authBoundaryBuildMetadata(): Plugin {
   return {
@@ -68,6 +92,7 @@ export default defineConfig(async ({ command }) => {
     react(),
     tailwindcss({ optimize: false }),
     runtimeErrorOverlay(),
+    publicTermsPlugin(),
     authBoundaryBuildMetadata(),
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined

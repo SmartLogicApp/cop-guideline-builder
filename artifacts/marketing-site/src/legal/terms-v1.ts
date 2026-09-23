@@ -1,8 +1,7 @@
-import source from '@assets/Pasted--IMPLEMENTATION-NOTE-FOR-REPLIT-AGENT-DO-NOT-DISPLAY-TO_1788789158586.txt?raw';
-
 const publicationDate = 'September 7, 2026';
 
-function buildTerms(): string {
+// Build-time only: the draft must never be imported by browser code.
+export function buildTerms(source: string): string {
   const start = source.indexOf('# CMS COMPLIANCE SUITE — TERMS OF SERVICE');
   const end = source.indexOf('# ATTORNEY REVIEW NOTES');
 
@@ -104,5 +103,3 @@ Because paid checkout is not active, there are currently no subscription payment
     )
     .trim();
 }
-
-export const termsV1 = buildTerms();

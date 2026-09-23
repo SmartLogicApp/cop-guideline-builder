@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { termsV1 } from '@/legal/terms-v1';
+import { termsV1 } from 'virtual:public-terms-v1';
 // import { termsV2 } from '@/legal/terms-v2';
 
 /**

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +13,22 @@ const {
 
 export const PUBLIC_ENTRY_BUDGET_BYTES = 450 * 1024;
 export const PUBLIC_CSS_BUDGET_BYTES = 105 * 1024;
+
+async function assertNoDraftNotes(outDir) {
+  const entries = await readdir(outDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const file = path.join(outDir, entry.name);
+    if (entry.isDirectory()) {
+      await assertNoDraftNotes(file);
+    } else if (entry.isFile() && /\.(?:js|mjs|html|css)$/.test(entry.name)) {
+      const contents = await readFile(file, 'utf8');
+      assert.ok(
+        !/# ATTORNEY REVIEW NOTES|IMPLEMENTATION NOTE FOR REPLIT AGENT|Pasted--IMPLEMENTATION-NOTE-FOR-REPLIT-AGENT/i.test(contents),
+        `Draft-only attorney review notes were included in public output: ${file}`,
+      );
+    }
+  }
+}
 
 function collectStaticImports(manifest, startKey) {
   const visited = new Set();
@@ -43,6 +59,7 @@ export async function checkPublicBundleBoundary({
   budgetBytes = PUBLIC_ENTRY_BUDGET_BYTES,
   cssBudgetBytes = PUBLIC_CSS_BUDGET_BYTES,
 }) {
+  await assertNoDraftNotes(outDir);
   const manifestPath = path.join(outDir, '.vite', 'manifest.json');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   const {

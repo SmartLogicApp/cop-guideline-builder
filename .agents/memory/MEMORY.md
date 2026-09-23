@@ -23,3 +23,4 @@
 - [Prospective affiliate activation pause](affiliate-activation-boundary.md) — pause new paid partners during terms review without freezing existing partners' earned commissions.
 - [GitHub API versus Git transport](github-api-git-transport.md) — a healthy GitHub connector can coexist with unusable shell Git credentials; verify pushes separately.
 - [Trial audience boundary](trial-audience-boundary.md) — direct customers require payment upfront; consultant affiliates keep a no-card trial until day 30.
+- [Public document bundling boundary](public-document-bundling.md) — trim and transform draft documents before Vite embeds them; runtime slicing leaks the original raw import.
