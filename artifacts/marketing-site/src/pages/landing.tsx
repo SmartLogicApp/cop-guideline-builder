@@ -12,6 +12,8 @@ const TERMS_URL = siteUrl("/terms");
 const PRIVACY_URL = siteUrl("/privacy");
 const AFFILIATES_URL = siteUrl("/affiliates");
 const CONTACT_URL = mailto(CONTACT_EMAIL_MAIN, "Enterprise Inquiry");
+const TRIAL_DISCLOSURE =
+  "30-day free trial. A valid payment method is required to start. Unless you cancel before the trial ends, you will be charged $299/month automatically on day 31.";
 
 const fadeIn = {
   initial: { opacity: 0, y: 20 },
@@ -78,6 +80,9 @@ export default function LandingPage() {
                   Learn more <ArrowRight className="h-4 w-4" />
                 </a>
               </motion.div>
+              <motion.p variants={fadeIn} className="mt-4 max-w-xl mx-auto text-sm leading-6 text-slate-600">
+                {TRIAL_DISCLOSURE}
+              </motion.p>
             </motion.div>
           </div>
         </section>
@@ -236,7 +241,9 @@ export default function LandingPage() {
                   <Button className="w-full h-12 text-base" asChild>
                     <a href={SIGN_UP_URL}>Start Free Trial</a>
                   </Button>
-                  <p className="text-xs text-center text-slate-500">30-day free trial · No credit card required</p>
+                  <p className="text-xs text-center text-slate-500">
+                    30-day free trial · Card required upfront · First $299 charge on day 31 unless canceled
+                  </p>
                 </CardFooter>
               </Card>
             </div>

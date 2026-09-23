@@ -22,3 +22,4 @@
 - [Browser document parsing compatibility](browser-document-parsing.md) — verify PDF.js in the actual preview browser; newer builds may require unsupported JS APIs.
 - [Prospective affiliate activation pause](affiliate-activation-boundary.md) — pause new paid partners during terms review without freezing existing partners' earned commissions.
 - [GitHub API versus Git transport](github-api-git-transport.md) — a healthy GitHub connector can coexist with unusable shell Git credentials; verify pushes separately.
+- [Trial audience boundary](trial-audience-boundary.md) — direct customers require payment upfront; consultant affiliates keep a no-card trial until day 30.
