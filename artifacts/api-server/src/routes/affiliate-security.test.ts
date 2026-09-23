@@ -22,6 +22,7 @@ const accrual = readFileSync(new URL("../lib/affiliate-accrual.ts", import.meta.
 const schema = readFileSync(new URL("../../../../lib/db/src/schema/affiliates.ts", import.meta.url), "utf8");
 const webhooks = readFileSync(new URL("../webhookHandlers.ts", import.meta.url), "utf8");
 const app = readFileSync(new URL("../app.ts", import.meta.url), "utf8");
+const adminUi = readFileSync(new URL("../../../../index.jsx", import.meta.url), "utf8");
 
 /**
  * Strip comments before asserting on behaviour.
@@ -132,6 +133,29 @@ test("a referral code can only be assigned while the affiliate is pending", () =
   // PATCH must still refuse referralCode outright.
   const patch = routes.slice(routes.indexOf('router.patch("/:id"'), routes.indexOf('router.post("/:id/approve"'));
   assert.doesNotMatch(patch, /referralCode/, "PATCH must never change a referral code");
+});
+
+test("every legacy paid activation path checks the reviewed-terms gate", () => {
+  const enroll = routes.slice(routes.indexOf('router.post("/", requireSuperAdmin'), routes.indexOf('router.patch("/:id"'));
+  const patch = routes.slice(routes.indexOf('router.patch("/:id"'), routes.indexOf('router.post("/:id/approve"'));
+  const approve = routes.slice(routes.indexOf('router.post("/:id/approve"'), routes.indexOf('router.post("/:id/rate"'));
+  const rate = routes.slice(routes.indexOf('router.post("/:id/rate"'), routes.indexOf('router.post("/:id/commissions"'));
+  const manualCommission = routes.slice(routes.indexOf('router.post("/:id/commissions"'), routes.indexOf('router.post("/commissions/:commissionId/reverse"'));
+  assert.match(enroll, /if \(activationBlocked\(res\)\) return;/);
+  assert.match(patch, /body\.status === "active" && !affiliateActivationEnabled\(\)/);
+  assert.match(patch, /isBlockedAffiliateActivation\(existing\.status, body\.status\)/);
+  assert.match(patch, /eq\(affiliates\.status, "active"\)/);
+  assert.match(approve, /if \(activationBlocked\(res\)\) return;/);
+  assert.match(rate, /row\.status === "pending"/);
+  assert.match(manualCommission, /row\.status === "pending"/);
+  assert.match(routes, /activationEnabled: affiliateActivationEnabled\(\)/);
+  const ui = adminUi.slice(adminUi.indexOf("function AffiliateAdminSection("), adminUi.indexOf("function AffiliateApplicationsSection("));
+  assert.match(ui, /stats\?\.activationEnabled === true && <button/);
+  assert.match(ui, /showEnroll && stats\?\.activationEnabled === true/);
+  const applicationsUi = adminUi.slice(adminUi.indexOf("function AffiliateApplicationsSection("), adminUi.indexOf("function AdminQuickPanel("));
+  assert.match(applicationsUi, /setActivationEnabled\(stats\.activationEnabled === true\)/);
+  assert.match(applicationsUi, /activationEnabled && <button/);
+  assert.match(applicationsUi, /\/approve`/);
 });
 
 test("guards are imported from the shared module, not redefined locally", () => {

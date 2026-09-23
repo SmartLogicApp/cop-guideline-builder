@@ -4186,9 +4186,8 @@ function AccessResolutionScreen({ failed = false, onRetry, onSignOut }) {
  * reconciling a commission against the revenue it came from should not have to
  * close one panel to open the other.
  *
- * Read-only by default. Enrolling an affiliate and settling a payout are the
- * two actions that move money, and both are deliberately separate clicks
- * behind their own confirmation rather than inline edits in the table.
+  * Existing affiliate accounting stays available while new paid enrollments
+  * are paused pending legal review of the program terms.
  */
 function AffiliateAdminSection({ basePath, month }) {
   const [stats, setStats] = useState(null);
@@ -4299,12 +4298,11 @@ function AffiliateAdminSection({ basePath, month }) {
         ))}
       </div>
 
-      {/*
-        Pending applications sit ABOVE the affiliate table rather than inside
-        it. An application that goes unreviewed is a partner who concluded the
-        programme is not real — so it needs to be the first thing seen, not a
-        row with a different status badge among twenty others.
-      */}
+      {!loading && stats?.activationEnabled !== true && (
+        <div role="status" style={{ fontSize: "11.5px", color: "#FBBF24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "7px", padding: "8px 11px", marginBottom: "12px" }}>
+          New paid affiliate enrollments are paused until the owner enables reviewed program terms. Applications remain pending; existing affiliate accounting is unchanged.
+        </div>
+      )}
       {stats?.lapsingAffiliates > 0 && (
         <div style={{ fontSize: "11.5px", color: "#FBBF24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "7px", padding: "8px 11px", marginBottom: "12px" }}>
           {stats.lapsingAffiliates} affiliate{stats.lapsingAffiliates === 1 ? " is" : "s are"} in or past the 60-day grace period (§11).
@@ -4326,15 +4324,15 @@ function AffiliateAdminSection({ basePath, month }) {
           </button>
         ))}
         <span style={{ flex: 1 }} />
-        <button
+        {stats?.activationEnabled === true && <button
           onClick={() => setShowEnroll((open) => !open)}
           style={{ padding: "6px 14px", background: showEnroll ? "#F5C542" : "rgba(245,197,66,0.2)", border: "1px solid #F5C542", borderRadius: "6px", color: showEnroll ? "#0B1F3A" : "#F5C542", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
         >
           {showEnroll ? "Cancel" : "+ Enroll affiliate"}
-        </button>
+        </button>}
       </div>
 
-      {showEnroll && (
+      {showEnroll && stats?.activationEnabled === true && (
         <form onSubmit={enroll} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", padding: "12px", marginBottom: "14px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px", marginBottom: "9px" }}>
             <label style={{ fontSize: "10px", color: "rgba(255,255,255,0.45)", fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase" }}>
@@ -4436,19 +4434,25 @@ function AffiliateAdminSection({ basePath, month }) {
 // Applying only records contact details; it does not activate a partnership.
 function AffiliateApplicationsSection({ basePath }) {
   const [applications, setApplications] = useState([]);
+  const [activationEnabled, setActivationEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [approvingId, setApprovingId] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`${basePath}/api/affiliates`, { credentials: "include", cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Unable to load applications");
-        return response.json();
+    Promise.all([
+      fetch(`${basePath}/api/affiliates`, { credentials: "include", cache: "no-store", signal: controller.signal }),
+      fetch(`${basePath}/api/affiliates/stats`, { credentials: "include", cache: "no-store", signal: controller.signal }),
+    ])
+      .then(async ([listResponse, statsResponse]) => {
+        if (!listResponse.ok || !statsResponse.ok) throw new Error("Unable to load applications");
+        return Promise.all([listResponse.json(), statsResponse.json()]);
       })
-      .then((rows) => {
+      .then(([rows, stats]) => {
         if (controller.signal.aborted) return;
         setApplications(Array.isArray(rows) ? rows.filter((row) => row.status === "pending") : []);
+        setActivationEnabled(stats.activationEnabled === true);
         setLoading(false);
       })
       .catch(() => {
@@ -4460,6 +4464,41 @@ function AffiliateApplicationsSection({ basePath }) {
     return () => controller.abort();
   }, [basePath]);
 
+  async function approve(row) {
+    const suggested = row.companyName.toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
+    const code = window.prompt(
+      `Assign a permanent referral code for ${row.companyName}. Confirm the reviewed agreement before proceeding.`,
+      suggested,
+    );
+    if (!code) return;
+    const rateInput = window.prompt("Enter the approved commission rate (10 or 20 percent):", "20");
+    if (rateInput == null) return;
+    const commissionRatePct = Number(rateInput);
+    if (!["10", "20"].includes(rateInput.trim())) {
+      setError("Commission rate must be 10 or 20 percent.");
+      return;
+    }
+
+    setApprovingId(row.id);
+    setError("");
+    try {
+      const response = await fetch(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/approve`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ referralCode: code, commissionRatePct }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Unable to approve application");
+      setApplications((current) => current.filter((item) => item.id !== row.id));
+    } catch (approveError) {
+      setError(approveError.message || "Unable to approve application");
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
   return (
     <section aria-label="Vendor and affiliate applications" style={{ padding: "10px 0 18px" }}>
       <h2 style={{ color: "#fff", fontSize: "15px", margin: "0 0 4px" }}>Vendor & Affiliate Applications</h2>
@@ -4468,6 +4507,9 @@ function AffiliateApplicationsSection({ basePath }) {
       </p>
       {loading && <p style={{ color: "#fff" }}>Loading applications…</p>}
       {error && <p role="alert" style={{ color: "#FCA5A5" }}>{error}</p>}
+      {!loading && !activationEnabled && <p role="status" style={{ color: "#FBBF24", fontSize: "12px" }}>
+        Paid partner approvals are paused until the owner enables reviewed program terms.
+      </p>}
       {!loading && !error && applications.length === 0 && <p style={{ color: "#fff" }}>No applications awaiting review.</p>}
       <div style={{ display: "grid", gap: "10px" }}>
         {applications.map((row) => (
@@ -4481,6 +4523,10 @@ function AffiliateApplicationsSection({ basePath }) {
             {row.referralPlan && <p style={{ color: "rgba(255,255,255,0.8)", fontSize: "12px", whiteSpace: "pre-wrap", margin: "10px 0 0" }}>
               <strong>How they plan to refer clients:</strong> {row.referralPlan}
             </p>}
+            {activationEnabled && <button type="button" disabled={approvingId != null} onClick={() => approve(row)}
+              style={{ marginTop: "12px", padding: "7px 14px", background: "#F5C542", border: "none", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, cursor: approvingId ? "wait" : "pointer" }}>
+              {approvingId === row.id ? "Approving…" : "Approve after terms review"}
+            </button>}
           </article>
         ))}
       </div>

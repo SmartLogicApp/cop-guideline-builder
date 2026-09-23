@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import {
   accounts,
@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
+import { affiliateActivationEnabled, isBlockedAffiliateActivation } from "../lib/affiliate-activation.js";
 import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
 import {
   activityStatus,
@@ -46,8 +47,14 @@ import {
 
 const router: IRouter = Router();
 
-// ─── Shared shaping ──────────────────────────────────────────────────────────
-
+function activationBlocked(res: Response): boolean {
+  if (affiliateActivationEnabled()) return false;
+  res.status(403).json({
+    code: "AFFILIATE_ACTIVATION_PAUSED",
+    error: "New paid affiliate activations are paused until the owner enables reviewed program terms.",
+  });
+  return true;
+}
 /** Statuses that represent money still owed, as opposed to settled or void. */
 const OUTSTANDING_STATUSES = ["pending", "payable"] as const;
 
@@ -95,6 +102,8 @@ function affiliateSummaryFields(row: typeof affiliates.$inferSelect, now: Date) 
  */
 router.post("/apply", async (req, res) => {
   const body = req.body ?? {};
+
+  const retainingActiveStatus = body.status === "active" && !affiliateActivationEnabled();
   const companyName = typeof body.companyName === "string" ? body.companyName.trim() : "";
   const contactName = typeof body.contactName === "string" ? body.contactName.trim() : "";
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -121,8 +130,11 @@ router.post("/apply", async (req, res) => {
     // One application per email. Returns the same 200 either way — an endpoint
     // that said "already applied" would let anyone test whether a given company
     // is in the programme.
-    const [existing] = await db.select({ id: affiliates.id })
-      .from(affiliates).where(eq(affiliates.email, email)).limit(1);
+    const [existing] = await db.select().from(affiliatePayouts).where(and(
+      eq(affiliatePayouts.affiliateId, affiliateId),
+      eq(affiliatePayouts.periodLabel, bounds.label),
+      inArray(affiliatePayouts.status, ["draft", "approved", "paid"]),
+    )).limit(1);
     if (existing) {
       return res.status(200).json({ ok: true, received: true });
     }
@@ -189,8 +201,22 @@ async function provisionalReferralCode(companyName: string): Promise<string> {
  */
 router.get("/", requireAnyAdmin, async (req, res) => {
   const now = new Date();
+
   try {
-    const rows = await db.select().from(affiliates).orderBy(desc(affiliates.createdAt));
+    if (type === "affiliates") {
+      const rows = await db
+        .select({
+          facilityName: accounts.facilityName,
+          referralCode: accounts.referralCode,
+          subscriptionStatus: accounts.subscriptionStatus,
+          createdAt: accounts.createdAt,
+          state: accounts.state,
+          affiliateName: affiliates.companyName,
+        })
+        .from(accounts)
+        .leftJoin(affiliates, eq(accounts.referralCode, affiliates.referralCode))
+        .where(sql`${accounts.referralCode} is not null`)
+        .orderBy(desc(accounts.createdAt));
     if (rows.length === 0) return res.json([]);
 
     const ids = rows.map((r) => r.id);
@@ -216,21 +242,27 @@ router.get("/", requireAnyAdmin, async (req, res) => {
         .groupBy(affiliateCommissions.affiliateId, affiliateCommissions.status),
     ]);
 
-    const referredByCode = new Map(
-      referredCounts
-        .filter((r) => r.referralCode)
-        .map((r) => [r.referralCode as string, { total: r.total, active: r.active }]),
-    );
+      const referredByCode = new Map(referred.filter((r) => r.referralCode).map((r) => [r.referralCode as string, r]));
 
     const commissionsById = new Map<string, Record<string, { total: number; count: number }>>();
     for (const row of commissionRollup) {
-      const bucket = commissionsById.get(row.affiliateId) ?? {};
+    const bucket = (id: string) => {
+      let b = byAffiliate.get(id);
+      if (!b) { b = { lines: [], reversed: 0, carried: 0 }; byAffiliate.set(id, b); }
+      return b;
+    };
       bucket[row.status] = { total: Number(row.total) || 0, count: row.count };
       commissionsById.set(row.affiliateId, bucket);
     }
 
     return res.json(rows.map((row) => {
-      const referred = referredByCode.get(row.referralCode) ?? { total: 0, active: 0 };
+      const referred = await db
+        .select({
+          referralCode: accounts.referralCode,
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) filter (where ${accounts.subscriptionStatus} = 'active')::int`,
+        })
+        .from(accounts).groupBy(accounts.referralCode);
       const buckets = commissionsById.get(row.id) ?? {};
       const sumOf = (...statuses: string[]) =>
         money(statuses.reduce((sum, s) => sum + (buckets[s]?.total ?? 0), 0));
@@ -272,7 +304,7 @@ router.get("/", requireAnyAdmin, async (req, res) => {
 // ─── GET /api/affiliates/stats — the panel header ────────────────────────────
 
 router.get("/stats", requireAnyAdmin, async (req, res) => {
-  const { start, end, label } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
+      const { start, end, label } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
   const now = new Date();
   try {
     const [affiliateRows, monthCommissions, outstanding, monthSignups] = await Promise.all([
@@ -305,6 +337,7 @@ router.get("/stats", requireAnyAdmin, async (req, res) => {
       totalAffiliates:   affiliateRows.length,
       activeAffiliates:  affiliateRows.filter((r) => r.status === "active").length,
       pendingAffiliates: affiliateRows.filter((r) => r.status === "pending").length,
+      activationEnabled: affiliateActivationEnabled(),
       /** Affiliates inside the §11 grace period or already past it. */
       lapsingAffiliates: lapsing,
       thisMonth: {
@@ -374,6 +407,9 @@ router.get("/:id", requireAnyAdmin, async (req, res) => {
 // ─── POST /api/affiliates — enroll ───────────────────────────────────────────
 
 router.post("/", requireSuperAdmin, async (req, res) => {
+  // Do not create even a pending legacy enrollment with a default paid rate.
+  // Applicants can still use /apply, which stores a pending 0% record.
+  if (activationBlocked(res)) return;
   const {
     referralCode, companyName, contactName, email, phone,
     commissionRatePct, enrollmentSignedAt, enrollmentVersion, agreementVersion,
@@ -402,21 +438,17 @@ router.post("/", requireSuperAdmin, async (req, res) => {
   }
 
   try {
-    const now = new Date();
-    const [created] = await db.insert(affiliates).values({
-      referralCode: code,
-      companyName: companyName.trim(),
-      contactName: typeof contactName === "string" ? contactName.trim() || null : null,
-      email: email.trim(),
-      phone: typeof phone === "string" ? phone.trim() || null : null,
-      status: status === "active" ? "active" : "pending",
-      commissionRatePct: rate,
-      rateEffectiveAt: now,
-      enrollmentSignedAt: enrollmentSignedAt ? new Date(enrollmentSignedAt) : null,
-      enrollmentVersion: typeof enrollmentVersion === "string" ? enrollmentVersion : null,
-      agreementVersion: typeof agreementVersion === "string" ? agreementVersion : null,
-      subscriptionFeeWaived: subscriptionFeeWaived === true,
-      adminNotes: typeof adminNotes === "string" ? adminNotes : null,
+  const now = new Date();
+    const [created] = await db.insert(affiliateCommissions).values({
+      affiliateId: row.id,
+      accountId,
+      qualifyingRevenueUsd: roundUsd(qualifyingRevenueUsd),
+      ratePct,
+      commissionUsd: computeCommissionUsd(qualifyingRevenueUsd, ratePct),
+      status: "pending",
+      accruedAt,
+      payableAt: holdbackEndsAt(accruedAt),
+      source: `manual:${(req as any).clerkUserId ?? "admin"}`,
     }).returning();
 
     await db.insert(affiliateRateChanges).values({
@@ -452,30 +484,15 @@ router.post("/", requireSuperAdmin, async (req, res) => {
  * the correct affiliate and reassigning deliberately.
  */
 router.patch("/:id", requireSuperAdmin, async (req, res) => {
-  const patch: Record<string, unknown> = {};
+    const patch: Record<string, unknown> = { status };
   const body = req.body ?? {};
 
-  for (const field of ["companyName", "contactName", "email", "phone", "payoutMethod", "payoutReference", "adminNotes"]) {
-    if (typeof body[field] === "string") patch[field] = body[field].trim() || null;
-  }
-  if (["pending", "active", "suspended", "terminated"].includes(body.status)) patch.status = body.status;
-  if (typeof body.subscriptionFeeWaived === "boolean") patch.subscriptionFeeWaived = body.subscriptionFeeWaived;
-  if (body.taxInfoReceivedAt !== undefined) {
-    patch.taxInfoReceivedAt = body.taxInfoReceivedAt ? new Date(body.taxInfoReceivedAt) : null;
-  }
-  if (body.enrollmentSignedAt !== undefined) {
-    patch.enrollmentSignedAt = body.enrollmentSignedAt ? new Date(body.enrollmentSignedAt) : null;
-  }
-
-  if (Object.keys(patch).length === 0) {
-    return res.status(400).json({ error: "No editable fields supplied." });
-  }
-  patch.updatedAt = new Date();
-
-  try {
-    const [updated] = await db.update(affiliates).set(patch)
-      .where(eq(affiliates.id, String(req.params.id))).returning();
-    if (!updated) return res.status(404).json({ error: "Affiliate not found" });
+  const retainingActiveStatus = body.status === "active" && !affiliateActivationEnabled();
+    const [updated] = await db.update(affiliatePayouts).set(patch)
+      .where(eq(affiliatePayouts.id, String(req.params.payoutId))).returning();
+    if (!updated) return res.status(retainingActiveStatus ? 409 : 404).json({
+      error: retainingActiveStatus ? "Affiliate status changed; reload before editing." : "Affiliate not found",
+    });
     return res.json(updated);
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? "Unable to update affiliate" });
@@ -498,10 +515,11 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
  * is never reviewed can never quietly start earning.
  */
 router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
+  if (activationBlocked(res)) return;
   const requestedCode = normalizeReferralCode(req.body?.referralCode);
-  const ratePct = Number.isFinite(Number(req.body?.commissionRatePct))
-    ? Number(req.body.commissionRatePct)
-    : 20;
+    const ratePct = Number.isFinite(Number(req.body?.ratePct))
+      ? Number(req.body.ratePct)
+      : row.commissionRatePct;
 
   if (!COMMISSION_RATE_LADDER.includes(ratePct as any) || ratePct <= 0) {
     return res.status(400).json({ error: "Approve at 20% or 10% (§14)." });
@@ -514,28 +532,16 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
   }
 
   try {
-    const [row] = await db.select().from(affiliates)
-      .where(eq(affiliates.id, String(req.params.id))).limit(1);
+    const [row] = await db.select().from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
     if (!row) return res.status(404).json({ error: "Affiliate not found" });
-    if (row.status !== "pending") {
-      return res.status(409).json({
-        error: `This affiliate is already ${row.status}. Only a pending application can be approved.`,
-      });
+    if (row.status === "pending") {
+      return res.status(409).json({ error: "Pending applications cannot receive a paid rate. Approve after reviewed terms are enabled." });
     }
+    if (row.commissionRatePct === toPct) return res.json(row);
 
-    const now = new Date();
-    const [updated] = await db.update(affiliates)
-      .set({
-        referralCode: requestedCode,
-        status: "active",
-        commissionRatePct: ratePct,
-        rateEffectiveAt: now,
-        updatedAt: now,
-      })
-      // Guarded on status so two operators approving at once cannot both
-      // assign a code; the second finds no pending row and gets the 409 below.
-      .where(and(eq(affiliates.id, row.id), eq(affiliates.status, "pending")))
-      .returning();
+  const now = new Date();
+    const [updated] = await db.update(affiliatePayouts).set(patch)
+      .where(eq(affiliatePayouts.id, String(req.params.payoutId))).returning();
 
     if (!updated) {
       return res.status(409).json({ error: "That application was already approved." });
@@ -567,7 +573,7 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
 
 router.post("/:id/rate", requireSuperAdmin, async (req, res) => {
   const toPct = Number(req.body?.commissionRatePct);
-  const reason = typeof req.body?.reason === "string" ? req.body.reason : "manual";
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
   if (!COMMISSION_RATE_LADDER.includes(toPct as any)) {
     return res.status(400).json({ error: `Rate must be one of ${COMMISSION_RATE_LADDER.join(", ")} (§14).` });
   }
@@ -575,12 +581,14 @@ router.post("/:id/rate", requireSuperAdmin, async (req, res) => {
   try {
     const [row] = await db.select().from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
     if (!row) return res.status(404).json({ error: "Affiliate not found" });
+    if (row.status === "pending") {
+      return res.status(409).json({ error: "Pending applications cannot receive a paid rate. Approve after reviewed terms are enabled." });
+    }
     if (row.commissionRatePct === toPct) return res.json(row);
 
-    const now = new Date();
-    const [updated] = await db.update(affiliates)
-      .set({ commissionRatePct: toPct, rateEffectiveAt: now, updatedAt: now })
-      .where(eq(affiliates.id, row.id)).returning();
+  const now = new Date();
+    const [updated] = await db.update(affiliatePayouts).set(patch)
+      .where(eq(affiliatePayouts.id, String(req.params.payoutId))).returning();
 
     await db.insert(affiliateRateChanges).values({
       affiliateId: row.id,
@@ -624,6 +632,9 @@ router.post("/:id/commissions", requireSuperAdmin, async (req, res) => {
   try {
     const [row] = await db.select().from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
     if (!row) return res.status(404).json({ error: "Affiliate not found" });
+    if (row.status === "pending") {
+      return res.status(409).json({ error: "Pending applications cannot accrue commissions." });
+    }
 
     const accruedAt = req.body?.accruedAt ? new Date(req.body.accruedAt) : new Date();
     const ratePct = Number.isFinite(Number(req.body?.ratePct))
@@ -656,16 +667,11 @@ router.post("/commissions/:commissionId/reverse", requireSuperAdmin, async (req,
     return res.status(400).json({ error: "A reason is required — a reversal has to be explainable later." });
   }
   try {
-    const now = new Date();
+  const now = new Date();
     // Guarded so an already-reversed row cannot be reversed twice, which would
     // double-deduct from the affiliate's next payout.
-    const [updated] = await db.update(affiliateCommissions)
-      .set({ status: "reversed", reversedAt: now, reversalReason: reason })
-      .where(and(
-        eq(affiliateCommissions.id, String(req.params.commissionId)),
-        inArray(affiliateCommissions.status, ["pending", "payable", "paid"]),
-      ))
-      .returning();
+    const [updated] = await db.update(affiliatePayouts).set(patch)
+      .where(eq(affiliatePayouts.id, String(req.params.payoutId))).returning();
     if (!updated) {
       return res.status(409).json({
         error: "That commission is not in a reversible state — it may already be reversed or cancelled.",
@@ -698,7 +704,7 @@ router.post("/commissions/:commissionId/reverse", requireSuperAdmin, async (req,
  */
 router.post("/cron/maturity-sweep", requireCronOrSuperAdmin, async (_req, res) => {
   try {
-    const now = new Date();
+  const now = new Date();
     const promoted = await db.update(affiliateCommissions)
       .set({ status: "payable" })
       .where(and(
@@ -722,7 +728,7 @@ router.post("/cron/maturity-sweep", requireCronOrSuperAdmin, async (_req, res) =
  * separate POST is what commits them.
  */
 router.get("/payouts/preview", requireAnyAdmin, async (req, res) => {
-  const label = typeof req.query.quarter === "string" ? req.query.quarter : quarterOf(new Date());
+  const label = typeof req.body?.quarter === "string" ? req.body.quarter : quarterOf(new Date());
   const bounds = quarterBounds(label);
   if (!bounds) return res.status(400).json({ error: "quarter must look like 2026-Q1." });
 
@@ -755,23 +761,19 @@ router.get("/payouts/preview", requireAnyAdmin, async (req, res) => {
     for (const row of reversals) bucket(row.affiliateId).reversed += row.commissionUsd ?? 0;
     for (const row of priorCarried) bucket(row.affiliateId).carried += row.netUsd ?? 0;
 
-    const rows = affiliateRows
-      .map((affiliate) => {
-        const b = byAffiliate.get(affiliate.id);
-        if (!b || (b.lines.length === 0 && b.reversed === 0 && b.carried === 0)) return null;
-        const assembly = assemblePayout(b.lines, b.reversed, b.carried);
-        return {
-          affiliateId: affiliate.id,
-          referralCode: affiliate.referralCode,
-          companyName: affiliate.companyName,
-          taxInfoOnFile: affiliate.taxInfoReceivedAt != null,
-          payoutMethod: affiliate.payoutMethod,
-          commissionCount: b.lines.length,
-          ...assembly,
-        };
-      })
-      .filter((r): r is NonNullable<typeof r> => r !== null)
-      .sort((a, b) => b.netUsd - a.netUsd);
+      const rows = await db
+        .select({
+          facilityName: accounts.facilityName,
+          referralCode: accounts.referralCode,
+          subscriptionStatus: accounts.subscriptionStatus,
+          createdAt: accounts.createdAt,
+          state: accounts.state,
+          affiliateName: affiliates.companyName,
+        })
+        .from(accounts)
+        .leftJoin(affiliates, eq(accounts.referralCode, affiliates.referralCode))
+        .where(sql`${accounts.referralCode} is not null`)
+        .orderBy(desc(accounts.createdAt));
 
     return res.json({
       quarter: bounds.label,
@@ -926,7 +928,19 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
 
   try {
     if (type === "affiliates") {
-      const rows = await db.select().from(affiliates).orderBy(desc(affiliates.createdAt));
+      const rows = await db
+        .select({
+          facilityName: accounts.facilityName,
+          referralCode: accounts.referralCode,
+          subscriptionStatus: accounts.subscriptionStatus,
+          createdAt: accounts.createdAt,
+          state: accounts.state,
+          affiliateName: affiliates.companyName,
+        })
+        .from(accounts)
+        .leftJoin(affiliates, eq(accounts.referralCode, affiliates.referralCode))
+        .where(sql`${accounts.referralCode} is not null`)
+        .orderBy(desc(accounts.createdAt));
       const referred = await db
         .select({
           referralCode: accounts.referralCode,
@@ -937,19 +951,12 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
       const referredByCode = new Map(referred.filter((r) => r.referralCode).map((r) => [r.referralCode as string, r]));
 
       const csv = toCsv(
-        ["Referral Code", "Company", "Contact", "Email", "Status", "Rate %", "Activity Status",
-         "Last Qualifying Referral", "Referred Accounts", "Active Referred", "Tax Info On File", "Enrolled"],
-        rows.map((r) => {
-          const ref = referredByCode.get(r.referralCode);
-          return [
-            r.referralCode, r.companyName, r.contactName, r.email, r.status, r.commissionRatePct,
-            affiliateSummaryFields(r, now).activityStatus,
-            r.lastQualifyingReferralAt?.toISOString().slice(0, 10) ?? "",
-            ref?.total ?? 0, ref?.active ?? 0,
-            r.taxInfoReceivedAt ? "yes" : "no",
-            r.createdAt?.toISOString().slice(0, 10) ?? "",
-          ];
-        }),
+        ["Registered", "Customer", "State", "Subscription", "Referral Code", "Matched Affiliate"],
+        rows.map((r) => [
+          r.createdAt?.toISOString().slice(0, 10) ?? "",
+          r.facilityName, r.state, r.subscriptionStatus, r.referralCode,
+          r.affiliateName ?? "— UNMATCHED CODE —",
+        ]),
       );
       return sendCsv(res, `cop-suite-affiliates-${now.toISOString().slice(0, 10)}.csv`, csv);
     }
@@ -958,58 +965,54 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
       const { start, end, label } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
       const rows = await db
         .select({
-          accruedAt: affiliateCommissions.accruedAt,
-          payableAt: affiliateCommissions.payableAt,
-          status: affiliateCommissions.status,
-          qualifyingRevenueUsd: affiliateCommissions.qualifyingRevenueUsd,
-          ratePct: affiliateCommissions.ratePct,
-          commissionUsd: affiliateCommissions.commissionUsd,
-          referralCode: affiliates.referralCode,
-          companyName: affiliates.companyName,
           facilityName: accounts.facilityName,
+          referralCode: accounts.referralCode,
+          subscriptionStatus: accounts.subscriptionStatus,
+          createdAt: accounts.createdAt,
+          state: accounts.state,
+          affiliateName: affiliates.companyName,
         })
-        .from(affiliateCommissions)
-        .innerJoin(affiliates, eq(affiliateCommissions.affiliateId, affiliates.id))
-        .innerJoin(accounts, eq(affiliateCommissions.accountId, accounts.id))
-        .where(and(gte(affiliateCommissions.accruedAt, start), lt(affiliateCommissions.accruedAt, end)))
-        .orderBy(desc(affiliateCommissions.accruedAt));
+        .from(accounts)
+        .leftJoin(affiliates, eq(accounts.referralCode, affiliates.referralCode))
+        .where(sql`${accounts.referralCode} is not null`)
+        .orderBy(desc(accounts.createdAt));
 
       const csv = toCsv(
-        ["Accrued", "Payable", "Status", "Referral Code", "Affiliate", "Customer",
-         "Qualifying Revenue USD", "Rate %", "Commission USD"],
+        ["Registered", "Customer", "State", "Subscription", "Referral Code", "Matched Affiliate"],
         rows.map((r) => [
-          r.accruedAt?.toISOString().slice(0, 10) ?? "",
-          r.payableAt?.toISOString().slice(0, 10) ?? "",
-          r.status, r.referralCode, r.companyName, r.facilityName,
-          (r.qualifyingRevenueUsd ?? 0).toFixed(2), r.ratePct, (r.commissionUsd ?? 0).toFixed(2),
+          r.createdAt?.toISOString().slice(0, 10) ?? "",
+          r.facilityName, r.state, r.subscriptionStatus, r.referralCode,
+          r.affiliateName ?? "— UNMATCHED CODE —",
         ]),
       );
-      return sendCsv(res, `cop-suite-affiliate-commissions-${label.replace(/ /g, "-")}.csv`, csv);
+      return sendCsv(res, `cop-suite-affiliate-payouts-${now.toISOString().slice(0, 10)}.csv`, csv);
     }
 
-    if (type === "payouts") {
+    if (type === "attribution") {
+      // Every account carrying a referral code, including codes that match no
+      // affiliate — an unmatched code is a real operational problem (a customer
+      // who believes they were referred and an affiliate who will ask why they
+      // were not credited), so it belongs in the report rather than filtered out.
       const rows = await db
         .select({
-          periodLabel: affiliatePayouts.periodLabel,
-          status: affiliatePayouts.status,
-          grossUsd: affiliatePayouts.grossUsd,
-          adjustmentsUsd: affiliatePayouts.adjustmentsUsd,
-          netUsd: affiliatePayouts.netUsd,
-          paidAt: affiliatePayouts.paidAt,
-          reference: affiliatePayouts.reference,
-          referralCode: affiliates.referralCode,
-          companyName: affiliates.companyName,
+          facilityName: accounts.facilityName,
+          referralCode: accounts.referralCode,
+          subscriptionStatus: accounts.subscriptionStatus,
+          createdAt: accounts.createdAt,
+          state: accounts.state,
+          affiliateName: affiliates.companyName,
         })
-        .from(affiliatePayouts)
-        .innerJoin(affiliates, eq(affiliatePayouts.affiliateId, affiliates.id))
-        .orderBy(desc(affiliatePayouts.createdAt));
+        .from(accounts)
+        .leftJoin(affiliates, eq(accounts.referralCode, affiliates.referralCode))
+        .where(sql`${accounts.referralCode} is not null`)
+        .orderBy(desc(accounts.createdAt));
 
       const csv = toCsv(
-        ["Quarter", "Referral Code", "Affiliate", "Status", "Gross USD", "Adjustments USD", "Net USD", "Paid", "Reference"],
+        ["Registered", "Customer", "State", "Subscription", "Referral Code", "Matched Affiliate"],
         rows.map((r) => [
-          r.periodLabel, r.referralCode, r.companyName, r.status,
-          (r.grossUsd ?? 0).toFixed(2), (r.adjustmentsUsd ?? 0).toFixed(2), (r.netUsd ?? 0).toFixed(2),
-          r.paidAt?.toISOString().slice(0, 10) ?? "", r.reference ?? "",
+          r.createdAt?.toISOString().slice(0, 10) ?? "",
+          r.facilityName, r.state, r.subscriptionStatus, r.referralCode,
+          r.affiliateName ?? "— UNMATCHED CODE —",
         ]),
       );
       return sendCsv(res, `cop-suite-affiliate-payouts-${now.toISOString().slice(0, 10)}.csv`, csv);

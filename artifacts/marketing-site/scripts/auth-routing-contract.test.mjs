@@ -264,12 +264,16 @@ test('the affiliate application posts to the public apply endpoint', async () =>
   }
 });
 
-test('pending applications have a separate admin review view without commercial terms', () => {
+test('pending applications have a separate admin review view with approval gated on reviewed terms', () => {
   const review = componentBody(workspaceSource, 'AffiliateApplicationsSection');
   assert.match(review, /fetch\(`\$\{basePath\}\/api\/affiliates`/);
   assert.match(review, /row\.status === "pending"/);
   assert.match(review, /row\.phone/);
   assert.match(review, /row\.referralPlan/);
-  assert.doesNotMatch(review, /commissionRatePct|payout|holdback|\/approve|%/i);
+  assert.match(review, /setActivationEnabled\(stats\.activationEnabled === true\)/);
+  assert.match(review, /activationEnabled && <button/);
+  assert.match(review, /\/approve`/);
+  assert.match(review, /Paid partner approvals are paused/);
+  assert.doesNotMatch(review, /holdback|grace period/i);
   assert.match(componentBody(workspaceSource, 'AdminQuickPanel'), /id: "applications"/);
 });
