@@ -10,6 +10,8 @@ import {
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { affiliateActivationEnabled, isBlockedAffiliateActivation } from "../lib/affiliate-activation.js";
+import { sendViaResend } from "../lib/resend-mailer.js";
+import { getReturnBase } from "../lib/return-base.js";
 import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
 import {
   activityStatus,
@@ -579,7 +581,26 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
       effectiveAt: now,
     });
 
-    return res.json(updated);
+    const referralLink = `${getReturnBase(req)}/register?ref=${encodeURIComponent(updated.referralCode)}`;
+    let emailSent = false;
+    let emailError: string | null = null;
+    if (updated.email) {
+      const emailResult = await sendViaResend({
+        to: updated.email,
+        subject: "You are approved -- here is your CMS Compliance Suite referral link",
+        html: `<p>Hi ${updated.contactName || updated.companyName},</p><p>Your affiliate application for <strong>${updated.companyName}</strong> has been approved.</p><p>Your referral link is:</p><p><a href="${referralLink}">${referralLink}</a></p><p>Share this link with clients. Any signup through it is automatically attributed to you at a ${updated.commissionRatePct}% commission rate.</p><p>Your referral code is <strong>${updated.referralCode}</strong> if you ever need it on its own.</p>`,
+        text: `Hi ${updated.contactName || updated.companyName}, your affiliate application for ${updated.companyName} has been approved. Your referral link: ${referralLink} . Referral code: ${updated.referralCode}.`,
+      });
+      emailSent = emailResult.sent;
+      if (!emailResult.sent) {
+        emailError = emailResult.error;
+        console.error(`[affiliates] approval email to ${updated.email} failed: ${emailResult.error}`);
+      }
+    } else {
+      emailError = "Affiliate has no email on file.";
+    }
+
+    return res.json({ ...updated, referralLink, emailSent, emailError });
   } catch (error: any) {
     if (error?.code === "23505") {
       return res.status(409).json({

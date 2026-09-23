@@ -258,7 +258,7 @@ export default function LandingPage() {
               <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="CMS Compliance Suite Logo" className="h-6 w-6 grayscale opacity-60" />
               <span className="text-lg font-bold tracking-tight text-slate-900">CMS Compliance Suite</span>
             </div>
-            <div className="flex gap-6 text-sm text-slate-500">
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-500">
               <a href={SIGN_IN_URL} className="hover:text-slate-900 transition-colors">Sign In</a>
               <a href={SIGN_UP_URL} className="hover:text-slate-900 transition-colors">Sign Up</a>
               <a href={AFFILIATES_URL} className="hover:text-slate-900 transition-colors">Affiliate Program</a>
