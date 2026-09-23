@@ -17,35 +17,35 @@ function findChunk(manifest, predicate, description) {
 }
 
 function findPublicBundleBoundaryEntries(manifest) {
-  return {
-    publicEntry: findChunk(
-      manifest,
-      (_key, chunk) => chunk.isEntry && chunk.src === 'index.html',
-      'public entry',
-    ),
-    workspaceEntry: findChunk(
-      manifest,
-      (key, chunk) =>
-        chunk.isDynamicEntry &&
-        (normalize(chunk.src ?? '').endsWith('/workspace-entry.tsx') ||
-          normalize(chunk.src ?? '') === 'src/workspace-entry.tsx' ||
-          key.endsWith('/workspace-entry.tsx') ||
-          key === 'src/workspace-entry.tsx'),
-      'private workspace',
-    ),
-    authEntry: findChunk(
-      manifest,
-      (key, chunk) =>
-        chunk.isDynamicEntry &&
-        (normalize(chunk.src ?? '').endsWith('/AuthenticatedApp.tsx') ||
-          normalize(chunk.src ?? '') === 'src/AuthenticatedApp.tsx' ||
-          normalize(chunk.src ?? '') === 'AuthenticatedApp.tsx' ||
-          key.endsWith('/AuthenticatedApp.tsx') ||
-          key === 'src/AuthenticatedApp.tsx' ||
-          key === 'AuthenticatedApp.tsx'),
-      'authenticated application',
-    ),
-  };
+  const publicEntry = findChunk(
+    manifest,
+    (_key, chunk) => chunk.isEntry && chunk.src === 'index.html',
+    'public entry',
+  );
+  const authEntry = findChunk(
+    manifest,
+    (key, chunk) =>
+      chunk.isDynamicEntry &&
+      (normalize(chunk.src ?? '').endsWith('/AuthenticatedApp.tsx') ||
+        normalize(chunk.src ?? '') === 'src/AuthenticatedApp.tsx' ||
+        normalize(chunk.src ?? '') === 'AuthenticatedApp.tsx' ||
+        key.endsWith('/AuthenticatedApp.tsx') ||
+        key === 'src/AuthenticatedApp.tsx' ||
+        key === 'AuthenticatedApp.tsx'),
+    'authenticated application',
+  );
+  const workspaceEntry = findChunk(
+    manifest,
+    (key, chunk) =>
+      chunk.isDynamicEntry &&
+      (normalize(chunk.src ?? '').endsWith('/workspace-entry.tsx') ||
+        normalize(chunk.src ?? '') === 'src/workspace-entry.tsx' ||
+        key.endsWith('/workspace-entry.tsx') ||
+        key === 'src/workspace-entry.tsx' ||
+        (key.startsWith('_workspace-entry-') && authEntry[1].dynamicImports?.includes(key))),
+    'private workspace',
+  );
+  return { publicEntry, workspaceEntry, authEntry };
 }
 
 module.exports = {

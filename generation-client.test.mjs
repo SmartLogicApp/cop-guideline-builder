@@ -7,6 +7,18 @@ import {
   parsePolicyTemplateResult,
   requestGeneration,
 } from "./generation-client.js";
+import { buildGuidelinesPrompt, GUIDELINES_MAX_TOKENS } from "./guidelines-prompt.js";
+
+test("guidelines request targets comprehensive condition-level coverage without invented citations", () => {
+  const prompt = buildGuidelinesPrompt("42 CFR 482");
+  assert.equal(GUIDELINES_MAX_TOKENS, 12000);
+  assert.match(prompt, /15-20 or more DISTINCT/);
+  assert.match(prompt, /citations from multiple bodies/);
+  assert.match(prompt, /do not invent proprietary standard codes/i);
+  assert.match(prompt, /verified parent paragraph alone does NOT establish/i);
+  assert.match(prompt, /return the accurate smaller set/);
+  assert.doesNotMatch(prompt, /Include 3-4 standards per source/);
+});
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {

@@ -255,7 +255,21 @@ test('the affiliate application posts to the public apply endpoint', async () =>
     'the application form must not collect a referral code',
   );
 
-  // The terms that REDUCE pay have to appear before someone signs up, not after.
-  assert.match(affiliatesPage, /steps down from 20% to 10%/, 'the inactivity step-down must be disclosed');
-  assert.match(affiliatesPage, /60-day holdback/i, 'the holdback must be disclosed');
+  // Commercial terms are still under review; the application must not
+  // promise or display rates, payout timing, or affiliate agreement clauses.
+  assert.doesNotMatch(affiliatesPage, /\b\d+(?:\.\d+)?\s*%|payouts?|holdback|grace period|affiliate program agreement/i);
+  assert.match(affiliatesPage, /commission details provided upon approval/i);
+  for (const key of ['contactName', 'companyName', 'email', 'phone', 'about']) {
+    assert.match(affiliatesPage, new RegExp(`\\b${key}\\b`), `missing application field ${key}`);
+  }
+});
+
+test('pending applications have a separate admin review view without commercial terms', () => {
+  const review = componentBody(workspaceSource, 'AffiliateApplicationsSection');
+  assert.match(review, /fetch\(`\$\{basePath\}\/api\/affiliates`/);
+  assert.match(review, /row\.status === "pending"/);
+  assert.match(review, /row\.phone/);
+  assert.match(review, /row\.referralPlan/);
+  assert.doesNotMatch(review, /commissionRatePct|payout|holdback|\/approve|%/i);
+  assert.match(componentBody(workspaceSource, 'AdminQuickPanel'), /id: "applications"/);
 });

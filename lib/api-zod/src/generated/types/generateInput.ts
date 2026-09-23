@@ -19,7 +19,7 @@ export interface GenerateInput {
   userContent: string;
   /**
      * @minimum 1
-     * @maximum 8192
+     * @maximum 16384
      */
   maxTokens: number;
   /**

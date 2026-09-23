@@ -25,7 +25,7 @@ export const generateWithAnthropicBodySystemPromptMax = 30000;
 
 export const generateWithAnthropicBodyUserContentMax = 30000;
 
-export const generateWithAnthropicBodyMaxTokensMax = 8192;
+export const generateWithAnthropicBodyMaxTokensMax = 16384;
 
 export const generateWithAnthropicBodyInstitutionValueMax = 50;
 

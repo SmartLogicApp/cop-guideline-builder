@@ -12,12 +12,14 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 async function fixture({
   eagerPrivateChunk,
   preloadPrivateChunk,
+  virtualWorkspace = false,
   clerkFile = 'assets/clerk-auth.js',
   publicBytes = 20,
   publicCssBytes = 20,
   includeWorkspaceCss = true,
 } = {}) {
   const outDir = await mkdtemp(path.join(os.tmpdir(), 'bundle-boundary-'));
+  const workspaceKey = virtualWorkspace ? '_workspace-entry-hash.js' : 'src/workspace-entry.tsx';
   await mkdir(path.join(outDir, '.vite'), { recursive: true });
   await mkdir(path.join(outDir, 'assets'), { recursive: true });
   const manifest = {
@@ -34,15 +36,15 @@ async function fixture({
       src: 'src/AuthenticatedApp.tsx',
       isDynamicEntry: true,
       imports: ['_clerk-auth.js'],
-      dynamicImports: ['src/workspace-entry.tsx'],
+       dynamicImports: [workspaceKey],
       css: ['assets/authenticated-app.css'],
     },
     '_clerk-auth.js': {
       file: 'assets/clerk-auth.js',
     },
-    'src/workspace-entry.tsx': {
+     [workspaceKey]: {
       file: 'assets/workspace.js',
-      src: 'src/workspace-entry.tsx',
+       ...(virtualWorkspace ? {} : { src: 'src/workspace-entry.tsx' }),
       isDynamicEntry: true,
       css: includeWorkspaceCss ? ['assets/workspace.css'] : [],
     },
@@ -88,6 +90,15 @@ test('accepts separately loaded authentication and workspace chunks', async () =
     'assets/workspace.js',
     'assets/workspace.css',
   ]);
+});
+
+test('accepts an auth-only virtual workspace chunk emitted by Vite', async () => {
+  const result = await checkPublicBundleBoundary({
+    outDir: await fixture({ virtualWorkspace: true }),
+    budgetBytes: 100,
+    cssBudgetBytes: 100,
+  });
+  assert.deepEqual(result.workspaceChunks, ['assets/workspace.js', 'assets/workspace.css']);
 });
 
 test('rejects Clerk modules bundled into the public entry itself', async () => {

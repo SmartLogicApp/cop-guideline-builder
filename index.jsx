@@ -19,6 +19,7 @@ import {
   parsePolicyTemplateResult,
   requestGeneration,
 } from "./generation-client.js";
+import { buildGuidelinesPrompt, GUIDELINES_MAX_TOKENS } from "./guidelines-prompt.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -1013,43 +1014,9 @@ function inspectionToText(items, responses, inst, dept, notes = {}, flags = {}) 
   return lines.join("\n");
 }
 
-// ─── PDF.js loader (CDN, no extra package needed) ────────────────────────────
-
-async function extractTextFromPdf(file) {
-  const pdfjsLib = await new Promise((resolve, reject) => {
-    if (window.pdfjsLib) { resolve(window.pdfjsLib); return; }
-    const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-    script.onload = () => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-      resolve(window.pdfjsLib);
-    };
-    script.onerror = () => reject(new Error("Failed to load PDF.js"));
-    document.head.appendChild(script);
-  });
-
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const pages = [];
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const page = await pdf.getPage(p);
-    const content = await page.getTextContent();
-    pages.push(content.items.map((i) => i.str).join(" "));
-  }
-  return pages.join("\n");
-}
-
 async function extractTextFromFile(file) {
-  if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-    return extractTextFromPdf(file);
-  }
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
+  const { extractPolicyDocumentText } = await import("./artifacts/marketing-site/src/lib/policy-file-text.js");
+  return extractPolicyDocumentText(file);
 }
 
 // ─── Long-document chunking helpers ──────────────────────────────────────────
@@ -1798,6 +1765,7 @@ function GuidelinesTab({ institution }) {
   const [unit, setUnit] = useState(() => instUnits ? instUnits.units[0] : DEPARTMENTS[0]);
   const [topic, setTopic] = useState(() => topics[0] ?? TOPICS[0]);
   const [customTopic, setCustomTopic] = useState("");
+  const [conditionId, setConditionId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
@@ -1813,6 +1781,7 @@ function GuidelinesTab({ institution }) {
     setUnit(iu ? iu.units[0] : DEPARTMENTS[0]);
     setTopic(getInstitutionTopics(institution)[0]);
     setCustomTopic("");
+    setConditionId("");
     setResult(null);
     setDataSource(null);
   }, [institution]);
@@ -1822,66 +1791,7 @@ function GuidelinesTab({ institution }) {
     const topicFinal = customTopic.trim() || topic;
     setLoading(true); setError(null); setResult(null); setDataSource(null);
 
-    const systemPrompt = `You are a healthcare regulatory compliance expert with deep knowledge of CMS Conditions of Participation, Joint Commission, DNV NIAHO, and ISO 9001:2015.
-
-Output ONLY valid JSON with this exact structure:
-{
-  "overview": "2-3 sentence summary of the regulatory landscape for this topic",
-  "sources": [
-    {
-      "key": "cms",
-      "body": "CMS Conditions of Participation",
-      "cfr": "${inst.cfr}",
-      "standards": [
-        {
-          "code": "§482.XX",
-          "tag": "A-XXXX",
-          "title": "Standard title",
-          "requirement": "Core requirement in 1-2 sentences",
-          "surveyorFocus": "What surveyors look for in 1 sentence"
-        }
-      ]
-    },
-    {
-      "key": "tjc",
-      "body": "Joint Commission",
-      "standards": [
-        {
-          "code": "IC.01.01.01",
-          "title": "Standard title",
-          "requirement": "Core requirement in 1-2 sentences",
-          "surveyorFocus": "What reviewers look for in 1 sentence"
-        }
-      ]
-    },
-    {
-      "key": "dnv",
-      "body": "DNV NIAHO",
-      "standards": [
-        {
-          "code": "IC.1",
-          "title": "Standard title",
-          "requirement": "Core requirement in 1-2 sentences",
-          "surveyorFocus": "What reviewers look for in 1 sentence"
-        }
-      ]
-    },
-    {
-      "key": "iso",
-      "body": "ISO 9001:2015",
-      "standards": [
-        {
-          "code": "Clause 8.5",
-          "title": "Clause title",
-          "requirement": "How this clause applies to healthcare compliance in 1-2 sentences",
-          "surveyorFocus": "Key evidence/documentation required in 1 sentence"
-        }
-      ]
-    }
-  ]
-}
-
-Include 3-4 standards per source. Use real, accurate regulatory codes and citations. Be concise but specific.`;
+    const systemPrompt = buildGuidelinesPrompt(inst.cfr);
 
     const unitLine = instUnits ? `${instUnits.label}: ${unit}` : `Department: ${unit}`;
     const unitCitations = getUnitCitations(institution, unit);
@@ -1891,13 +1801,19 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
     const contractedNote = isContractedUnit
       ? `\nThis is a CONTRACTED service. Scope the guidance specifically to the facility's oversight obligations under §482.12(e) for hospitals (or the equivalent CoP section for this institution type): contract requirements, vendor credentialing, performance monitoring, and the service-specific regulatory standards.`
       : "";
-    const userContent = `Institution: ${inst.label} (${inst.cfr})\n${unitLine}\nCompliance Topic: ${topicFinal}${citationLine}${contractedNote}`;
+    const selectedCondition = conditionRequirements.find((item) => item.id === conditionId);
+    const children = selectedCondition ? requirementsByCondition.get(selectedCondition.id) ?? [] : [];
+    const conditionContext = selectedCondition
+      ? `\nSelected Condition: ${selectedCondition.cfrReference} — ${selectedCondition.requirement}` +
+        `\nVerified CMS paragraph references to consider (include only those relevant to the topic): ${children.map((item) => `${item.cfrReference}: ${item.requirement}`).join("; ")}`
+      : "";
+    const userContent = `Institution: ${inst.label} (${inst.cfr})\n${unitLine}\nCompliance Topic: ${topicFinal}${conditionContext}${citationLine}${contractedNote}`;
 
     try {
       const { text, dataSource: ds } = await callApiWithSource(
         systemPrompt,
         userContent,
-        4500,
+        GUIDELINES_MAX_TOKENS,
         institution,
         signal,
       );
@@ -2009,6 +1925,17 @@ Include 3-4 standards per source. Use real, accurate regulatory codes and citati
       {/* Form */}
       <div style={S.card}>
         <div style={S.row}>
+          {conditionRequirements.length > 0 && (
+            <div>
+              <label style={S.label}>Condition (optional)</label>
+              <select style={S.select} value={conditionId} onChange={(e) => { setConditionId(e.target.value); setResult(null); setDataSource(null); }}>
+                <option value="">All applicable conditions for this topic</option>
+                {conditionRequirements.map((item) => (
+                  <option key={item.id} value={item.id}>{item.cfrReference} — {item.requirement}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {instUnits && (
             <div>
               <label style={S.label}>{instUnits.label}</label>
@@ -3447,11 +3374,11 @@ Rules:
 
         {/* Upload area */}
         <div style={{ marginBottom: "12px" }}>
-          <label style={S.label}>Upload Policy Document (PDF, TXT, DOC, DOCX)</label>
+          <label style={S.label}>Upload Policy Document (PDF, DOCX, TXT, MD)</label>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             <label style={{ ...S.btnSm, display: "inline-block", cursor: "pointer", padding: "8px 14px", background: "#F8FAFC", borderStyle: "dashed" }}>
               {fileLoading ? "Reading…" : "📎 Choose File"}
-              <input type="file" accept=".pdf,.txt,.doc,.docx,text/plain,application/pdf" style={{ display: "none" }} onChange={handleFile} disabled={fileLoading} />
+              <input type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" style={{ display: "none" }} onChange={handleFile} disabled={fileLoading} />
             </label>
             {fileName && !fileLoading && (
               <span style={{ fontSize: "12px", color: "#065F46", fontWeight: 600 }}>✓ {fileName}</span>
@@ -4273,7 +4200,6 @@ function AffiliateAdminSection({ basePath, month }) {
   const [enrollError, setEnrollError] = useState("");
   const [form, setForm] = useState({ referralCode: "", companyName: "", contactName: "", email: "" });
   const [reloadKey, setReloadKey] = useState(0);
-  const [approvingId, setApprovingId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -4303,44 +4229,6 @@ function AffiliateAdminSection({ basePath, month }) {
       });
     return () => { cancelled = true; };
   }, [basePath, month, reloadKey]);
-
-  /**
-   * Approve a pending application: assign the real referral code and put the
-   * rate in effect.
-   *
-   * Prompts for the code rather than generating one, because the code is
-   * permanent, appears on the affiliate's printed material, and is the thing
-   * attribution is decided by. It is the operator's decision, made once.
-   */
-  async function approve(row) {
-    const suggested = row.companyName
-      .toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
-    const code = window.prompt(
-      `Approve ${row.companyName} at 20%.\n\n` +
-      `Assign their permanent referral code. This appears in their links and can never be ` +
-      `changed or reused once active.`,
-      suggested,
-    );
-    if (!code) return;
-
-    setApprovingId(row.id);
-    setError('');
-    try {
-      const response = await fetch(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/approve`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ referralCode: code, commissionRatePct: 20 }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'Unable to approve');
-      setReloadKey((k) => k + 1);
-    } catch (approveError) {
-      setError(approveError.message || 'Unable to approve');
-    } finally {
-      setApprovingId(null);
-    }
-  }
 
   async function enroll(event) {
     event.preventDefault();
@@ -4417,35 +4305,6 @@ function AffiliateAdminSection({ basePath, month }) {
         programme is not real — so it needs to be the first thing seen, not a
         row with a different status badge among twenty others.
       */}
-      {rows.some((r) => r.status === "pending") && (
-        <div style={{ marginBottom: "14px", border: "1px solid rgba(96,165,250,0.4)", background: "rgba(96,165,250,0.1)", borderRadius: "8px", padding: "12px 14px" }}>
-          <div style={{ color: "#93C5FD", fontWeight: 800, fontSize: "12px", letterSpacing: "0.4px", textTransform: "uppercase", marginBottom: "8px" }}>
-            {rows.filter((r) => r.status === "pending").length} application
-            {rows.filter((r) => r.status === "pending").length === 1 ? "" : "s"} awaiting review
-          </div>
-          <div style={{ display: "grid", gap: "7px" }}>
-            {rows.filter((r) => r.status === "pending").map((row) => (
-              <div key={row.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "7px", padding: "9px 11px" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ color: "#fff", fontSize: "12.5px", fontWeight: 700 }}>{row.companyName}</div>
-                  <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "10.5px" }}>
-                    {row.contactName ? `${row.contactName} · ` : ""}{row.email}
-                    {row.createdAt ? ` · applied ${new Date(row.createdAt).toLocaleDateString("en-US")}` : ""}
-                  </div>
-                </div>
-                <button
-                  onClick={() => void approve(row)}
-                  disabled={approvingId === row.id}
-                  style={{ padding: "6px 14px", background: "#34D399", border: "none", borderRadius: "6px", color: "#062B20", fontSize: "12px", fontWeight: 800, cursor: approvingId === row.id ? "wait" : "pointer", whiteSpace: "nowrap", opacity: approvingId === row.id ? 0.6 : 1 }}
-                >
-                  {approvingId === row.id ? "Approving…" : "Approve at 20%"}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {stats?.lapsingAffiliates > 0 && (
         <div style={{ fontSize: "11.5px", color: "#FBBF24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "7px", padding: "8px 11px", marginBottom: "12px" }}>
           {stats.lapsingAffiliates} affiliate{stats.lapsingAffiliates === 1 ? " is" : "s are"} in or past the 60-day grace period (§11).
@@ -4510,7 +4369,7 @@ function AffiliateAdminSection({ basePath, month }) {
       {/* Affiliate table */}
       {loading ? (
         <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "12px" }}>Loading affiliates…</div>
-      ) : rows.length === 0 ? (
+      ) : rows.every((row) => row.status === "pending") ? (
         <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "12px", padding: "14px 0" }}>
           No affiliates enrolled yet. Signups already carry their <code style={{ color: "#F5C542" }}>?ref=</code> code, so
           attribution starts the moment an affiliate is enrolled with a matching code.
@@ -4531,7 +4390,7 @@ function AffiliateAdminSection({ basePath, month }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {rows.filter((row) => row.status !== "pending").map((row) => {
                 const tone = activityTone[row.activityStatus] ?? activityTone.active;
                 return (
                   <tr key={row.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
@@ -4570,6 +4429,62 @@ function AffiliateAdminSection({ basePath, month }) {
         restates money already earned (§12, §13).
       </div>
     </div>
+  );
+}
+
+// Review applicants separately from the existing affiliate accounting tools.
+// Applying only records contact details; it does not activate a partnership.
+function AffiliateApplicationsSection({ basePath }) {
+  const [applications, setApplications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${basePath}/api/affiliates`, { credentials: "include", cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to load applications");
+        return response.json();
+      })
+      .then((rows) => {
+        if (controller.signal.aborted) return;
+        setApplications(Array.isArray(rows) ? rows.filter((row) => row.status === "pending") : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setError("Could not load applications. Please try again later.");
+          setLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [basePath]);
+
+  return (
+    <section aria-label="Vendor and affiliate applications" style={{ padding: "10px 0 18px" }}>
+      <h2 style={{ color: "#fff", fontSize: "15px", margin: "0 0 4px" }}>Vendor & Affiliate Applications</h2>
+      <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "12px", margin: "0 0 14px" }}>
+        Review each application and follow up manually. Applying does not enroll a partner.
+      </p>
+      {loading && <p style={{ color: "#fff" }}>Loading applications…</p>}
+      {error && <p role="alert" style={{ color: "#FCA5A5" }}>{error}</p>}
+      {!loading && !error && applications.length === 0 && <p style={{ color: "#fff" }}>No applications awaiting review.</p>}
+      <div style={{ display: "grid", gap: "10px" }}>
+        {applications.map((row) => (
+          <article key={row.id} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "8px", padding: "14px" }}>
+            <div style={{ color: "#fff", fontSize: "14px", fontWeight: 700 }}>{row.companyName}</div>
+            <div style={{ color: "rgba(255,255,255,0.75)", fontSize: "12px", marginTop: "6px" }}>
+              {row.contactName} · <a href={`mailto:${row.email}`} style={{ color: "#93C5FD" }}>{row.email}</a>
+              {row.phone ? <> · <a href={`tel:${row.phone.replace(/[^\d+]/g, "")}`} style={{ color: "#93C5FD" }}>{row.phone}</a></> : null}
+              {row.createdAt ? ` · applied ${new Date(row.createdAt).toLocaleDateString("en-US")}` : ""}
+            </div>
+            {row.referralPlan && <p style={{ color: "rgba(255,255,255,0.8)", fontSize: "12px", whiteSpace: "pre-wrap", margin: "10px 0 0" }}>
+              <strong>How they plan to refer clients:</strong> {row.referralPlan}
+            </p>}
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -4664,6 +4579,7 @@ function AdminQuickPanel({ basePath, onClose }) {
             <div role="tablist" aria-label="Admin sections" style={{ display: "inline-flex", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "7px", padding: "2px" }}>
               {[
                 { id: "clients",    label: "Clients" },
+                { id: "applications", label: "Applications" },
                 { id: "affiliates", label: "Affiliates" },
               ].map((t) => (
                 <button
@@ -4691,6 +4607,7 @@ function AdminQuickPanel({ basePath, onClose }) {
           </div>
         </div>
 
+        {section === "applications" && <AffiliateApplicationsSection basePath={basePath} />}
         {section === "affiliates" && <AffiliateAdminSection basePath={basePath} month={month} />}
 
         {section === "clients" && (<>

@@ -97,18 +97,24 @@ router.post("/apply", async (req, res) => {
   const body = req.body ?? {};
   const companyName = typeof body.companyName === "string" ? body.companyName.trim() : "";
   const contactName = typeof body.contactName === "string" ? body.contactName.trim() : "";
-  const email = typeof body.email === "string" ? body.email.trim() : "";
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const phone = typeof body.phone === "string" ? body.phone.trim() : "";
-  const about = typeof body.about === "string" ? body.about.trim().slice(0, 2000) : "";
+  const about = typeof body.about === "string" ? body.about.trim() : "";
 
   if (companyName.length < 2 || companyName.length > 200) {
     return res.status(400).json({ error: "Please enter your company or practice name." });
   }
+  if (contactName.length < 2 || contactName.length > 200) {
+    return res.status(400).json({ error: "Please enter your name." });
+  }
   if (!/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(email) || email.length > 200) {
     return res.status(400).json({ error: "Please enter a valid email address." });
   }
-  if (contactName.length > 200 || phone.length > 50) {
-    return res.status(400).json({ error: "One of those fields is too long." });
+  if (phone.length < 7 || phone.length > 50) {
+    return res.status(400).json({ error: "Please enter a phone number." });
+  }
+  if (about.length < 10 || about.length > 2000) {
+    return res.status(400).json({ error: "Please describe how you plan to refer clients (10–2,000 characters)." });
   }
 
   try {
@@ -126,16 +132,16 @@ router.post("/apply", async (req, res) => {
     await db.insert(affiliates).values({
       referralCode: assignedCode,
       companyName,
-      contactName: contactName || null,
+      contactName,
       email,
-      phone: phone || null,
+      phone,
       status: "pending",
       // No rate is in effect until approval. Recorded as 0 rather than 20 so a
       // pending applicant cannot accrue anything even if their status were
       // flipped by mistake without a deliberate rate decision.
       commissionRatePct: 0,
       rateEffectiveAt: new Date(),
-      adminNotes: about ? `Application note: ${about}` : null,
+      adminNotes: `Application note: ${about}`,
     });
 
     return res.status(201).json({ ok: true, received: true });
@@ -235,6 +241,10 @@ router.get("/", requireAnyAdmin, async (req, res) => {
         companyName: row.companyName,
         contactName: row.contactName,
         email: row.email,
+        phone: row.phone,
+        referralPlan: row.status === "pending" && row.adminNotes?.startsWith("Application note: ")
+          ? row.adminNotes.slice("Application note: ".length)
+          : null,
         status: row.status,
         commissionRatePct: row.commissionRatePct,
         lastQualifyingReferralAt: row.lastQualifyingReferralAt,
