@@ -20,6 +20,18 @@ serve = "static"
 publicDir = "artifacts/marketing-site/dist/public"
 
 [[services.production.rewrites]]
+from = "/affiliates"
+to = "/affiliates/index.html"
+
+[[services.production.rewrites]]
+from = "/terms"
+to = "/terms/index.html"
+
+[[services.production.rewrites]]
+from = "/privacy"
+to = "/privacy/index.html"
+
+[[services.production.rewrites]]
 from = "/*"
 to = "/index.html"
 

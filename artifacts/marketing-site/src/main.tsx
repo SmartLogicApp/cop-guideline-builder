@@ -1,17 +1,20 @@
-import { createRoot } from 'react-dom/client';
+import { createRoot, hydrateRoot } from 'react-dom/client';
 
 import App from './App';
 import { ErrorBoundary } from '@/components/error-boundary';
 
 import './index.css';
 
-createRoot(document.getElementById('root')!, {
+const root = document.getElementById('root')!;
+const app = <ErrorBoundary><App /></ErrorBoundary>;
+const options = {
   // Keeps caught errors off reportError(), which would raise the dev overlay.
-  onCaughtError: (error, errorInfo) => {
+  onCaughtError: (error: unknown, errorInfo: { componentStack?: string }) => {
     console.error(error, errorInfo.componentStack);
   },
-}).render(
-  <ErrorBoundary>
-    <App />
-  </ErrorBoundary>,
-);
+};
+if (root.hasChildNodes()) {
+  hydrateRoot(root, app, options);
+} else {
+  createRoot(root, options).render(app);
+}

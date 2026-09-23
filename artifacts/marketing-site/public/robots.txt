@@ -1,2 +1,10 @@
 User-agent: *
 Allow: /
+Disallow: /app
+Disallow: /billing
+Disallow: /register
+Disallow: /accept-terms
+Disallow: /sign-in
+Disallow: /sign-up
+
+Sitemap: https://cmscomplianceguardian.com/sitemap.xml

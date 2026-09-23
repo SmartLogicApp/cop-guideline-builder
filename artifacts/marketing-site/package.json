@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "prebuild": "pnpm run test:routing && pnpm run test:clerk-credentials && pnpm run test:bundle-boundary && pnpm run test:generation",
-    "build": "vite build --config vite.config.ts && pnpm run check:bundle-boundary",
+    "build": "vite build --config vite.config.ts && node scripts/prerender-public.mjs && pnpm run check:bundle-boundary",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "test:routing": "node --test scripts/auth-routing-contract.test.mjs",
     "test:clerk-credentials": "node --test scripts/clerk-credential-validation.test.mjs",

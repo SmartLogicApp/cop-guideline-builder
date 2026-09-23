@@ -57,7 +57,7 @@ export default function LandingPage() {
         <section className="relative overflow-hidden bg-slate-50 pt-24 pb-32 sm:pt-32 sm:pb-40">
           <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
           <div className="container relative mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <motion.div initial="initial" animate="animate" variants={stagger} className="max-w-3xl mx-auto">
+            <motion.div initial={false} animate="animate" variants={stagger} className="max-w-3xl mx-auto">
               <motion.div variants={fadeIn} className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-sm font-medium text-primary mb-8">
                 <span className="flex h-2 w-2 rounded-full bg-primary mr-2"></span>
                 Always up-to-date with CMS regulations
