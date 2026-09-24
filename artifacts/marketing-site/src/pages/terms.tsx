@@ -22,11 +22,6 @@ export default function TermsPage() {
       </header>
 
       <main className="container mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mb-8 rounded-xl border border-amber-300 bg-amber-50 p-5 text-sm leading-6 text-amber-950">
-          <strong>Pre-launch billing notice:</strong> Stripe checkout, paid subscriptions, automatic renewals,
-          and token billing are not currently active. Sections 13–15 reserve space for billing terms that
-          will be presented before any paid service begins.
-        </div>
         <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-10">
           <TermsDocument />
         </article>

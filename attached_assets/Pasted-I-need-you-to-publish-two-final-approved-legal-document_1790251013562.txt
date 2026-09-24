@@ -1,0 +1,1321 @@
+I need you to publish two final, approved legal documents to the live site: Terms of Service (replacing the current published version) and the Privacy Policy. Both texts below are FINAL and approved by the business owner -- do not treat them as drafts, do not add or remove any substantive wording, and do not paraphrase or "improve" the text. Insert it verbatim.
+
+TASK 1 -- TERMS OF SERVICE
+
+Please look at artifacts/marketing-site/src/components/terms-document.tsx and artifacts/api-server/src/lib/terms-versions.ts first, and follow the exact pattern already documented in terms-document.tsx's own comments:
+
+1. Create a new file artifacts/marketing-site/src/legal/terms-v4.ts exporting a single string constant (name it termsV4, matching the termsV1 pattern in terms-v1.ts) containing EXACTLY the text between the ===TERMS START=== and ===TERMS END=== markers below, and nothing else added or removed.
+2. In terms-document.tsx: uncomment the "import { termsV2 } from '@/legal/terms-v2'" line but point it at '@/legal/terms-v4' importing termsV4 instead (adjust the name/path to match what you actually created), add a DOCUMENTS entry for the new version key, and move CLIENT_CURRENT_TERMS_VERSION to that new version key.
+3. In artifacts/api-server/src/lib/terms-versions.ts: DO NOT delete or edit the existing "2026-08-13" or "2026-09-21" entries. Add a new entry using their existing dated-version-key convention (use "2026-09-23" as the version key, matching the document's effective date of September 23, 2026), publishedOn "2026-09-23", published: true, and a one-line summary in the same style as the existing summaries. Move CURRENT_TERMS_VERSION to "2026-09-23". Make sure this new version key matches exactly what you used for CLIENT_CURRENT_TERMS_VERSION in terms-document.tsx -- the comments in that file warn that all pieces must move together or the acceptance gate breaks.
+4. Existing customers who already accepted an earlier version should be prompted to re-accept, consistent with how "needsAcceptance" already works in that file -- do not weaken or bypass that mechanism.
+
+Here is the exact final Terms of Service v4.0 text:
+
+===TERMS START===
+CMS COMPLIANCE GUARDIAN, LLC
+
+TERMS OF SERVICE
+
+CMS Compliance Guardian Platform | CoP Guideline Builder
+
+Effective Date: September 23, 2026
+Version 4.0
+
+These Terms of Service (the "Terms") are a binding legal agreement between CMS Compliance Guardian, LLC, a Florida limited liability company ("CMS Compliance Guardian," "Company," "we," "us," or "our"), and the person or entity accessing or using the Service ("Customer," "you," or "your").
+
+These Terms govern access to and use of the CMS Compliance Guardian platform, including the CoP Guideline Builder application, and all related websites, software, content, documentation, features, and services provided by us (collectively, the "Service").
+
+BY CLICKING "I AGREE" OR A SIMILAR BUTTON, CREATING AN ACCOUNT, STARTING A FREE TRIAL, PURCHASING OR ACTIVATING A SUBSCRIPTION, EXECUTING AN ORDER FORM, OR OTHERWISE ACCESSING OR USING THE SERVICE, YOU ACKNOWLEDGE THAT YOU HAVE READ, UNDERSTAND, AND AGREE TO BE BOUND BY THESE TERMS AND OUR PRIVACY POLICY.
+
+IF YOU DO NOT AGREE TO THESE TERMS, DO NOT ACCESS OR USE THE SERVICE.
+
+PLEASE READ THE PROVISIONS REGARDING DISCLAIMER OF WARRANTIES, LIMITATION OF LIABILITY, INDEMNIFICATION, GOVERNING LAW, AND DISPUTE RESOLUTION CAREFULLY. THESE PROVISIONS ALLOCATE RISK BETWEEN YOU AND CMS COMPLIANCE GUARDIAN.
+
+If you access or use the Service on behalf of an entity, you represent and warrant that you have actual authority to bind that entity to these Terms. If you do not have that authority, you may not accept these Terms or use the Service on the entity's behalf.
+
+The Service is a business-to-business product intended for healthcare organizations and their authorized personnel. It is not intended for personal, family, or household use.
+
+1. DEFINITIONS
+
+"Authorized User" means an employee, contractor, consultant, or agent of Customer whom Customer authorizes to access the Service for the benefit of the Licensed Facility.
+
+"CCN" means a CMS Certification Number or another facility identifier accepted by CMS Compliance Guardian.
+
+"Customer Content" means all information, text, documents, prompts, files, policies, settings, and other materials submitted to or through the Service by or on behalf of Customer or an Authorized User.
+
+"Licensed Facility" means the single healthcare facility identified by one CCN, or other facility identifier accepted by CMS Compliance Guardian, for which a subscription has been purchased.
+
+"Order Form" means a written ordering document, quote, proposal, or enterprise agreement signed or otherwise accepted by authorized representatives of the parties that references these Terms.
+
+"Output" means responses, drafts, summaries, checklists, policy language, suggestions, recommendations, generated text, and other content generated or returned by the Service, including content generated with the assistance of artificial-intelligence technologies.
+
+"PHI" means protected health information and electronic protected health information as defined under HIPAA, together with patient-identifiable, medical-record, or other health information regulated by HIPAA or similar health-information privacy laws.
+
+"Subscription Term" means the monthly or annual billing period selected at enrollment and each applicable renewal period.
+
+"Third-Party Services" means third-party software, artificial-intelligence models, APIs, hosting services, databases, analytics services, payment services, communication services, integrations, websites, or other services used by or made available through the Service.
+
+2. THE SERVICE; NO PROFESSIONAL ADVICE
+
+The Service provides AI-assisted research, organization, drafting, compliance-workflow, and information-management tools intended to assist healthcare organizations with CMS Conditions of Participation and Conditions for Coverage ("CoPs"), survey readiness, policy development, compliance workflows, and related regulatory subject matter.
+
+The Service may use artificial intelligence, retrieval technologies, publicly available regulatory materials, Customer Content, proprietary resources, third-party technologies, and other information to generate Output.
+
+THE SERVICE AND OUTPUT ARE RESEARCH AND DRAFTING AIDS ONLY.
+
+Neither the Service nor Output constitutes legal, regulatory, medical, clinical, accounting, consulting, accreditation, fiduciary, or other professional advice.
+
+Use of the Service does not create an attorney-client, consultant-client, fiduciary, physician-patient, accreditation-consultant, or other professional relationship between Customer and CMS Compliance Guardian.
+
+The Service and Output are not substitutes for review by appropriately qualified legal, regulatory, compliance, clinical, accreditation, operational, or other professionals.
+
+CMS Compliance Guardian does not guarantee compliance with any law, regulation, CMS requirement, Conditions of Participation, Conditions for Coverage, State Operations Manual provision, interpretive guideline, accreditation standard, state law, licensure requirement, payer requirement, contractual requirement, or other regulatory or professional standard.
+
+CMS Compliance Guardian does not guarantee any particular survey, audit, accreditation, certification, licensure, reimbursement, enforcement, patient-care, financial, operational, or business outcome.
+
+Customer is solely responsible for evaluating, validating, adapting, approving, implementing, and using Output.
+
+Before relying upon Output, Customer must independently verify the applicable information against current official source materials and the facts and circumstances of Customer's organization.
+
+We may modify, improve, replace, suspend, or discontinue Service features from time to time. We will use commercially reasonable efforts to provide notice of material changes that materially reduce the core functionality of a paid Service, except where immediate modification is reasonably necessary for security, legal, technical, operational, or third-party-service reasons.
+
+3. ELIGIBILITY; ACCOUNTS; AUTHORIZED USERS
+
+You must be at least eighteen (18) years old and legally capable of entering into a binding agreement to create or maintain an account.
+
+The Service is not directed to children and is not intended for use by minors.
+
+Customer must provide accurate, current, and complete account information and must promptly update information that becomes inaccurate or incomplete.
+
+Customer is responsible for:
+
+(a) maintaining the confidentiality of account credentials;
+
+(b) maintaining control of authentication credentials and multi-factor authentication devices;
+
+(c) restricting access to Authorized Users;
+
+(d) ensuring that Authorized Users comply with these Terms;
+
+(e) all activity occurring through Customer's account, except to the extent directly caused by CMS Compliance Guardian's breach of these Terms;
+
+(f) maintaining appropriate internal security procedures; and
+
+(g) ensuring that facility, CCN, organizational, regulatory, and other information provided to CMS Compliance Guardian is accurate.
+
+Customer must promptly notify CMS Compliance Guardian at [HelpCMSComplianceGuardian@outlook.com](mailto:HelpCMSComplianceGuardian@outlook.com) of known or reasonably suspected unauthorized access to an account.
+
+CMS Compliance Guardian may suspend, restrict, or terminate access as permitted by these Terms.
+
+4. PER-FACILITY LICENSING
+
+Unless an Order Form expressly provides otherwise, each paid subscription is licensed for one Licensed Facility identified by one CCN.
+
+A health system, parent organization, management company, multi-facility operator, or other organization must obtain a separate subscription for each facility using the Service unless an applicable Order Form expressly authorizes multi-facility or enterprise use.
+
+Customer may not share a subscription among multiple facilities, CCNs, organizations, or unrelated entities, or use the Service to prepare materials for an unlicensed facility, except as expressly authorized in writing.
+
+CMS Compliance Guardian may reasonably request information necessary to verify compliance with this Section.
+
+If we determine that the Service has been used for an unlicensed facility, we may require payment of applicable fees, require an upgraded plan, restrict access, suspend the affected account, or terminate the affected subscription.
+
+5. FREE TRIALS
+
+We may offer a free trial to eligible customers.
+
+Trial eligibility, duration, features, availability, and requirements may be changed or discontinued at any time to the extent permitted by law.
+
+Unless otherwise stated at enrollment, trials are limited to one trial per organization and Licensed Facility.
+
+If payment information is required for a trial, the enrollment process will disclose the applicable paid-plan price, billing frequency, trial duration, conversion date, and cancellation method.
+
+Unless Customer cancels before the applicable trial ends, the subscription may automatically convert to the selected paid plan and the applicable recurring charges, plus applicable taxes, may be charged.
+
+Customer may cancel during the trial using the cancellation method provided at enrollment.
+
+Nothing in these Terms limits any nonwaivable right provided by applicable automatic-renewal, negative-option, or consumer-protection law.
+
+6. FEES, BILLING, AUTOMATIC RENEWAL, AND TAXES
+
+6.1 Subscription Fees.
+
+Unless otherwise stated in an Order Form or at checkout:
+
+Monthly: $299.00 per month, billed monthly in advance, one Licensed Facility.
+
+Annual: $3,588.00 per year, billed annually in advance, one Licensed Facility.
+
+Enterprise/Multi-Facility: pricing established by Order Form.
+
+Current pricing, plans, and features may be displayed at checkout or within the Service.
+
+If a signed Order Form conflicts with pricing displayed in the Service, the signed Order Form controls with respect to the conflicting subject matter.
+
+6.2 Automatic Renewal.
+
+Subscriptions automatically renew for successive periods of the same duration unless Customer cancels before the applicable renewal date.
+
+By enrolling in a paid subscription, Customer authorizes CMS Compliance Guardian or its designated payment processor to charge applicable recurring subscription fees, taxes, and other authorized amounts.
+
+Where required by law, the enrollment process will disclose the applicable recurring price, billing frequency, renewal terms, and cancellation method and obtain any required affirmative consent.
+
+Where required by applicable law, CMS Compliance Guardian will provide renewal reminders or other required notices.
+
+6.3 Payment Processing.
+
+Payments may be processed by Stripe, Inc. or another payment processor designated by CMS Compliance Guardian.
+
+Payment processors operate under their own terms, privacy policies, security procedures, and systems.
+
+CMS Compliance Guardian does not store complete payment-card numbers on its systems.
+
+CMS Compliance Guardian is not responsible for the independent acts, omissions, outages, security practices, or processing activities of a third-party payment processor except to the extent required by applicable law.
+
+6.4 Taxes.
+
+Fees do not include applicable sales, use, excise, value-added, withholding, or similar taxes unless expressly stated otherwise.
+
+Customer is responsible for applicable taxes except taxes imposed on CMS Compliance Guardian's net income.
+
+6.5 Price Changes.
+
+CMS Compliance Guardian may modify subscription prices or introduce new fees for future Subscription Terms by providing at least thirty (30) days' advance notice, unless a different period is required by applicable law.
+
+Price changes will not retroactively modify a paid Subscription Term.
+
+If Customer does not accept a price change, Customer may cancel before the next renewal date.
+
+6.6 Nonpayment.
+
+If payment fails, is reversed, disputed, or becomes delinquent, CMS Compliance Guardian may retry payment, require updated payment information, restrict or suspend access, or terminate the applicable subscription.
+
+Customer remains responsible for amounts properly due for the period in which Service was available and for reasonable collection costs where permitted by law.
+
+6.7 Refunds.
+
+Except where expressly provided in these Terms, an Order Form, or required by applicable law, subscription fees are nonrefundable and unused portions of Subscription Terms, downgrades, unused features, or unused Service capacity do not create refund or credit rights.
+
+7. CANCELLATION AND TERMINATION
+
+7.1 Cancellation by Customer.
+
+Customer may cancel through the self-service billing portal or another cancellation method made available by CMS Compliance Guardian.
+
+Where required by applicable law, cancellation will be available through a method that is reasonably accessible and consistent with applicable enrollment requirements.
+
+Unless otherwise stated, cancellation becomes effective at the end of the then-current paid Subscription Term.
+
+7.2 Suspension or Termination by CMS Compliance Guardian.
+
+CMS Compliance Guardian may suspend, restrict, or terminate Service access if:
+
+(a) Customer fails to pay amounts when due;
+
+(b) Customer materially breaches these Terms;
+
+(c) Customer submits PHI or other prohibited information;
+
+(d) Customer uses the Service outside the licensed scope;
+
+(e) Customer's conduct creates a material security, legal, operational, financial, or reputational risk;
+
+(f) CMS Compliance Guardian reasonably suspects fraud, abuse, unauthorized access, or unlawful use;
+
+(g) suspension or termination is required by law or governmental authority;
+
+(h) a third-party service necessary for a material portion of the Service becomes unavailable, is discontinued, or can no longer lawfully be used; or
+
+(i) continued operation would expose CMS Compliance Guardian to unreasonable legal, regulatory, security, or operational risk.
+
+Where reasonably practicable, CMS Compliance Guardian will provide notice and an opportunity to cure a material breach before termination.
+
+No cure period is required where immediate action is reasonably necessary to address security risks, fraud, unlawful conduct, prohibited data, imminent harm, third-party rights, or legal requirements.
+
+7.3 Effect of Termination.
+
+Upon termination:
+
+(a) Customer's right to access the Service ends;
+
+(b) Customer remains responsible for fees accrued before termination;
+
+(c) Customer may request an export of Customer Content during the applicable post-termination export period described in the Privacy Policy;
+
+(d) CMS Compliance Guardian may thereafter delete, de-identify, or retain information consistent with the Privacy Policy, applicable law, backup practices, security requirements, fraud-prevention requirements, dispute-resolution needs, and legitimate business-record requirements; and
+
+(e) provisions that by their nature should survive termination will survive, including provisions concerning intellectual property, confidentiality, disclaimers, limitations of liability, indemnification, dispute resolution, payment obligations, data handling, and governing law.
+
+8. AI-GENERATED OUTPUT AND ARTIFICIAL INTELLIGENCE TECHNOLOGIES
+
+The Service uses artificial-intelligence and machine-learning technologies and may use multiple models, model providers, APIs, retrieval systems, automated processing systems, and other technologies.
+
+AI technologies may be added, removed, replaced, updated, retrained, modified, discontinued, or changed by CMS Compliance Guardian or by third-party providers at any time.
+
+Output may be inaccurate, incomplete, misleading, outdated, inappropriate, unavailable, or inconsistent.
+
+Output may not reflect current laws, regulations, CMS guidance, accreditation requirements, enforcement priorities, or facility-specific circumstances.
+
+Customer must not rely on Output as the sole basis for any legal, regulatory, clinical, patient-care, compliance, accreditation, operational, financial, or other material decision.
+
+Customer is responsible for obtaining appropriate human review before adopting, implementing, publishing, submitting, or relying upon Output.
+
+Customer acknowledges that:
+
+(a) Output may be similar or identical to Output generated for other users;
+
+(b) Output may include information obtained or derived from third-party sources;
+
+(c) Output may contain errors or omissions;
+
+(d) Output may change as models, source materials, retrieval systems, prompts, configurations, and third-party technologies change;
+
+(e) CMS Compliance Guardian does not warrant that Output is original, unique, accurate, complete, current, non-infringing, or suitable for any particular purpose; and
+
+(f) Customer remains solely responsible for decisions and actions taken based on Output.
+
+8.1 Third-Party AI and Model Providers.
+
+CMS Compliance Guardian may use third-party artificial-intelligence and technology providers in connection with the Service.
+
+CMS Compliance Guardian does not control the independent operation, internal systems, security practices, model-training practices, retention practices, geographic processing locations, or future policy changes of third-party providers except to the extent CMS Compliance Guardian has contractual or other legally enforceable control over those matters.
+
+CMS Compliance Guardian will use commercially reasonable efforts to select and configure third-party providers in a manner consistent with the commitments expressly made by CMS Compliance Guardian in these Terms and the Privacy Policy.
+
+However, Customer acknowledges that third-party technologies may change their functionality, infrastructure, policies, terms, locations, security practices, retention practices, or processing methods.
+
+CMS Compliance Guardian will not knowingly authorize a third-party AI provider to use Customer Content for generalized model training where CMS Compliance Guardian has contractually prohibited that use, except where Customer has expressly authorized such use in writing.
+
+Nothing in these Terms constitutes a representation that every AI model, technology, subprocesser, vendor, integration, or third-party service used now or in the future will maintain identical technical practices, model architecture, processing locations, retention periods, or policies.
+
+Customer accepts the risks inherent in the use of third-party technologies and AI systems and agrees that CMS Compliance Guardian is not responsible for independent acts or omissions of those third parties except to the extent liability cannot lawfully be excluded or limited.
+
+9. NO PHI; NO BUSINESS ASSOCIATE RELATIONSHIP
+
+CUSTOMER MUST NOT UPLOAD, ENTER, PASTE, TRANSMIT, STORE, OR OTHERWISE SUBMIT PHI THROUGH THE SERVICE.
+
+This prohibition includes patient names, medical record numbers, dates of service associated with individuals, patient narratives, incident reports containing patient identifiers, photographs, medical records, or other individually identifiable health information.
+
+Customer should use only de-identified, hypothetical, or otherwise permissible examples.
+
+The Service is not designed or intended to create, receive, maintain, or transmit PHI.
+
+Unless and until CMS Compliance Guardian enters into a written Business Associate Agreement ("BAA") signed by an authorized representative of CMS Compliance Guardian, Customer must not use the Service in a manner that causes CMS Compliance Guardian to create, receive, maintain, or transmit PHI on Customer's behalf.
+
+If CMS Compliance Guardian discovers PHI or other prohibited health information in the Service, CMS Compliance Guardian may restrict access, delete the information, suspend the applicable account, and take other reasonable remediation measures.
+
+Customer remains solely responsible for determining whether information submitted to the Service constitutes PHI or other regulated information and for ensuring compliance with HIPAA, state privacy laws, contractual obligations, organizational policies, and applicable regulatory requirements.
+
+Customer's submission of PHI or other prohibited information constitutes a material breach of these Terms.
+
+Customer will defend, indemnify, and hold harmless CMS Compliance Guardian and its members, managers, officers, employees, contractors, affiliates, licensors, and service providers from claims, losses, liabilities, penalties, damages, costs, and reasonable attorneys' fees arising from Customer's submission or use of PHI or other prohibited information in violation of these Terms, except to the extent caused by CMS Compliance Guardian's gross negligence, willful misconduct, or other liability that cannot lawfully be excluded.
+
+10. CUSTOMER CONTENT; DATA HANDLING
+
+10.1 Ownership.
+
+As between Customer and CMS Compliance Guardian, Customer retains ownership of Customer Content.
+
+10.2 Limited Service License.
+
+Customer grants CMS Compliance Guardian a nonexclusive, worldwide, royalty-free license to host, store, transmit, process, reproduce, display, modify, and otherwise use Customer Content solely as reasonably necessary to:
+
+(a) provide and operate the Service;
+
+(b) generate requested Output;
+
+(c) maintain, secure, troubleshoot, and support the Service;
+
+(d) prevent fraud, abuse, and security incidents;
+
+(e) comply with applicable law;
+
+(f) enforce these Terms; and
+
+(g) perform other activities expressly described in the Privacy Policy.
+
+10.3 Customer Content and AI Model Training.
+
+CMS Compliance Guardian will not intentionally use Customer Content to train, retrain, or fine-tune generalized artificial-intelligence models operated by CMS Compliance Guardian.
+
+Where CMS Compliance Guardian controls the contractual relationship with a third-party AI provider, CMS Compliance Guardian will use commercially reasonable contractual measures designed to prohibit that provider from using Customer Content for generalized model training, retraining, or fine-tuning, except where Customer has expressly authorized such use in writing.
+
+Customer acknowledges, however, that CMS Compliance Guardian does not control independent third-party systems, technologies, models, infrastructure, policies, or practices outside CMS Compliance Guardian's reasonable contractual or technical control.
+
+Accordingly, CMS Compliance Guardian does not warrant that every third-party technology connected to or used with the Service will maintain identical data practices indefinitely.
+
+CMS Compliance Guardian may replace or add providers as reasonably necessary to operate, improve, secure, or maintain the Service.
+
+10.4 Aggregated and De-Identified Information.
+
+CMS Compliance Guardian may create, use, disclose, retain, and otherwise process aggregated, statistical, de-identified, or anonymized information derived from use of the Service, provided that such information is not reasonably capable of identifying Customer, an Authorized User, or an individual.
+
+Such information may be used for analytics, security, benchmarking, research, product development, service improvement, fraud prevention, and legitimate business purposes.
+
+10.5 Service Providers.
+
+Customer Content may be processed by hosting providers, AI providers, cloud providers, security providers, analytics providers, customer-support providers, payment providers, communications providers, professional advisers, and other service providers reasonably necessary to operate the Service.
+
+CMS Compliance Guardian will use commercially reasonable measures to require service providers handling Customer Content to maintain confidentiality and security obligations appropriate to the nature of the information and services provided.
+
+10.6 Customer Representations.
+
+Customer represents and warrants that:
+
+(a) Customer has all rights, permissions, and authority necessary to submit Customer Content;
+
+(b) Customer's submission and use of Customer Content does not violate law, contract, confidentiality obligations, or third-party rights;
+
+(c) Customer Content does not contain PHI or other prohibited information;
+
+(d) Customer has obtained all necessary permissions from Authorized Users and other individuals whose information Customer submits; and
+
+(e) Customer's use of Customer Content with the Service complies with applicable law and Customer's contractual and professional obligations.
+
+10.7 Privacy Policy.
+
+CMS Compliance Guardian's collection, use, disclosure, security, retention, and privacy practices are described in the Privacy Policy, which is incorporated into these Terms by reference.
+
+11. DATA PROCESSING AND SERVICE PROVIDER FRAMEWORK
+
+11.1 General Data Processing Terms.
+
+To the extent CMS Compliance Guardian processes personal information on Customer's behalf in providing the Service, CMS Compliance Guardian will process such information only as reasonably necessary to provide, secure, support, maintain, and improve the Service, comply with law, prevent fraud or abuse, and perform the obligations described in these Terms and the Privacy Policy.
+
+11.2 Customer Responsibilities.
+
+Customer is responsible for determining:
+
+(a) the lawfulness of providing personal information to CMS Compliance Guardian;
+
+(b) the purposes and means for which Customer instructs CMS Compliance Guardian to process personal information;
+
+(c) providing required notices and obtaining required permissions, authorizations, or consents;
+
+(d) ensuring that Customer Content does not contain prohibited PHI unless a separate written BAA expressly permits it; and
+
+(e) responding to requests from individuals concerning information controlled by Customer where applicable law places that responsibility on Customer.
+
+11.3 Subprocessors.
+
+Customer authorizes CMS Compliance Guardian to use third-party service providers and subprocessors as reasonably necessary to provide the Service.
+
+CMS Compliance Guardian may add, remove, replace, or change subprocessors in the ordinary course of operating the Service.
+
+Where required by applicable law, CMS Compliance Guardian will provide legally required notice or other information concerning material subprocessors.
+
+11.4 Security.
+
+CMS Compliance Guardian will maintain commercially reasonable administrative, technical, and organizational safeguards appropriate to the nature of the information processed through the Service.
+
+11.5 Security Incidents.
+
+CMS Compliance Guardian will provide notices required by applicable law and take reasonable steps to mitigate and respond to security incidents.
+
+Nothing in this Section requires CMS Compliance Guardian to provide notice where prohibited by law or where the event does not legally constitute a reportable security incident.
+
+11.6 International Processing.
+
+Customer acknowledges that CMS Compliance Guardian and its service providers may process information in the United States and other jurisdictions where CMS Compliance Guardian or its service providers operate.
+
+Because CMS Compliance Guardian may use third-party infrastructure, vendors, AI providers, cloud providers, communication services, or other technology providers, processing locations may change from time to time.
+
+CMS Compliance Guardian will use commercially reasonable efforts to maintain processing arrangements consistent with applicable law, but does not guarantee that all third-party processing will occur exclusively within the United States unless expressly agreed in a written Order Form.
+
+11.7 Deletion and Retention.
+
+Following termination, Customer Content may be deleted, de-identified, or retained in accordance with the Privacy Policy and applicable legal, security, backup, fraud-prevention, dispute-resolution, tax, accounting, audit, and recordkeeping requirements.
+
+11.8 No Separate DPA Unless Required or Executed.
+
+Unless CMS Compliance Guardian and Customer execute a separate written Data Processing Agreement or Data Processing Addendum, this Section 11, together with the Privacy Policy, constitutes the parties' general data-processing framework for the Service.
+
+If a separately executed DPA applies, the DPA controls over this Section solely to the extent of a direct conflict.
+
+12. SECURITY
+
+CMS Compliance Guardian maintains administrative, technical, and organizational safeguards designed to protect information processed through the Service.
+
+Security measures may include encryption, access controls, authentication mechanisms, logging, monitoring, vulnerability-management practices, vendor-management practices, and other safeguards appropriate to the Service and information involved.
+
+Security measures may change over time as technology, threats, legal requirements, vendors, and business operations change.
+
+No method of transmission, storage, authentication, or electronic security is completely secure.
+
+Customer is responsible for maintaining appropriate security controls within Customer's own organization, including account credentials, Authorized User access, devices, networks, endpoints, and internal backups.
+
+CMS Compliance Guardian will provide notices required by applicable law and take reasonable steps to mitigate and respond to security incidents.
+
+13. ACCEPTABLE USE AND USAGE LIMITS
+
+Customer may use the Service only for internal compliance, policy-development, survey-readiness, and related business purposes for the Licensed Facility.
+
+Customer must not:
+
+(a) use the Service unlawfully, fraudulently, or in violation of applicable law;
+
+(b) submit PHI or prohibited information;
+
+(c) use the Service or Output to develop, train, test, benchmark, or improve a competing product or service;
+
+(d) resell, sublicense, rent, lease, distribute, or commercialize the Service as a standalone service;
+
+(e) access the Service for an unlicensed facility;
+
+(f) reverse engineer, decompile, disassemble, or attempt to discover source code, system prompts, models, algorithms, or underlying components except where prohibited by law;
+
+(g) bypass security, access, billing, technical, or usage controls;
+
+(h) use unauthorized bots, scrapers, scripts, or automated systems;
+
+(i) interfere with the Service or systems connected to it;
+
+(j) upload malicious code;
+
+(k) use the Service to generate or distribute unlawful, fraudulent, defamatory, infringing, discriminatory, or harmful material;
+
+(l) remove proprietary notices;
+
+(m) circumvent usage limits; or
+
+(n) use the Service in a manner that materially increases security, operational, legal, or infrastructure risk.
+
+CMS Compliance Guardian may impose reasonable technical limits on requests, generations, storage, document uploads, API usage, or other Service resources.
+
+If Customer's usage materially exceeds ordinary use for its plan or creates material operational, security, infrastructure, or cost concerns, CMS Compliance Guardian may require Customer to reduce usage, upgrade its plan, or accept reasonable technical limitations.
+
+14. INTELLECTUAL PROPERTY; OUTPUT; FEEDBACK
+
+14.1 Company Intellectual Property.
+
+CMS Compliance Guardian and its licensors own all rights, title, and interest in the Service, including software, interfaces, workflows, methodologies, templates, documentation, designs, trademarks, logos, prompts, systems, and related intellectual property.
+
+CMS, Medicare, and Medicaid are marks of the U.S. Department of Health and Human Services. CMS Compliance Guardian is not affiliated with, endorsed by, or sponsored by CMS, HHS, or any accreditation organization unless expressly stated otherwise.
+
+14.2 Customer License.
+
+Subject to payment and compliance with these Terms, CMS Compliance Guardian grants Customer a limited, nonexclusive, nontransferable, non-sublicensable, revocable right during the Subscription Term to access and use the Service for Customer's internal business purposes at the Licensed Facility.
+
+14.3 Output.
+
+Subject to Customer's compliance with these Terms, CMS Compliance Guardian assigns to Customer any right, title, and interest CMS Compliance Guardian may have in Output generated specifically for Customer.
+
+To the extent such assignment is ineffective or unavailable, CMS Compliance Guardian grants Customer a perpetual, worldwide, royalty-free, nonexclusive license to use such Output for Customer's internal business purposes.
+
+Customer acknowledges that Output may not qualify for copyright protection, may contain third-party material, and may be similar to Output generated for other users.
+
+CMS Compliance Guardian makes no representation concerning the protectability, originality, uniqueness, or non-infringement of Output.
+
+14.4 Feedback.
+
+Customer grants CMS Compliance Guardian a perpetual, irrevocable, worldwide, royalty-free license to use, reproduce, modify, incorporate, and commercialize Feedback without compensation.
+
+Feedback does not include Customer Content or PHI.
+
+15. THIRD-PARTY SERVICES; BETA FEATURES
+
+The Service may depend upon or interoperate with Third-Party Services.
+
+CMS Compliance Guardian does not control Third-Party Services and is not responsible for their independent acts, omissions, availability, security practices, terms, policies, processing practices, model behavior, data practices, or future changes except to the extent required by applicable law.
+
+A third-party service may become unavailable, discontinued, restricted, modified, replaced, or incompatible with the Service.
+
+CMS Compliance Guardian may replace Third-Party Services when reasonably necessary.
+
+Customer's use of third-party services may be subject to the third party's own terms and privacy policies.
+
+Beta, preview, pilot, experimental, or early-access features may be modified, suspended, or discontinued at any time and may be provided without warranties or support commitments.
+
+16. CONFIDENTIALITY
+
+"Confidential Information" means nonpublic information disclosed by one party to the other that is identified as confidential or reasonably should be understood to be confidential given its nature.
+
+Customer Content is Customer Confidential Information.
+
+Nonpublic Service features, pricing, prompts, workflows, technology, and documentation are CMS Compliance Guardian Confidential Information.
+
+Each party will use the other's Confidential Information only as reasonably necessary to perform under these Terms and will protect it using reasonable care.
+
+Disclosure is permitted to employees, contractors, professional advisers, service providers, and others with a legitimate need to know who are subject to confidentiality obligations.
+
+Confidential Information does not include information that:
+
+(a) becomes public without breach;
+
+(b) was lawfully known without restriction;
+
+(c) is lawfully received from a third party; or
+
+(d) is independently developed without use of Confidential Information.
+
+Disclosure required by law, subpoena, court order, or governmental authority is permitted.
+
+Where legally permitted, the disclosing party will provide reasonable notice and cooperate regarding protective treatment.
+
+These obligations survive for three (3) years following termination, except trade secrets, which remain protected for so long as they qualify as trade secrets under applicable law.
+
+17. DISCLAIMERS
+
+THE SERVICE, OUTPUT, THIRD-PARTY SERVICES, AND ALL RELATED MATERIALS ARE PROVIDED "AS IS" AND "AS AVAILABLE."
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, CMS COMPLIANCE GUARDIAN DISCLAIMS ALL EXPRESS, IMPLIED, STATUTORY, AND OTHER WARRANTIES, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, ACCURACY, COMPLETENESS, RELIABILITY, AVAILABILITY, QUIET ENJOYMENT, AND NON-INTERFERENCE.
+
+CMS COMPLIANCE GUARDIAN DOES NOT WARRANT THAT:
+
+(a) THE SERVICE WILL BE UNINTERRUPTED OR ERROR-FREE;
+
+(b) THE SERVICE WILL REMAIN AVAILABLE AT ANY PARTICULAR TIME;
+
+(c) THE SERVICE WILL BE SECURE AGAINST ALL THREATS;
+
+(d) OUTPUT WILL BE ACCURATE, CURRENT, COMPLETE, ORIGINAL, OR NON-INFRINGING;
+
+(e) THE SERVICE WILL SATISFY ANY PARTICULAR REGULATORY, LEGAL, ACCREDITATION, CLINICAL, OR COMPLIANCE REQUIREMENT; OR
+
+(f) USE OF THE SERVICE WILL PREVENT ANY SURVEY DEFICIENCY, CONDITION-LEVEL FINDING, IMMEDIATE-JEOPARDY DETERMINATION, CIVIL MONETARY PENALTY, LOSS OF CERTIFICATION, LOSS OF ACCREDITATION, LICENSURE ACTION, REIMBURSEMENT CONSEQUENCE, OR OTHER ADVERSE RESULT.
+
+CMS COMPLIANCE GUARDIAN IS NOT RESPONSIBLE FOR THE INDEPENDENT OPERATION, OUTPUT, SECURITY, AVAILABILITY, OR POLICIES OF THIRD-PARTY SERVICES EXCEPT TO THE EXTENT LIABILITY CANNOT LAWFULLY BE DISCLAIMED.
+
+18. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, CMS COMPLIANCE GUARDIAN AND ITS MEMBERS, MANAGERS, OFFICERS, EMPLOYEES, CONTRACTORS, AFFILIATES, LICENSORS, AND SERVICE PROVIDERS WILL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL, OR PUNITIVE DAMAGES OR FOR LOSS OF PROFITS, REVENUE, DATA, GOODWILL, BUSINESS OPPORTUNITY, OR BUSINESS INTERRUPTION ARISING FROM OR RELATED TO THE SERVICE, OUTPUT, CUSTOMER CONTENT, THIRD-PARTY SERVICES, OR THESE TERMS.
+
+CMS COMPLIANCE GUARDIAN WILL NOT BE LIABLE FOR REGULATORY FINES, SURVEY DEFICIENCIES, PLANS OF CORRECTION, CORRECTIVE-ACTION REQUIREMENTS, LOSS OF CERTIFICATION, LOSS OF ACCREDITATION, LICENSURE ACTIONS, EXCLUSION, REIMBURSEMENT CONSEQUENCES, PATIENT CLAIMS, OR OTHER OUTCOMES ARISING FROM CUSTOMER'S USE OF OR RELIANCE ON THE SERVICE OR OUTPUT.
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, CMS COMPLIANCE GUARDIAN'S TOTAL AGGREGATE LIABILITY ARISING OUT OF OR RELATED TO THESE TERMS OR THE SERVICE WILL NOT EXCEED THE TOTAL FEES ACTUALLY PAID BY CUSTOMER TO CMS COMPLIANCE GUARDIAN FOR THE SERVICE DURING THE TWELVE (12) MONTHS IMMEDIATELY PRECEDING THE EVENT GIVING RISE TO THE CLAIM, OR ONE HUNDRED U.S. DOLLARS ($100.00) IF CUSTOMER HAS PAID NO FEES.
+
+THE LIMITATIONS IN THIS SECTION APPLY REGARDLESS OF THE LEGAL THEORY OF LIABILITY AND EVEN IF A REMEDY FAILS OF ITS ESSENTIAL PURPOSE.
+
+NOTHING IN THESE TERMS EXCLUDES LIABILITY THAT CANNOT LAWFULLY BE EXCLUDED OR LIMITED.
+
+19. INDEMNIFICATION
+
+Customer will defend, indemnify, and hold harmless CMS Compliance Guardian and its members, managers, officers, employees, contractors, affiliates, licensors, and service providers from and against claims, demands, investigations, losses, liabilities, damages, penalties, settlements, costs, and reasonable attorneys' fees arising from or related to:
+
+(a) Customer's breach of these Terms;
+
+(b) Customer Content;
+
+(c) Customer's use of the Service or Output;
+
+(d) Customer's implementation of any policy, procedure, recommendation, or other material derived from Output;
+
+(e) Customer's violation of law or third-party rights;
+
+(f) submission of PHI or prohibited information;
+
+(g) use outside the licensed scope;
+
+(h) use by an unlicensed facility; or
+
+(i) claims arising from Customer's products, services, operations, personnel, facilities, patients, residents, clients, or regulatory obligations.
+
+CMS Compliance Guardian will provide reasonably prompt notice of an indemnified claim.
+
+CMS Compliance Guardian may participate in or control the defense where its interests require it.
+
+Customer may not settle an indemnified claim in a manner that imposes an admission, liability, restriction, payment obligation, or other obligation upon CMS Compliance Guardian without CMS Compliance Guardian's prior written consent.
+
+20. DISPUTE RESOLUTION; ARBITRATION; CLASS ACTION WAIVER
+
+PLEASE READ THIS SECTION CAREFULLY.
+
+20.1 Informal Resolution.
+
+Before initiating arbitration or litigation, the party asserting a dispute must provide written notice describing the dispute and requested relief.
+
+Notice to CMS Compliance Guardian must be sent to [CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com) and by certified mail or recognized courier to:
+
+CMS Compliance Guardian, LLC
+550 Biltmore Way, Suite 209
+Miami, Florida 33134
+Attn: Legal
+
+The parties will attempt in good faith to resolve the dispute for sixty (60) days.
+
+20.2 Binding Arbitration.
+
+Except for matters specifically excluded below, disputes arising from or relating to these Terms, the Service, or Output will be resolved by final and binding arbitration administered by the American Arbitration Association under applicable AAA rules.
+
+The Federal Arbitration Act governs the arbitration provision.
+
+The arbitration will be conducted by one arbitrator.
+
+The seat of arbitration will be Miami-Dade County, Florida, unless applicable law requires otherwise.
+
+Hearings may be conducted remotely.
+
+20.3 Individual Claims Only.
+
+To the maximum extent permitted by law, Customer and CMS Compliance Guardian agree that disputes may be brought only individually and not as part of a class, collective, consolidated, or representative proceeding.
+
+The arbitrator may not consolidate claims of unrelated parties except where required by applicable law.
+
+If the class-action waiver is determined unenforceable as to a particular claim, that claim will proceed in court and the remaining enforceable claims will remain subject to arbitration to the extent permitted by law.
+
+20.4 Jury Trial Waiver.
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, EACH PARTY KNOWINGLY AND VOLUNTARILY WAIVES ANY RIGHT TO TRIAL BY JURY FOR A DISPUTE THAT PROCEEDS IN COURT.
+
+20.5 Exceptions.
+
+Either party may:
+
+(a) bring an individual claim in small claims court where permitted;
+
+(b) seek temporary, preliminary, or permanent equitable relief concerning intellectual property, Confidential Information, unauthorized access, misuse of systems, or data;
+
+(c) bring an action to collect unpaid fees; or
+
+(d) file a complaint with an applicable governmental agency.
+
+20.6 Arbitration Opt-Out.
+
+Customer may opt out of arbitration by providing written notice to [CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com) within thirty (30) days after first accepting these Terms.
+
+The notice must identify Customer, organization, account email, and the intention to opt out.
+
+Opting out does not affect any other provision.
+
+20.7 Limitation Period.
+
+To the maximum extent permitted by law, any claim arising from these Terms or the Service must be brought within one (1) year after the claim arose.
+
+21. GOVERNING LAW AND VENUE
+
+These Terms are governed by Florida law and applicable federal law without regard to conflict-of-law rules.
+
+The United Nations Convention on Contracts for the International Sale of Goods and the Uniform Computer Information Transactions Act do not apply.
+
+Subject to the arbitration provisions above, state and federal courts located in Miami-Dade County, Florida have exclusive jurisdiction over disputes not subject to arbitration, except where applicable law requires otherwise.
+
+22. CHANGES TO THESE TERMS
+
+CMS Compliance Guardian may modify these Terms.
+
+Material changes will generally be announced through the Service, by email, or by another reasonable method at least fifteen (15) days before taking effect, unless a shorter period is reasonably necessary because of law, security, fraud, regulatory requirements, third-party changes, or urgent operational circumstances.
+
+Updated Terms will identify an updated effective date and version number.
+
+Where required, CMS Compliance Guardian may require affirmative acceptance before continued use.
+
+Otherwise, continued use after the effective date constitutes acceptance to the extent permitted by law.
+
+If Customer does not agree to a material change, Customer may discontinue use and cancel the subscription.
+
+Changes to dispute-resolution provisions will not apply to a dispute for which formal notice was provided before the effective date of the revised provision.
+
+23. COPYRIGHT COMPLAINTS
+
+CMS Compliance Guardian respects intellectual-property rights.
+
+Copyright complaints may be sent to:
+
+Hector Samlut
+CMS Compliance Guardian, LLC
+550 Biltmore Way, Suite 209
+Miami, FL 33134
+[CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com)
+
+CMS Compliance Guardian may terminate accounts of repeat infringers where appropriate.
+
+24. EXPORT COMPLIANCE; GOVERNMENT USERS
+
+The Service is primarily offered to customers located in the United States.
+
+Customer represents that it will not use the Service in violation of applicable U.S. sanctions or export-control laws.
+
+Government customers remain subject to applicable procurement laws and regulations.
+
+25. NO PERSONAL LIABILITY
+
+These Terms are entered into solely between Customer and CMS Compliance Guardian, LLC.
+
+No member, manager, officer, employee, contractor, advisor, affiliate, or representative of CMS Compliance Guardian assumes personal contractual liability under these Terms solely by acting on behalf of CMS Compliance Guardian.
+
+To the maximum extent permitted by law, Customer agrees that claims relating to the Service or these Terms will be asserted against CMS Compliance Guardian, LLC rather than against individuals acting solely in their company capacity.
+
+Nothing in this Section limits liability that cannot lawfully be waived.
+
+26. GENERAL PROVISIONS
+
+26.1 Entire Agreement.
+
+These Terms, the Privacy Policy, applicable Order Forms, and documents expressly incorporated by reference constitute the entire agreement concerning the Service.
+
+Customer purchase-order terms, vendor-registration terms, or similar documents do not modify these Terms unless expressly accepted in writing by CMS Compliance Guardian.
+
+26.2 Order of Precedence.
+
+If a signed Order Form conflicts with these Terms, the Order Form controls solely with respect to the specific conflicting subject matter.
+
+26.3 Assignment.
+
+Customer may not assign these Terms without CMS Compliance Guardian's prior written consent.
+
+CMS Compliance Guardian may assign these Terms in connection with a merger, acquisition, reorganization, financing, sale of assets, corporate restructuring, or transfer to an affiliate.
+
+26.4 Severability.
+
+If any provision is unenforceable, it will be enforced to the maximum extent permitted and the remaining provisions remain effective.
+
+26.5 No Waiver.
+
+Failure to enforce a provision does not constitute waiver.
+
+26.6 Force Majeure.
+
+Neither party is liable for delays or failures caused by circumstances beyond reasonable control, including natural disasters, hurricanes, government action, war, terrorism, epidemics, labor disputes, internet failures, telecommunications failures, third-party hosting failures, third-party AI-provider failures, cyberattacks, utility failures, or other events beyond reasonable control.
+
+26.7 Notices.
+
+CMS Compliance Guardian may provide notices by email, through the Service, or by another reasonable method.
+
+Legal notices to CMS Compliance Guardian must be sent to:
+
+CMS Compliance Guardian, LLC
+550 Biltmore Way, Suite 209
+Miami, FL 33134
+Attn: Legal
+[CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com)
+
+Support communications do not constitute formal legal notice.
+
+26.8 Electronic Communications and Signatures.
+
+Customer consents to electronic communications, records, agreements, notices, and disclosures.
+
+Electronic acceptance, electronic signatures, click-through acceptance, and electronic records may satisfy applicable writing and signature requirements to the extent permitted by law.
+
+26.9 Independent Contractors.
+
+The parties are independent contractors.
+
+Nothing creates a partnership, joint venture, agency, employment relationship, fiduciary relationship, or franchise.
+
+26.10 No Third-Party Beneficiaries.
+
+Except for persons expressly protected under the indemnification, liability, and no-personal-liability provisions, these Terms do not create third-party beneficiary rights.
+
+26.11 Interpretation.
+
+Headings are for convenience.
+
+"Including" means including without limitation.
+
+These Terms will not be construed against either party solely because that party drafted them.
+
+The English-language version controls.
+
+27. CONTACT INFORMATION
+
+CMS Compliance Guardian, LLC
+550 Biltmore Way, Suite 209
+Miami, Florida 33134
+
+Support:
+[HelpCMSComplianceGuardian@outlook.com](mailto:HelpCMSComplianceGuardian@outlook.com)
+
+Legal Notices:
+[CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com)
+
+Privacy:
+[CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com)
+
+Website:
+https://cmscomplianceguardian.com
+
+Copyright © 2026 CMS Compliance Guardian, LLC. All rights reserved.
+===TERMS END===
+
+TASK 2 -- PRIVACY POLICY
+
+Please also update the Privacy Policy page (artifacts/marketing-site/src/pages/privacy.tsx). First open that file and check whether it already follows a similar versioned-source pattern (e.g. an imported legal/privacy-v*.ts source file) like terms-document.tsx does. If it does, follow that same pattern (new privacy-v2.ts source file, update the version pointer). If it does not, and the content is rendered directly in privacy.tsx, replace the rendered content there with the exact text below, and add a simple version marker/comment so it's clear this is Privacy Policy Version 2.0 effective September 23, 2026. Preserve any working "Stripe Privacy Policy" hyperlink pointing to https://stripe.com/privacy if present in the text below, or add one if the surrounding component supports links, pointing the text "Stripe Privacy Policy" to https://stripe.com/privacy.
+
+Here is the exact final Privacy Policy v2.0 text:
+
+===PRIVACY START===
+# CMS COMPLIANCE GUARDIAN, LLC
+
+# PRIVACY POLICY
+
+**CMS Compliance Guardian Platform | CoP Guideline Builder**
+**Effective Date:** September 23, 2026
+**Version:** 2.0
+
+CMS Compliance Guardian, LLC, a Florida limited liability company ("CMS Compliance Guardian," "Company," "we," "us," or "our"), respects your privacy. This Privacy Policy explains how we collect, use, disclose, retain, and protect information in connection with the CMS Compliance Guardian platform, the CoP Guideline Builder application, our website at cmscomplianceguardian.com, and related services (collectively, the "Service").
+
+This Privacy Policy is incorporated into and forms part of our Terms of Service. Capitalized terms not defined here have the meanings given in the Terms of Service.
+
+The Service is a business-to-business product intended primarily for use by healthcare organizations and their authorized personnel. It is not directed to children, and it is not designed or intended to receive Protected Health Information ("PHI") or other patient-identifiable information.
+
+By accessing or using the Service, you acknowledge the practices described in this Privacy Policy, to the extent permitted by applicable law. If you do not agree with these practices, do not use the Service.
+
+---
+
+# 1. Information We Collect
+
+We collect information directly from you, automatically through your use of the Service, and from a limited set of third-party sources.
+
+## 1.1 Information You Provide
+
+**Account and registration information.** Name, business email address, telephone number, job title, organization name, facility type, CMS Certification Number ("CCN"), account credentials, and other information you provide when creating or administering an account.
+
+**Subscription and billing information.** Billing name, billing address, subscription plan, payment status, transaction identifiers, payment history, and billing dates. Payment-card information is collected and processed directly by our payment processor; we do not store complete payment-card numbers on our systems.
+
+**Customer Content.** Prompts, uploaded documents, policy drafts, settings, feedback, and other materials submitted to the Service by you or an Authorized User. You must not submit PHI, patient-identifiable information, medical records, patient narratives, incident reports containing patient identifiers, or other information regulated by HIPAA or similar health-information privacy laws. See Section 5.
+
+**Communications.** Information contained in support requests, questions, survey responses, feedback, and other correspondence you send to us.
+
+## 1.2 Information Collected Automatically
+
+**Usage information.** Pages viewed, features used, generation requests, interactions with the Service, timestamps, error events, and similar activity information.
+
+**Device and log information.** IP address, browser type and settings, operating system, device type and identifiers, language preferences, referring URLs, access times, and diagnostic information.
+
+**Cookie and similar-technology information.** Information collected through cookies, local storage, pixels, web beacons, software development kits, and similar technologies, as described in Section 8.
+
+## 1.3 Information From Other Sources
+
+**Payment processors.** Payment status, subscription plan, billing dates, transaction identifiers, and limited payment-card information such as card brand and the last four digits.
+
+**Service providers.** Service providers that assist us with hosting, security, analytics, communications, customer support, payment processing, artificial intelligence, infrastructure, and other business operations may provide or process information in connection with those services.
+
+**Your organization.** Organizations that invite, provision, or administer accounts for their Authorized Users may provide us with your name, business contact details, role, or other account-administration information.
+
+---
+
+# 2. How We Use Information
+
+We use the information we collect to:
+
+* Provide, operate, maintain, secure, and improve the Service.
+* Create and administer accounts and authenticate users.
+* Process subscriptions, payments, trial-to-paid conversions, renewals, cancellations, refunds where applicable, and other billing activities.
+* Generate Output in response to your requests.
+* Communicate with you about the Service, including administrative messages, security alerts, service updates, billing notices, legal notices, and support responses.
+* Send marketing communications about our products and services, where permitted by law, from which you may opt out at any time under Section 10.4.
+* Respond to questions, feedback, requests, and technical-support issues.
+* Monitor, detect, investigate, and prevent fraud, abuse, security incidents, unlawful activity, and violations of our Terms of Service.
+* Analyze usage trends, diagnose technical issues, and improve Service functionality, performance, reliability, and user experience.
+* Create aggregated, de-identified, or anonymized information for analytics, research, security, benchmarking, and legitimate business purposes.
+* Comply with legal obligations, enforce our agreements, establish or defend legal claims, and protect our rights, property, users, and others.
+
+## 2.1 Artificial Intelligence and Third-Party AI Services
+
+The Service may use artificial-intelligence, machine-learning, natural-language-processing, document-processing, automation, or other similar technologies, including technologies provided by third-party vendors, to provide requested functionality, generate Output, analyze or process Customer Content, assist with support or operations, detect security issues, or otherwise operate and improve the Service.
+
+We may add, remove, replace, or change third-party artificial-intelligence or technology providers from time to time as our business, technology, security requirements, or Service features evolve. The specific providers used by the Service may therefore change without requiring an amendment to this Privacy Policy, provided that our use of information remains subject to applicable law and the disclosures contained in this Privacy Policy.
+
+CMS Compliance Guardian does not operate, own, or control all third-party artificial-intelligence models, platforms, infrastructure, or services that may process information on our behalf. Third-party providers may maintain their own security practices, retention periods, technical configurations, privacy policies, and terms governing their services. We do not control how a third-party provider operates its underlying technology or how that provider may change its systems, policies, or practices after information has been transmitted to that provider.
+
+Where commercially and technically available, we seek to configure and use third-party AI services in a manner intended to limit the use of Customer Content for independent model training or improvement. We may also seek contractual or technical protections appropriate to the provider and the nature of the Service. However, because third-party providers and technologies may change and because CMS Compliance Guardian does not control their underlying systems, we cannot guarantee that every third-party technology provider will always maintain identical configurations, policies, retention practices, or technical capabilities.
+
+Accordingly, except where expressly required by applicable law or expressly provided in a separate written agreement signed by CMS Compliance Guardian, you acknowledge that:
+
+1. third-party AI and technology providers may process information transmitted to them as necessary to provide services to CMS Compliance Guardian;
+2. CMS Compliance Guardian may change or replace such providers;
+3. CMS Compliance Guardian does not control the internal operation, policies, security practices, or future development of third-party AI technologies;
+4. third-party providers may have separate terms, privacy policies, or data-processing practices; and
+5. CMS Compliance Guardian's responsibility for third-party providers is limited to the obligations expressly imposed on CMS Compliance Guardian by applicable law and any applicable written agreement between CMS Compliance Guardian and the Customer.
+
+You should not submit PHI, patient-identifiable information, confidential patient records, or other prohibited information to the Service, regardless of the AI technology or provider being used.
+
+Nothing in this Section authorizes CMS Compliance Guardian to use Customer Content in a manner prohibited by applicable law, the Terms of Service, or an applicable written agreement.
+
+---
+
+# 3. Legal Bases for Processing
+
+Where applicable privacy law requires us to identify a legal basis for processing personal information, we rely on one or more of the following:
+
+* Performance of a contract with you or your organization, including providing the Service and processing subscriptions.
+* Compliance with legal obligations.
+* Protection of vital interests, safety, rights, and security of CMS Compliance Guardian, our users, and others.
+* Legitimate interests, where permitted by law, including operating, securing, maintaining, improving, and marketing the Service, provided those interests are not overridden by your rights.
+* Consent, where required by applicable law, which you may withdraw at any time without affecting the lawfulness of processing before withdrawal.
+
+---
+
+# 4. Payment Processing
+
+Payments are processed by Stripe, Inc. ("Stripe") or another payment processor we designate. Stripe collects and processes payment-card information directly under its own terms and privacy policy.
+
+**Stripe Privacy Policy:** [Stripe Privacy Policy](https://stripe.com/privacy?utm_source=chatgpt.com)
+
+We do not store full payment-card numbers on our systems.
+
+We receive from Stripe only the transaction and subscription information reasonably necessary to administer subscriptions, including payment status, subscription plan, billing dates, transaction identifiers, and limited card information such as card brand and the last four digits.
+
+We may change payment processors or payment-processing technologies as our business evolves. If a different payment processor is used, the applicable processor may process payment information pursuant to its own privacy policy, terms, and security practices.
+
+---
+
+# 5. No PHI; HIPAA Position
+
+The Service is not designed or intended to collect, receive, maintain, process, or transmit PHI or electronic PHI. You must not submit PHI, patient-identifiable information, medical records, patient narratives, incident reports containing patient identifiers, or other information regulated under HIPAA or similar health-information privacy laws through the Service. Use de-identified or hypothetical examples only.
+
+Unless and until CMS Compliance Guardian enters into a written Business Associate Agreement ("BAA") signed by an authorized representative, we do not act as a business associate of any Customer, and you must not use the Service to create, receive, maintain, or transmit PHI on our behalf.
+
+Whether an organization is a HIPAA business associate depends on the actual services, data flows, and relationship between the parties. If our services or data flows ever cause us to meet the legal definition of a business associate, the parties will address applicable HIPAA requirements, including entering into a BAA where required by law.
+
+If we reasonably determine that PHI or other prohibited health information has been submitted to the Service, we may restrict access to it, delete it, suspend the applicable account, and notify the Customer, as appropriate and permitted by law.
+
+CMS Compliance Guardian does not represent that the Service is HIPAA compliant merely because the Service is used by a healthcare organization. Customers remain responsible for determining whether their intended use of the Service is appropriate under HIPAA and other applicable laws.
+
+---
+
+# 6. How We Disclose Information
+
+We do not sell personal information for monetary consideration, and we do not knowingly share personal information for cross-context behavioral advertising. We may disclose information as described below.
+
+## 6.1 Service Providers
+
+We disclose information to vendors and service providers that help us operate the Service, including providers of:
+
+* cloud hosting and data storage;
+* artificial-intelligence and machine-learning services;
+* payment processing;
+* email, communication, and customer-support services;
+* security, fraud-prevention, logging, monitoring, and error-detection services;
+* analytics and performance-measurement services; and
+* professional services, including legal, accounting, insurance, and business advisers.
+
+These parties may process information as necessary to provide services to us, under written agreements or other contractual, technical, or legal protections appropriate to the relationship and as permitted by applicable law.
+
+We may add, remove, or replace service providers as our business and technology environment changes.
+
+## 6.2 Your Organization
+
+If your account is associated with an organization, information about your account and use of the Service may be visible to that organization's authorized administrators, consistent with the organization's account configuration and our agreement with the organization. Your organization is responsible for its own privacy practices with respect to information it controls.
+
+## 6.3 Business Transfers
+
+We may disclose information in connection with a proposed or actual merger, acquisition, financing, reorganization, bankruptcy, sale of assets, or transfer of all or part of our business, subject to appropriate confidentiality obligations and applicable law.
+
+## 6.4 Legal, Safety, and Rights Protection
+
+We may disclose information if we believe disclosure is necessary or appropriate to comply with applicable law, regulation, subpoena, court order, governmental request, enforce our Terms of Service and other agreements, detect or prevent fraud or security incidents, investigate technical issues, or protect the rights, property, safety, and security of CMS Compliance Guardian, our users, customers, service providers, or others.
+
+## 6.5 With Your Direction or Consent
+
+We may disclose information when you direct us to do so or otherwise provide consent.
+
+## 6.6 Aggregated or De-Identified Information
+
+We may create, use, disclose, and retain aggregated, de-identified, or anonymized information that does not reasonably identify you, your users, your organization, or any individual, for analytics, research, benchmarking, security, service improvement, and other lawful business purposes.
+
+Where information has been de-identified or anonymized, we will maintain and use it in that form and will not knowingly attempt to re-identify it except where permitted or required by law.
+
+---
+
+# 7. Data Retention
+
+We retain personal information and Customer Content for as long as reasonably necessary to provide the Service, maintain active accounts, fulfill the purposes described in this Privacy Policy, comply with legal obligations, resolve disputes, enforce agreements, protect security, and maintain appropriate business records.
+
+Unless an applicable Order Form, data-processing agreement, or other written agreement provides otherwise:
+
+| Category                         | Retention Approach                                                                                                                                                                                                                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Account information              | While your account remains active and for a reasonable period afterward as necessary to resolve disputes, enforce agreements, maintain records, comply with legal obligations, and protect security.                                                                                                 |
+| Subscription and billing records | As necessary for accounting, tax, audit, fraud-prevention, legal-compliance, and recordkeeping purposes.                                                                                                                                                                                             |
+| Customer Content                 | While your account is active and as necessary to provide requested features, including generation, account history, support, security, and related Service functions.                                                                                                                                |
+| Post-termination export window   | We may provide a reasonable period following termination or cancellation during which you may request an export of Customer Content, subject to the capabilities and terms of the applicable Service or agreement.                                                                                   |
+| Usage, device, and log data      | We retain such information for as long as reasonably necessary for Service operation, security, fraud prevention, troubleshooting, analytics, legal compliance, dispute resolution, and legitimate business purposes. Retention periods may vary based on the nature and purpose of the information. |
+| Support communications           | As long as reasonably necessary to resolve the matter and for appropriate quality, security, legal, compliance, and recordkeeping purposes.                                                                                                                                                          |
+
+We do not guarantee that every category of information will be deleted on a specific date or according to a uniform retention schedule.
+
+After the applicable retention or export period, we may delete, de-identify, anonymize, or otherwise dispose of information, subject to our legitimate needs for security, backups, legal compliance, fraud prevention, dispute resolution, recordkeeping, and business continuity.
+
+Deletion from active systems may not immediately remove information from backups or archival systems. Backup copies may remain for a limited or variable period until they are deleted, overwritten, or otherwise disposed of in the ordinary course of our backup and disaster-recovery processes.
+
+Retention periods may also be extended where reasonably necessary to comply with law, preserve evidence, investigate security incidents, resolve disputes, enforce agreements, or protect our legal rights.
+
+---
+
+# 8. Cookies and Similar Technologies
+
+We and our service providers may use cookies, local storage, pixels, web beacons, software development kits, and similar technologies to:
+
+* authenticate users and maintain sessions;
+* remember preferences and account settings;
+* operate and secure the Service;
+* prevent fraud and abuse;
+* measure Service performance and diagnose technical issues;
+* understand how users interact with the Service;
+* maintain business, security, and operational records; and
+* improve functionality and user experience.
+
+The types of technologies we may use include:
+
+**Strictly necessary technologies**, which are required for the Service to function, including login sessions, authentication, security, fraud prevention, and account functionality.
+
+**Functional technologies**, which may remember settings, preferences, or other choices.
+
+**Analytics and performance technologies**, which may help us understand how the Service is used, measure performance, diagnose problems, and improve the Service.
+
+We do not use the Service to serve interest-based advertising, and we do not knowingly sell or share personal information for cross-context behavioral advertising.
+
+We do not intentionally use cookies or similar technologies for the purpose of creating advertising profiles about individual users. We may nevertheless receive technical information through ordinary operation of third-party infrastructure, hosting, payment, security, analytics, authentication, or other service providers.
+
+You may control cookies through your browser or device settings. If you disable or block certain cookies or similar technologies, portions of the Service may not function properly.
+
+Because our practices and third-party technologies may change over time, the specific cookies or similar technologies used by the Service may change without requiring an amendment to this Privacy Policy, provided that our use remains consistent with applicable law and this Privacy Policy.
+
+We do not currently rely on advertising cookies or behavioral advertising technologies. Where applicable law requires us to honor a recognized universal opt-out mechanism, including Global Privacy Control, we will process such signals in accordance with applicable law.
+
+---
+
+# 9. Data Security
+
+We maintain administrative, technical, and physical safeguards designed to protect the security, confidentiality, and integrity of the information we hold. These safeguards may include encryption in transit and at rest, access controls, authentication measures, logging, monitoring, vendor-management practices, and other measures appropriate to the nature of the information and the Service.
+
+No method of transmission over the internet or method of electronic storage is completely secure, and we cannot guarantee absolute security.
+
+You are responsible for using secure credentials, enabling multi-factor authentication where available, protecting access to your account, and notifying us promptly at [HelpCMSComplianceGuardian@outlook.com](mailto:HelpCMSComplianceGuardian@outlook.com) of any suspected unauthorized use.
+
+If a security incident occurs, we will provide notices required by applicable law and take reasonable steps to mitigate and respond to security incidents.
+
+---
+
+# 10. Your Privacy Choices and Rights
+
+## 10.1 Rights You May Have
+
+Depending on where you live and the law that applies to you, you may have the right to:
+
+* Access personal information we hold about you and receive a copy in a portable, readily usable format.
+* Correct inaccurate or incomplete personal information.
+* Delete personal information, subject to legal and other exceptions.
+* Know the categories of personal information we collect, the purposes for which it is collected, the categories of sources, and the categories of third parties to which it is disclosed.
+* Opt out of the sale or sharing of personal information, targeted advertising, and certain profiling, to the extent applicable.
+* Limit the use of sensitive personal information, where applicable.
+* Appeal a decision we make regarding your privacy request, where applicable law provides that right.
+* Not be discriminated against for exercising applicable privacy rights.
+
+## 10.2 How to Submit a Request
+
+To submit a privacy request, email [CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com) with the subject line "Privacy Request," or write to us at the address in Section 17.
+
+To protect personal information and prevent unauthorized requests, we may require information reasonably necessary to verify your identity and authority before responding.
+
+If you make a request on behalf of another person, we may require proof of your authority and additional verification.
+
+Where applicable law permits, you may designate an authorized agent to submit a request on your behalf, subject to applicable verification requirements.
+
+We will respond to verified requests within the period required by applicable law. Where applicable law provides a generally applicable response period, that period may be extended where permitted by law.
+
+We may deny or limit a request where permitted or required by law, including where the request would adversely affect the rights and freedoms of others, compromise security, reveal confidential information, conflict with a legal obligation, or otherwise fall within a statutory exception.
+
+We will explain the basis for any denial to the extent required by applicable law.
+
+## 10.3 Appeals
+
+If we deny your privacy request and applicable law provides a right to appeal, you may submit an appeal within the period allowed by law by replying to our response or emailing [CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com) with the subject line "Privacy Appeal."
+
+We will respond in writing within the time required by applicable law.
+
+If your appeal is denied, you may contact your state attorney general or other applicable regulator where permitted by law.
+
+## 10.4 Marketing Communications
+
+You may opt out of marketing emails at any time by using the unsubscribe link in the message or emailing [CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com).
+
+You will continue to receive transactional, security, legal, and administrative messages necessary to operate your account or provide the Service.
+
+## 10.5 Requests Relating to Organization Accounts
+
+If you use the Service through an account provisioned by your organization, that organization may be the Customer and may control the personal information associated with your account.
+
+We may refer your request to your organization or ask it to verify and authorize the request before we act on it, where appropriate and permitted by law.
+
+---
+
+# 11. California Privacy Notice
+
+This section supplements the rest of this Privacy Policy and applies to California residents to the extent the California Consumer Privacy Act, as amended by the California Privacy Rights Act ("CCPA"), applies to CMS Compliance Guardian.
+
+## 11.1 Categories of Personal Information Collected
+
+Depending on the Service features used and the circumstances of collection, we may collect the following categories of personal information:
+
+| Category                                      | Examples                                                                       | Business Purpose                                                    |
+| --------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Identifiers                                   | Name, business email, telephone number, IP address, account identifier         | Account creation, authentication, support, security, communications |
+| Professional or employment information        | Job title, employer, organization, facility type, CCN                          | Business account administration and Service configuration           |
+| Commercial information                        | Subscription plan, billing status, transaction records, payment history        | Billing, subscription administration, accounting, fraud prevention  |
+| Internet or other electronic network activity | Usage data, pages viewed, interactions, log data, browser data                 | Service operation, security, analytics, troubleshooting             |
+| User-submitted content                        | Prompts, uploaded documents, drafts, settings, feedback                        | Providing the Service and generating requested Output               |
+| Approximate geolocation                       | General location that may be inferred from IP address or technical information | Security, fraud prevention, Service administration                  |
+
+The categories actually collected may vary depending on how you use the Service, the features you access, the information you provide, and the technical environment in which the Service operates.
+
+## 11.2 Sale, Sharing, and Sensitive Personal Information
+
+CMS Compliance Guardian does not sell personal information for monetary consideration.
+
+CMS Compliance Guardian does not intentionally share personal information for cross-context behavioral advertising.
+
+We do not intentionally use or disclose sensitive personal information for purposes outside those permitted by applicable law.
+
+We do not knowingly sell or share personal information of consumers under sixteen (16) years of age.
+
+If our practices change in a manner that constitutes a sale or sharing of personal information under applicable law, we will provide any notices and opt-out mechanisms required by law.
+
+## 11.3 California Rights
+
+Subject to applicable legal exceptions, California residents may have rights to know, delete, correct, opt out of sale or sharing, limit certain uses of sensitive personal information, and not receive discriminatory treatment for exercising applicable rights.
+
+To exercise these rights, use the contact methods in Section 10.2.
+
+## 11.4 Notice at Collection
+
+At or before the point of collection, we provide notice regarding the categories of personal information that may be collected, the purposes for collection and use, applicable retention practices, and whether personal information is sold or shared as defined by applicable California law.
+
+---
+
+# 12. Other U.S. State Privacy Rights
+
+Residents of Colorado, Connecticut, Delaware, Florida, Indiana, Iowa, Kentucky, Maryland, Minnesota, Montana, Nebraska, New Hampshire, New Jersey, Oregon, Rhode Island, Tennessee, Texas, Utah, Virginia, and other states with comprehensive consumer-privacy laws may have rights described in Section 10 to the extent those laws apply to CMS Compliance Guardian.
+
+Certain state privacy laws apply only to businesses that satisfy specified revenue, data-volume, jurisdictional, or other thresholds, and certain laws exempt data processed in business-to-business or employment contexts.
+
+We will honor applicable privacy rights as required by law. Where we voluntarily provide a privacy right beyond what applicable law requires, we reserve the right to modify that practice prospectively to the extent permitted by law.
+
+We do not intentionally engage in targeted advertising, the sale of personal data, or profiling in furtherance of decisions that produce legal or similarly significant effects.
+
+Where a state law requires us to recognize a universal opt-out mechanism, including Global Privacy Control, we will process such signals in accordance with applicable law.
+
+**Nevada residents:** We do not sell covered information as defined under Nevada law. You may nevertheless submit a request to be placed on our do-not-sell list using the contact methods in Section 10.2.
+
+---
+
+# 13. Children's Privacy
+
+The Service is designed for business and professional use and is not directed to children.
+
+We do not knowingly collect personal information from individuals under eighteen (18) years of age for the purpose of providing the Service to them.
+
+If we learn that we have collected personal information from a child in violation of applicable law, we will take reasonable steps to address and delete or otherwise appropriately handle that information as required by law.
+
+If you believe a child has provided personal information to us, contact us at [CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com).
+
+---
+
+# 14. International Users
+
+The Service is primarily intended for customers located in the United States.
+
+CMS Compliance Guardian is based in the United States and may maintain systems and infrastructure in the United States. However, we may use third-party vendors, service providers, technology providers, artificial-intelligence providers, payment processors, hosting providers, security providers, communication providers, analytics providers, and other contractors whose operations or infrastructure may be located in the United States or other countries.
+
+As a result, information submitted to or collected through the Service may be transferred to, stored in, or processed in jurisdictions other than the jurisdiction in which you are located.
+
+CMS Compliance Guardian does not control the geographic location of every system or processing activity operated by every third-party service provider and cannot guarantee that information will remain exclusively within the United States unless expressly stated in a separate written agreement.
+
+Where required by applicable law, we will take reasonable steps to use appropriate contractual, technical, organizational, or other safeguards for applicable international transfers.
+
+The Service is not currently marketed specifically to individuals in the European Economic Area, the United Kingdom, or Switzerland. If you access the Service from outside the United States, you are responsible for ensuring that your use of the Service and submission of information is permitted under the laws applicable to you.
+
+---
+
+# 15. Third-Party Websites and Services
+
+The Service may contain links to third-party websites, regulatory resources, and services, including official CMS, HHS, accreditation-organization sites, payment providers, AI providers, or other third-party services.
+
+This Privacy Policy does not apply to those third parties, and CMS Compliance Guardian is not responsible for their independent privacy practices, security practices, terms, content, or data-processing activities.
+
+Third-party services may maintain their own privacy policies, terms of service, data-retention practices, security controls, and AI or technology practices.
+
+We encourage you to review the applicable policies and terms of any third-party service you use.
+
+---
+
+# 16. Changes to This Privacy Policy
+
+We may update this Privacy Policy from time to time to reflect changes in the Service, technology, vendors, business practices, applicable law, regulatory requirements, or other circumstances.
+
+If we make a material change, we will provide notice as required by applicable law. Depending on the circumstances, notice may be provided by email to the account contact, through the Service, by posting a notice on our website, or by another reasonable method.
+
+The updated Privacy Policy will include a revised effective date and version number.
+
+Your continued use of the Service after a revised Privacy Policy becomes effective constitutes acknowledgment of the updated policy to the extent permitted by applicable law.
+
+If applicable law requires consent for a material change, we will obtain that consent before applying the change to the extent required by law.
+
+---
+
+# 17. Contact Us
+
+If you have questions about this Privacy Policy, our privacy practices, or a privacy-rights request, contact us at:
+
+**CMS Compliance Guardian, LLC**
+550 Biltmore Way, Suite 209
+Miami, Florida 33134
+
+**Privacy:** [CMSComplianceGuardian@outlook.com](mailto:CMSComplianceGuardian@outlook.com)
+**Support:** [HelpCMSComplianceGuardian@outlook.com](mailto:HelpCMSComplianceGuardian@outlook.com)
+**Website:** cmscomplianceguardian.com
+
+---
+
+# 18. Data Processing and Customer Data Terms
+
+Where CMS Compliance Guardian processes personal information on behalf of a Customer in connection with the Service, CMS Compliance Guardian will process that information in accordance with the applicable Customer agreement, this Privacy Policy, and applicable law.
+
+For purposes of this Section, the Customer may act as the controller, business, or equivalent party with respect to personal information submitted by or on behalf of the Customer, while CMS Compliance Guardian may act as a processor, service provider, contractor, or equivalent role, depending on applicable law and the circumstances of the processing.
+
+CMS Compliance Guardian will process Customer personal information only as reasonably necessary to:
+
+1. provide and maintain the Service;
+2. perform functions requested or authorized by the Customer;
+3. provide support and account administration;
+4. maintain security and prevent fraud or abuse;
+5. troubleshoot and improve Service functionality;
+6. comply with applicable legal obligations;
+7. protect the rights, property, safety, and security of CMS Compliance Guardian, Customers, users, service providers, and others; and
+8. perform other activities expressly permitted by the applicable Customer agreement.
+
+CMS Compliance Guardian may use subprocessors and third-party service providers to provide infrastructure, hosting, security, artificial-intelligence, payment, communications, analytics, support, and other Service functions.
+
+CMS Compliance Guardian may replace, add, or remove subprocessors or service providers as reasonably necessary to operate and develop the Service.
+
+Where required by applicable law, CMS Compliance Guardian will impose appropriate contractual obligations on relevant subprocessors concerning confidentiality, security, and permitted processing.
+
+Customers remain responsible for:
+
+* determining the lawful basis for their collection and submission of personal information;
+* providing required privacy notices to their users;
+* obtaining required consents or authorizations;
+* configuring their use of the Service appropriately;
+* ensuring that Customer Content does not contain prohibited PHI or other restricted information unless expressly authorized under a separate written agreement;
+* responding to requests from their personnel, customers, patients, or other data subjects where the Customer is legally responsible for doing so; and
+* ensuring that their use of the Service complies with applicable privacy, healthcare, employment, consumer-protection, and other laws.
+
+Where a Customer requires a separate Data Processing Addendum ("DPA"), the parties may enter into a written DPA. If an executed DPA conflicts with this Privacy Policy, the DPA will control solely with respect to the subject matter of the DPA to the extent expressly stated in that DPA.
+
+Nothing in this Section creates a Business Associate Agreement or authorizes the submission of PHI unless a separate written BAA has been executed where required by applicable law.
+
+CMS Compliance Guardian will use reasonable administrative, technical, and organizational safeguards appropriate to the nature of the information and the Service.
+
+To the extent permitted by applicable law and the applicable Customer agreement, CMS Compliance Guardian will notify the Customer of a confirmed security incident involving Customer personal information when notification is legally required or otherwise appropriate under the circumstances.
+
+The parties acknowledge that the Service may rely upon third-party infrastructure, cloud services, artificial-intelligence providers, payment processors, communications platforms, and other technology providers. CMS Compliance Guardian is not responsible for the independent acts, omissions, security practices, policies, or technical failures of such third parties except to the extent responsibility is imposed on CMS Compliance Guardian by applicable law or an express written agreement.
+
+---
+
+# 19. Privacy Policy Version History
+
+CMS Compliance Guardian maintains this version history to identify material revisions to this Privacy Policy.
+
+| Version | Effective Date     | Description                                                                                                                                                                                           |
+| ------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2.0     | September 23, 2026 | Comprehensive revised Privacy Policy addressing AI processing, data retention, privacy rights, state privacy requirements, cookies, international processing, security, and customer data processing. |
+
+Future versions may be added to this table as the Privacy Policy is revised.
+
+---
+
+Copyright © 2026 CMS Compliance Guardian, LLC. All rights reserved.
+===PRIVACY END===
+
+When done: run typecheck and the marketing build and confirm they pass. Confirm the two pre-existing Terms history entries (2026-08-13 and 2026-09-21) are unchanged. Tell me exactly which files you changed.

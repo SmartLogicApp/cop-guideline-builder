@@ -46,6 +46,12 @@ export const TERMS_VERSIONS: readonly TermsVersion[] = [
       "not exist. Re-acceptance is required because the scope of the licence changed.",
   },
   {
+    version: "2026-09-23",
+    publishedOn: "2026-09-23",
+    published: true,
+    summary: "Version 4.0. Owner-approved Terms of Service effective September 23, 2026; re-acceptance required.",
+  },
+  {
     version: "2.0",
     publishedOn: "",
     published: false, // flip to true when counsel approves and the document ships
@@ -61,14 +67,14 @@ export const TERMS_VERSIONS: readonly TermsVersion[] = [
  *
  * Only ever move this to a version whose document is published and readable —
  * moving it early makes the checkout gate demand acceptance of something
- * nobody can see. It stays at 1.1 until Terms 2.0 clears counsel.
+ * nobody can see.
  *
  * Moving it to 1.1 makes needsAcceptance() true for anyone who accepted 1.0,
  * which is the intended effect: 1.1 widens who may hold a subscription and
  * what a consulting Customer may do with Output, so the earlier acceptance no
  * longer describes the licence on offer.
  */
-export const CURRENT_TERMS_VERSION = "2026-09-21";
+export const CURRENT_TERMS_VERSION = "2026-09-23";
 
 export function getTermsVersion(version: string): TermsVersion | undefined {
   return TERMS_VERSIONS.find((entry) => entry.version === version);

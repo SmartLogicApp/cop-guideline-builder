@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { termsV1 } from 'virtual:public-terms-v1';
-// import { termsV2 } from '@/legal/terms-v2';
+import { termsV4 } from '@/legal/terms-v4';
 
 /**
  * The single renderer for the Terms document.
@@ -9,11 +9,8 @@ import { termsV1 } from 'virtual:public-terms-v1';
  * page cannot drift. A customer must be able to prove that what they agreed to
  * is what is published, and two copies of this markup would eventually differ.
  *
- * PUBLISHING VERSION 2.0: uncomment the import and its DOCUMENTS entry, move
- * CLIENT_CURRENT_TERMS_VERSION to '2.0', and set the same version as
- * CURRENT_TERMS_VERSION in the api-server's lib/terms-versions.ts, flipping
- * that entry's `published` to true. All three move together or the acceptance
- * gate asks for a version nobody can read.
+ * Future published versions must be added here and in the API registry together.
+ * Keep past entries readable: the acceptance gate records their version keys.
  */
 
 const DOCUMENTS: Record<string, string> = {
@@ -27,10 +24,10 @@ const DOCUMENTS: Record<string, string> = {
   // to its own file before the shared source is edited again.
   '2026-08-13': termsV1,
   '2026-09-21': termsV1,
-  // '2.0': termsV2,
+  '2026-09-23': termsV4,
 };
 
-export const CLIENT_CURRENT_TERMS_VERSION = '2026-09-21';
+export const CLIENT_CURRENT_TERMS_VERSION = '2026-09-23';
 
 function renderInline(text: string): ReactNode[] {
   return text.split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) =>
@@ -57,12 +54,15 @@ export function TermsDocument({ version }: { version?: string }) {
         const line = rawLine.trim();
         if (!line) return <div key={index} className="h-1" aria-hidden="true" />;
         if (line === '---') return <hr key={index} className="my-7 border-slate-200" />;
+        if (line === 'TERMS OF SERVICE' && (version ?? CLIENT_CURRENT_TERMS_VERSION) === '2026-09-23') {
+          return <h1 key={index} className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">{line}</h1>;
+        }
         if (line.startsWith('# ')) {
           return <h1 key={index} className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">{line.slice(2)}</h1>;
         }
         if (line.startsWith('## ')) {
           const title = line.slice(3);
-          const id = title.startsWith('13.') ? 'billing' : undefined;
+          const id = title.startsWith('13.') || title.startsWith('6. FEES') ? 'billing' : undefined;
           return <h2 key={index} id={id} className="scroll-mt-8 pt-7 text-xl font-bold text-slate-950 sm:text-2xl">{title}</h2>;
         }
         if (line.startsWith('- ')) {

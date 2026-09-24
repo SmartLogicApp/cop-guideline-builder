@@ -2,8 +2,6 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import NotFound from '@/pages/not-found';
 import LandingPage from '@/pages/landing';
-import TermsPage from '@/pages/terms';
-import PrivacyPage from '@/pages/privacy';
 import AffiliatesPage from '@/pages/affiliates';
 import AffiliateAgreementPage from '@/pages/affiliate-agreement';
 import {
@@ -16,6 +14,8 @@ import {
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 const AuthenticatedApp = lazy(() => import('./AuthenticatedApp'));
+const TermsPage = lazy(() => import('@/pages/terms'));
+const PrivacyPage = lazy(() => import('@/pages/privacy'));
 
 function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   const [location] = useLocation();
@@ -61,20 +61,22 @@ export default function AppWithRouter() {
 function PublicRouter() {
   return (
     <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/" component={LandingPage} />
-        <Route path="/terms" component={TermsPage} />
-        <Route path="/privacy" component={PrivacyPage} />
-        {/*
-          PUBLIC on purpose. An affiliate is not a customer — putting the
-          programme behind sign-in would exclude exactly the consultants and
-          associations it exists to reach. Note it is absent from needsAuth
-          above, unlike /register.
-        */}
-        <Route path="/affiliates" component={AffiliatesPage} />
-        <Route path="/affiliate-agreement" component={AffiliateAgreementPage} />
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={<div className="min-h-screen bg-slate-50 p-8 text-slate-700" role="status">Loading document…</div>}>
+        <Switch>
+          <Route path="/" component={LandingPage} />
+          <Route path="/terms" component={TermsPage} />
+          <Route path="/privacy" component={PrivacyPage} />
+          {/*
+            PUBLIC on purpose. An affiliate is not a customer — putting the
+            programme behind sign-in would exclude exactly the consultants and
+            associations it exists to reach. Note it is absent from needsAuth
+            above, unlike /register.
+          */}
+          <Route path="/affiliates" component={AffiliatesPage} />
+          <Route path="/affiliate-agreement" component={AffiliateAgreementPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </RoutedErrorBoundary>
   );
 }
