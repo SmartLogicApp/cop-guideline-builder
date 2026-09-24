@@ -4,7 +4,7 @@ import {
   db, affiliates, affiliateComplianceStatus, affiliateDocumentVersions,
   affiliateDocumentAcknowledgements, affiliatePaymentAuthorizations,
   affiliateAgreements, affiliateAgreementAcceptances, affiliateAgreementInvitations,
-  affiliateComplianceAuditLog, affiliatePayoutHolds, affiliateTaxReviewDecisions,
+  affiliateComplianceAuditLog, affiliatePayoutHolds,
   affiliateEmailTemplates, affiliatePayoutWorkflow, affiliateCommissions,
   affiliatePayoutWorkflowCommissions,
 } from "@workspace/db";
@@ -12,6 +12,7 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } 
 import { requireAnyAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
 import { isTestExpressRecipient } from "../lib/affiliate-connect-account.js";
+import { stripeTaxStatus } from "../lib/affiliate-connect-tax.js";
 import { SAMPLE_AGREEMENT_BODY, SAMPLE_AGREEMENT_VERSION, sampleAgreementAvailable } from "../lib/affiliate-sample-agreement.js";
 import { calculateAffiliatePayoutEligibility, auditBlockedPayoutAttempt, PAYOUT_MINIMUM_USD } from "../lib/affiliate-payout-eligibility.js";
 import {
@@ -91,6 +92,20 @@ async function getPublishedDocument(documentType: string) {
 router.get("/portal", requireAffiliate, async (req: any, res) => {
   await ensureBaselineDocuments();
   const affiliateId = req.affiliateId as string;
+  // Backfill accounts onboarded before tax-status sync was introduced. Later
+  // updates arrive from account.updated or the existing Connect return sync.
+  const [previous] = await db.select({
+    accountId: affiliateComplianceStatus.stripeConnectedAccountId,
+    taxCheckedAt: affiliateComplianceStatus.stripeTaxFormLastCheckedAt,
+  }).from(affiliateComplianceStatus).where(eq(affiliateComplianceStatus.affiliateId, affiliateId)).limit(1);
+  if (previous?.accountId && !previous.taxCheckedAt) {
+    try {
+      await synchronizeStripeAccount(affiliateId);
+    } catch {
+      res.status(503).json({ error: "Stripe tax status could not be confirmed. Please retry from the portal." });
+      return;
+    }
+  }
   const [status, publishedDocs, acknowledgements, paymentAuth, eligibility] = await Promise.all([
     db.select().from(affiliateComplianceStatus).where(eq(affiliateComplianceStatus.affiliateId, affiliateId)).limit(1),
     db.select().from(affiliateDocumentVersions).where(and(
@@ -140,20 +155,21 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
     { key: "agreement", title: "Affiliate Partner Agreement", status: agreementAccepted ? "Complete" : "Action needed", version: agreementVersion },
     { key: "privacy", title: "Privacy Notice", status: accepted.get("privacy")?.documentVersionId === docs.get("privacy")?.id ? "Complete" : "Action needed", document: docs.get("privacy") ? { ...docs.get("privacy"), url: "/privacy" } : null },
     {
-      key: "tax", title: "Tax information (W-9)",
+      key: "tax", title: "Tax information (via Stripe)",
       status: !["US", "USA", "United States"].includes(country) ? "Not eligible"
         : !status[0]?.state ? "Not started"
         : status[0]?.taxStatus === "verified_complete" ? "Complete"
         : status[0]?.taxStatus === "submitted_to_stripe" ? "Submitted" : "Action needed",
-      ...(!["US", "USA", "United States"].includes(country) ? { message: "W-9 collection is not requested for international affiliates." }
-        : !status[0]?.state ? { message: "Submit your country and state before beginning tax information setup." } : {}),
+      ...(!["US", "USA", "United States"].includes(country) ? { message: "U.S. tax information is not requested for international affiliates." }
+        : !status[0]?.state ? { message: "Submit your country and state before beginning tax information setup." }
+        : { message: "Stripe collects your tax ID during secure onboarding. We only receive Stripe's provided and requirements status; this does not confirm a signed W-9 form." }),
     },
     {
       key: "payment", title: "Payment setup",
       status: !["US", "USA", "United States"].includes(country) ? "Not eligible"
         : !status[0]?.state ? "Not started"
         : !paymentAuthorizationAccepted ? "Action needed"
-        : status[0]?.stripePayoutsEnabled && status[0]?.stripeDetailsSubmitted ? "Complete"
+        : status[0]?.stripeOnboardingStatus === "complete" && status[0]?.stripePayoutsEnabled && status[0]?.stripeDetailsSubmitted ? "Complete"
         : status[0]?.stripeConnectedAccountId ? "Submitted" : "Action needed",
       ...(!["US", "USA", "United States"].includes(country) ? { message: "International payment setup is not available yet." }
         : !status[0]?.state ? { message: "Submit your country and state before starting secure payment setup." }
@@ -419,17 +435,10 @@ router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
     await auditCompliance(req.affiliateId, "affiliate", req.clerkUserId, "stripe_onboarding_link_created");
     res.json({ url: accountLink.url });
   } catch (error: any) {
-    const diagnostic = typeof error?.message === "string" ? error.message
-      .replace(/(?:sk|pk)_(?:test|live)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+/g, "[credential]")
-      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-      .replace(/\b(?:acct|tr|evt)_[A-Za-z0-9]+\b/g, "[stripe-id]")
-      .slice(0, 300) : undefined;
     req.log?.warn({
       stage, stripeCode: typeof error?.code === "string" ? error.code : undefined,
       stripeType: typeof error?.type === "string" ? error.type : undefined,
       httpStatus: typeof error?.statusCode === "number" ? error.statusCode : undefined,
-      stripeParam: typeof error?.param === "string" ? error.param : undefined,
-      diagnostic,
     }, "Affiliate Connect test setup failed");
     res.status(503).json({ error: "Secure payment setup is temporarily unavailable." });
   }
@@ -447,6 +456,7 @@ async function synchronizeStripeAccount(affiliateId: string) {
   const payoutsEnabled = Boolean(account.payouts_enabled);
   const now = new Date();
   const onboardingComplete = detailsSubmitted && payoutsEnabled && due.length === 0;
+  const taxStatus = stripeTaxStatus(account);
   await db.transaction(async (tx) => {
     await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, affiliateId)).for("update").limit(1);
     await tx.update(affiliateComplianceStatus).set({
@@ -455,13 +465,14 @@ async function synchronizeStripeAccount(affiliateId: string) {
       stripeOnboardingStatus: onboardingComplete ? "complete" : "action_required",
       stripeOnboardingCompletedAt: onboardingComplete ? (status.stripeOnboardingCompletedAt ?? now) : null,
       stripeAccountLastSyncedAt: now,
-      // No inference from account existence: only an explicit verified Stripe tax evidence state may pass.
+      taxStatus: status.country === "US" && status.state ? taxStatus : status.taxStatus,
+      stripeTaxFormLastCheckedAt: now,
       updatedAt: now,
     }).where(eq(affiliateComplianceStatus.affiliateId, affiliateId));
   });
   await auditCompliance(affiliateId, "system", null, "stripe_account_synced", undefined, undefined,
     { detailsSubmitted: status.stripeDetailsSubmitted, payoutsEnabled: status.stripePayoutsEnabled },
-    { detailsSubmitted, payoutsEnabled, onboardingComplete });
+    { detailsSubmitted, payoutsEnabled, onboardingComplete, taxStatus });
   return { detailsSubmitted, payoutsEnabled, onboardingComplete, requirementsDue: due };
 }
 
@@ -552,7 +563,7 @@ router.post("/admin/:id/action", requireSuperAdmin, async (req: any, res) => {
   const id = currentParam(req.params.id);
   const { action } = req.body ?? {};
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
-  if (!["approve", "reject", "suspend", "terminate", "reactivate", "place_hold", "release_hold", "verify_tax", "tax_needs_correction", "tax_submitted", "tax_manual_review", "tax_not_applicable", "set_region"].includes(action)
+  if (!["approve", "reject", "suspend", "terminate", "reactivate", "place_hold", "release_hold", "set_region"].includes(action)
       || reason.length < 5 || reason.length > 2000 || containsSensitiveFinancialNumber(reason)) {
     res.status(400).json({ error: "Choose a supported action and provide a review reason." }); return;
   }
@@ -567,8 +578,6 @@ router.post("/admin/:id/action", requireSuperAdmin, async (req: any, res) => {
     res.status(400).json({ error: "Provide a country and state or province." }); return;
   }
   const now = new Date();
-  let internationalTaxBlocked = false;
-  let regionTaxBlocked = false;
   const before = await db.transaction(async (tx) => {
     const [lockedAffiliate] = await tx.select().from(affiliates).where(eq(affiliates.id, id)).for("update").limit(1);
     if (!lockedAffiliate) return null;
@@ -597,24 +606,6 @@ router.post("/admin/:id/action", requireSuperAdmin, async (req: any, res) => {
         taxStatus: isUs ? (status?.taxStatus === "not_applicable" ? "not_started" : status?.taxStatus ?? "not_started") : "not_applicable",
         stripeTaxFormStatus: isUs ? (status?.stripeTaxFormStatus === "not_applicable" ? "not_started" : status?.stripeTaxFormStatus ?? "not_started") : "not_applicable",
       }).where(eq(affiliateComplianceStatus.affiliateId, id));
-    } else {
-      if (action.startsWith("tax_") || action === "verify_tax") {
-        if (status?.country && !["US", "USA", "United States"].includes(status.country)) {
-          internationalTaxBlocked = true;
-          return null;
-        }
-        if (!status?.state) {
-          regionTaxBlocked = true;
-          return null;
-        }
-      }
-      const taxStatus = action === "verify_tax" ? "verified_complete"
-        : action === "tax_needs_correction" ? "needs_correction"
-        : action === "tax_manual_review" ? "manual_review_required"
-        : action === "tax_not_applicable" ? "not_applicable"
-        : "submitted_to_stripe";
-      await tx.insert(affiliateTaxReviewDecisions).values({ affiliateId: id, taxStatus, decisionType: action === "verify_tax" ? "manual_admin_verification" : action, reason, reviewedByAdminId: req.clerkUserId });
-      await tx.update(affiliateComplianceStatus).set({ taxStatus, updatedAt: now }).where(eq(affiliateComplianceStatus.affiliateId, id));
     }
     await tx.insert(affiliateComplianceAuditLog).values({
       affiliateId: id, actorType: "admin", actorId: req.clerkUserId, eventType: `admin_${action}`, reason,
@@ -623,10 +614,7 @@ router.post("/admin/:id/action", requireSuperAdmin, async (req: any, res) => {
     return previousApproval;
   });
   if (before === null) {
-    res.status(409).json({ error: internationalTaxBlocked
-      ? "Tax information is not requested for international affiliates."
-      : regionTaxBlocked ? "Confirm the affiliate's U.S. state and country before recording tax status."
-      : "Use the reviewed affiliate approval workflow before approving payout eligibility." });
+    res.status(409).json({ error: "Use the reviewed affiliate approval workflow before approving payout eligibility." });
     return;
   }
   res.json({ updated: true, eligibility: await calculateAffiliatePayoutEligibility(id) });

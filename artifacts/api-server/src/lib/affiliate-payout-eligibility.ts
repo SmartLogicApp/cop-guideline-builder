@@ -84,6 +84,7 @@ export async function calculateAffiliatePayoutEligibility(affiliateId: string, e
     taxStatus: status?.taxStatus ?? "not_started",
     stripeConnected: Boolean(status?.stripeConnectedAccountId),
     stripeAccountType: status?.stripeAccountType ?? null,
+    stripeOnboardingStatus: status?.stripeOnboardingStatus ?? "not_started",
     stripeDetailsSubmitted: status?.stripeDetailsSubmitted ?? false,
     stripePayoutsEnabled: status?.stripePayoutsEnabled ?? false,
     paymentAuthorizationAccepted: paymentAuthorizationCurrent,

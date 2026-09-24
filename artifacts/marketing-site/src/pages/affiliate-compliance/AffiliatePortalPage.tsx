@@ -74,18 +74,7 @@ export default function AffiliatePortalPage() {
                 icon={getStatusIcon(privacy.status)} doc={privacy.document} viewUrl="/privacy" />}
               <div className="border-t border-slate-100" />
               
-              {tax && (
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex gap-3">
-                    <div className="mt-0.5">{getStatusIcon(tax.status)}</div>
-                    <div>
-                      <h3 className="font-semibold text-slate-900">3. {tax.title}</h3>
-                      <p className="text-sm text-slate-500 mt-1">Status: {tax.status}</p>
-                      {tax.message && <p className="text-sm text-amber-700 mt-1">{tax.message}</p>}
-                    </div>
-                  </div>
-                </div>
-              )}
+              {tax && <TaxInfoItem tax={tax} paymentStatus={payment?.status} icon={getStatusIcon(tax.status)} />}
               <div className="border-t border-slate-100" />
               
               {payment && (
@@ -164,6 +153,39 @@ export default function AffiliatePortalPage() {
       </div>
     </AffiliateShell>
   );
+}
+
+function TaxInfoItem({ tax, paymentStatus, icon }: { tax: any; paymentStatus?: Status; icon: React.ReactNode }) {
+  const connect = useStripeConnect();
+  const { toast } = useToast();
+  const canReturnToStripe = tax.status !== 'Complete' && tax.status !== 'Not eligible'
+    && tax.status !== 'Not started' && (paymentStatus === 'Complete' || paymentStatus === 'Submitted');
+
+  const returnToStripe = async () => {
+    try {
+      const result = await connect.mutateAsync();
+      if (result.url) window.location.href = result.url;
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Unable to open Stripe', description: error.message });
+    }
+  };
+
+  return <div className="flex items-start justify-between gap-4">
+    <div className="flex gap-3">
+      <div className="mt-0.5">{icon}</div>
+      <div>
+        <h3 className="font-semibold text-slate-900">3. {tax.title}</h3>
+        <p className="text-sm text-slate-500 mt-1">Status: {tax.status}</p>
+        {tax.message && <p className="text-sm text-slate-600 mt-1">{tax.message}</p>}
+        {tax.status === 'Submitted' && <p className="text-sm text-amber-700 mt-1">Stripe still lists a tax-related requirement. Complete it in Stripe.</p>}
+        {paymentStatus !== 'Complete' && paymentStatus !== 'Submitted' && tax.status === 'Action needed'
+          && <p className="text-sm text-amber-700 mt-1">Start secure payment setup in step 4 to provide tax information to Stripe.</p>}
+      </div>
+    </div>
+    {canReturnToStripe && <Button type="button" variant="outline" size="sm" onClick={returnToStripe} disabled={connect.isPending}>
+      {connect.isPending ? 'Opening Stripe…' : 'Continue in Stripe'}
+    </Button>}
+  </div>;
 }
 
 function AgreementItem({ agreement, document, sampleAcceptance, icon }: { agreement: any; document: any; sampleAcceptance: any; icon: React.ReactNode }) {

@@ -6,6 +6,7 @@ import { and, eq, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { getStripeConnectTestClient } from "../stripeClient.js";
 import { isTestExpressRecipient } from "./affiliate-connect-account.js";
+import { stripeTaxStatus } from "./affiliate-connect-tax.js";
 
 function destinationId(destination: Stripe.Transfer["destination"]): string | null {
   return typeof destination === "string" ? destination : destination?.id ?? null;
@@ -31,6 +32,7 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
     const payoutsEnabled = Boolean(account.payouts_enabled);
     const now = new Date();
     const complete = detailsSubmitted && payoutsEnabled && due.length === 0;
+    const taxStatus = stripeTaxStatus(account);
     await db.transaction(async (tx) => {
       await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, affiliateId)).for("update").limit(1);
       const [currentStatus] = await tx.select().from(affiliateComplianceStatus)
@@ -49,6 +51,8 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
         stripeOnboardingStatus: complete ? "complete" : "action_required",
         stripeOnboardingCompletedAt: complete ? now : null,
         stripeAccountLastSyncedAt: now,
+        taxStatus: currentStatus?.country === "US" && currentStatus.state ? taxStatus : currentStatus?.taxStatus,
+        stripeTaxFormLastCheckedAt: now,
         updatedAt: now,
       }).where(eq(affiliateComplianceStatus.affiliateId, affiliateId));
       await tx.insert(affiliateComplianceAuditLog).values({
@@ -57,11 +61,11 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
         actorId: null,
         eventType: "stripe_account_updated_verified",
         priorValue: { onboardingStatus: currentStatus.stripeOnboardingStatus },
-        newValue: { onboardingStatus: complete ? "complete" : "action_required" },
+        newValue: { onboardingStatus: complete ? "complete" : "action_required", taxStatus },
         metadata: { stripeEventId: event.id, detailsSubmitted, payoutsEnabled, requirementsDueCount: due.length },
       });
     });
-    // Deliberately do not infer a completed W-9 from account.updated.
+    // This records Stripe's tax-ID provided/requirements flags, not a signed W-9.
     return;
   }
   if (event.type !== "transfer.created" && event.type !== "transfer.reversed") return;

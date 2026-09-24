@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { payoutEligibilityReasons } from "./affiliate-compliance-rules.ts";
+import { stripeTaxStatus } from "./affiliate-connect-tax.ts";
 import { verifyAffiliateConnectWebhook } from "./affiliate-compliance-webhook-signature.ts";
 
 const libDir = new URL("./", import.meta.url);
@@ -19,6 +20,7 @@ const eligibleFacts = {
   taxStatus: "verified_complete",
   stripeConnected: true,
   stripeAccountType: "express",
+  stripeOnboardingStatus: "complete",
   stripeDetailsSubmitted: true,
   stripePayoutsEnabled: true,
   paymentAuthorizationAccepted: true,
@@ -68,7 +70,7 @@ test("I.2 document and payment authorizations alone do not satisfy tax or Stripe
   assert.equal(reasons.some((reason) => reason.includes("acknowledgement")), false);
 });
 
-test("I.3 Stripe onboarding status is not itself proof of verified tax completion", async () => {
+test("I.3 Stripe onboarding alone does not prove tax ID status; account flags drive it independently", async () => {
   const withUnverifiedTax = payoutEligibilityReasons({
     ...eligibleFacts,
     taxStatus: "submitted_to_stripe",
@@ -78,17 +80,20 @@ test("I.3 Stripe onboarding status is not itself proof of verified tax completio
   const webhook = await read("../lib/affiliate-compliance-webhook.ts");
   const accountUpdateBranch = webhook.slice(webhook.indexOf('if (event.type === "account.updated")'), webhook.indexOf('if (event.type !== "transfer.created"'));
   assert.match(accountUpdateBranch, /stripeOnboardingStatus:\s*complete\s*\?\s*"complete"/);
-  assert.doesNotMatch(accountUpdateBranch, /taxStatus\s*:/);
-  assert.match(accountUpdateBranch, /do not infer a completed W-9/i);
+  assert.match(accountUpdateBranch, /taxStatus:\s*currentStatus\?\.country/);
+  assert.match(accountUpdateBranch, /stripeTaxStatus\(account\)/);
+  assert.doesNotMatch(accountUpdateBranch, /account\.(?:individual|company)\?\.(?:id_number|tax_id)\b/);
 });
 
 test("I.4 affiliate is eligible only when every required condition is complete", () => {
   assert.deepEqual(payoutEligibilityReasons(eligibleFacts), []);
   for (const facts of [
     { ...eligibleFacts, affiliateStatus: "pending" },
+    { ...eligibleFacts, agreementAccepted: false },
     { ...eligibleFacts, adminApprovalStatus: "pending" },
     { ...eligibleFacts, taxStatus: "manual_review_required" },
     { ...eligibleFacts, stripeAccountType: "standard" },
+    { ...eligibleFacts, stripeOnboardingStatus: "action_required" },
     { ...eligibleFacts, stripeDetailsSubmitted: false },
     { ...eligibleFacts, stripePayoutsEnabled: false },
     { ...eligibleFacts, paymentAuthorizationAccepted: false },
@@ -151,6 +156,43 @@ test("I.10 sensitive tax and bank values are absent from stored fields and Admin
   assert.match(adminDetail, /db\.select\(\)\.from\(affiliateComplianceStatus\)/);
   assert.match(adminDetail, /compliance:\s*status\s*\?\?\s*null/);
   assert.doesNotMatch(adminDetail, /\b(?:ssn|ein|tin|bankAccountNumber|routingNumber|w9Pdf|stripeSecretKey|webhookSecret)\b/i);
+});
+
+test("I.10a only Stripe's correct business-type flag with cleared tax requirements verifies tax", () => {
+  const status = (account: object) => stripeTaxStatus(account as Parameters<typeof stripeTaxStatus>[0]);
+  const clear = { currently_due: [], past_due: [], pending_verification: [], eventually_due: [], errors: [] };
+  const individual = { business_type: "individual", individual: { id_number_provided: true }, requirements: clear };
+  const company = { business_type: "company", company: { tax_id_provided: true }, requirements: clear };
+  assert.equal(status(individual), "verified_complete");
+  assert.equal(status(company), "verified_complete");
+  assert.equal(status({ business_type: "company", company: { tax_id_provided: true } }), "submitted_to_stripe");
+  assert.equal(status({ ...individual, individual: { id_number_provided: false }, details_submitted: true, payouts_enabled: true }), "not_started");
+  assert.equal(status({ ...company, company: { tax_id_provided: false }, details_submitted: true, payouts_enabled: true }), "not_started");
+  assert.equal(status({ ...individual, company: { tax_id_provided: true }, individual: { id_number_provided: false } }), "not_started");
+  assert.equal(status({ ...company, individual: { id_number_provided: true }, company: { tax_id_provided: false } }), "not_started");
+  assert.equal(status({ business_type: "non_profit", individual: { id_number_provided: true }, company: { tax_id_provided: true } }), "not_started");
+  for (const requirement of ["individual.id_number", "individual.ssn_last_4", "company.tax_id"]) {
+    for (const field of ["currently_due", "past_due", "pending_verification", "eventually_due"] as const) {
+      assert.equal(status({ ...individual, requirements: { ...clear, [field]: [requirement] } }), "submitted_to_stripe");
+      assert.equal(status({ ...company, requirements: { ...clear, [field]: [requirement] } }), "submitted_to_stripe");
+    }
+  }
+  assert.equal(status({ ...company, requirements: { ...clear, errors: [{ requirement: "company.tax_id" }] } }), "submitted_to_stripe");
+  assert.equal(status({ ...company, requirements: { ...clear, currently_due: ["company.address.line1"] } }), "verified_complete");
+});
+
+test("I.10b tax sync and webhook persist only status flags and reject manual tax overrides", async () => {
+  const routes = await read("../routes/affiliate-compliance.ts");
+  const webhook = await read("../lib/affiliate-compliance-webhook.ts");
+  const tax = await read("affiliate-connect-tax.ts");
+  assert.match(routes, /taxStatus:\s*status\.country\s*===\s*"US"/);
+  assert.match(routes, /if \(previous\?\.accountId && !previous\.taxCheckedAt\)[\s\S]*?synchronizeStripeAccount\(affiliateId\)/);
+  assert.match(webhook, /event\.livemode/);
+  assert.match(routes, /getStripeConnectTestClient\(\)/);
+  assert.doesNotMatch(routes, /"verify_tax"|"tax_submitted"|"tax_manual_review"/);
+  assert.doesNotMatch(tax, /account\.(?:individual|company)\?\.(?:id_number|tax_id)\b/);
+  assert.doesNotMatch(webhook, /(?:individual|company)\?\.(?:id_number|tax_id)\b/);
+  assert.doesNotMatch(routes, /\bdiagnostic\b/);
 });
 
 test("I.11 modern and legacy payout operations re-check eligibility before payout state changes", async () => {

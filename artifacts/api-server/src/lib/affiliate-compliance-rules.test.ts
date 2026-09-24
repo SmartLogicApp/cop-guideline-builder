@@ -16,6 +16,7 @@ const fullyEligible = {
   taxStatus: "verified_complete",
   stripeConnected: true,
   stripeAccountType: "express",
+  stripeOnboardingStatus: "complete",
   stripeDetailsSubmitted: true,
   stripePayoutsEnabled: true,
   paymentAuthorizationAccepted: true,
@@ -69,6 +70,7 @@ test("reviewed agreement, completed Stripe onboarding, and admin approval are al
           stripeConnected: stripeComplete,
           stripeDetailsSubmitted: stripeComplete,
           stripePayoutsEnabled: stripeComplete,
+          stripeOnboardingStatus: stripeComplete ? "complete" : "action_required",
           adminApprovalStatus: adminApproved ? "approved" : "pending",
         });
         assert.equal(reasons.length === 0, agreementAccepted && stripeComplete && adminApproved);

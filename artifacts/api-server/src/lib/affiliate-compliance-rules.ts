@@ -9,6 +9,7 @@ export type EligibilityFacts = {
   taxStatus: string;
   stripeConnected: boolean;
   stripeAccountType: string | null;
+  stripeOnboardingStatus: string;
   stripeDetailsSubmitted: boolean;
   stripePayoutsEnabled: boolean;
   paymentAuthorizationAccepted: boolean;
@@ -37,7 +38,8 @@ export function payoutEligibilityReasons(facts: EligibilityFacts): string[] {
   if (facts.adminApprovalStatus !== "approved") reasons.push("Admin approval is required.");
   if (isUs && facts.state) {
     if (facts.taxStatus !== "verified_complete") reasons.push("U.S. tax information must be verified as complete.");
-    if (!facts.stripeConnected || facts.stripeAccountType !== "express" || !facts.stripeDetailsSubmitted || !facts.stripePayoutsEnabled) {
+    if (!facts.stripeConnected || facts.stripeAccountType !== "express" || facts.stripeOnboardingStatus !== "complete"
+        || !facts.stripeDetailsSubmitted || !facts.stripePayoutsEnabled) {
       reasons.push("Complete Stripe Express payment setup with payouts enabled.");
     }
     if (!facts.paymentAuthorizationAccepted) reasons.push("Accept the current payment authorization.");

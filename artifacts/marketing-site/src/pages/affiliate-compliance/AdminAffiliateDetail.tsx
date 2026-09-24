@@ -70,7 +70,7 @@ export default function AdminAffiliateDetail() {
                 <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.privacy === 'Complete'} /> {affiliate.complianceStatus?.privacy || 'Missing'}</span>
               </div>
               <div className="flex justify-between py-3 border-b">
-                <span className="font-medium text-slate-700">3. W-9 / Tax Status</span>
+                <span className="font-medium text-slate-700">3. Tax information (via Stripe)</span>
                 <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.tax === 'Verified/complete'} /> {affiliate.complianceStatus?.tax || 'Missing'}</span>
               </div>
               <div className="flex justify-between py-3 border-b">
@@ -90,7 +90,7 @@ export default function AdminAffiliateDetail() {
                 <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.adminApproval === 'Complete'} /> {affiliate.complianceStatus?.adminApproval || 'Missing'}</span>
               </div>
             </div>
-            <div className="mt-4 text-xs text-slate-500">Note: W-9 and bank details are stored securely in Stripe. The system only stores non-sensitive completion statuses.</div>
+            <div className="mt-4 text-xs text-slate-500">Tax IDs and payment details are entered only in Stripe-hosted onboarding. This app stores Stripe status flags, not a signed W-9 or a tax ID.</div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-6">

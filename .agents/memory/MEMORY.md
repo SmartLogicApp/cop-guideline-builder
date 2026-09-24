@@ -28,3 +28,4 @@
 - [Affiliate payout settlement boundary](affiliate-payout-settlement-boundary.md) — legacy settlement must stay blocked until it shares verified transfer evidence and exact commission claims.
 - [Stripe Connect account policy](stripe-connect-account-policy.md) — a newly enabled sandbox may still reject v1 connected-account creation; check Stripe's Accounts v1 API policy before testing onboarding.
 - [Test affiliate identity handoff](test-affiliate-identity-handoff.md) — moving a synthetic affiliate to owner control must revoke synthetic consents and align the existing Stripe Test account contact.
+- [Stripe affiliate tax boundary](stripe-affiliate-tax-boundary.md) — tax IDs belong only in Stripe; Test-mode completion uses provided flags plus cleared tax requirements, not a signed W-9 claim.
