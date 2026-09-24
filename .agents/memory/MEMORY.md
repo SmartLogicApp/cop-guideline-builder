@@ -25,3 +25,4 @@
 - [Trial audience boundary](trial-audience-boundary.md) — direct customers require payment upfront; consultant affiliates keep a no-card trial until day 30.
 - [Public document bundling boundary](public-document-bundling.md) — trim and transform draft documents before Vite embeds them; runtime slicing leaks the original raw import.
 - [Affiliate agreement identity revisions](affiliate-agreement-identity-revisions.md) — scope acceptance to the applicant contact revision, while preserving older evidence for audit.
+- [Affiliate payout settlement boundary](affiliate-payout-settlement-boundary.md) — legacy settlement must stay blocked until it shares verified transfer evidence and exact commission claims.

@@ -12,6 +12,8 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { HealthCheckResponse } from "@workspace/api-zod";
 import { isPaymentAcceptanceEnabled } from "./lib/payment-config";
+import { processAffiliateConnectWebhook } from "./lib/affiliate-compliance-webhook.js";
+import { verifyAffiliateConnectWebhook } from "./lib/affiliate-compliance-webhook-signature.js";
 
 const app: Express = express();
 
@@ -77,6 +79,25 @@ app.post(
         { errorName: err?.name, errorMessage: err?.message },
         "Stripe webhook error",
       );
+      return res.status(400).json({ error: "Webhook processing failed" });
+    }
+  },
+);
+
+// Dedicated, test-only Connect endpoint. It must receive exact raw bytes;
+// verification uses STRIPE_CONNECT_TEST_WEBHOOK_SECRET, separate from billing.
+app.post(
+  "/api/affiliate-compliance/stripe-webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const signature = req.headers["stripe-signature"];
+    if (!signature) return res.status(400).json({ error: "Invalid signature" });
+    try {
+      const signedValue = Array.isArray(signature) ? signature[0] : signature;
+      const event = verifyAffiliateConnectWebhook(req.body as Buffer, signedValue);
+      await processAffiliateConnectWebhook(event);
+      return res.status(200).json({ received: true });
+    } catch {
       return res.status(400).json({ error: "Webhook processing failed" });
     }
   },

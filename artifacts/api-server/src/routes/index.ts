@@ -6,6 +6,7 @@ import adminRouter    from "./admin";
 import affiliatesRouter from "./affiliates";
 import affiliateAgreementsRouter from "./affiliate-agreements";
 import gapHistoryRouter from "./gapHistory";
+import affiliateComplianceRouter from "./affiliate-compliance";
 
 const router: IRouter = Router();
 
@@ -15,6 +16,7 @@ router.use("/billing",  billingRouter);
 router.use("/admin",    adminRouter);
 router.use("/affiliates/agreements", affiliateAgreementsRouter);
 router.use("/affiliates", affiliatesRouter);
+router.use("/affiliate-compliance", affiliateComplianceRouter);
 router.use(gapHistoryRouter);
 
 export default router;

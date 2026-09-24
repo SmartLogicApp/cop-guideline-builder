@@ -88,3 +88,18 @@ export function getStripeSignatureVerifier(): Stripe {
     apiVersion: "2026-07-29.dahlia",
   });
 }
+
+/**
+ * Connect compliance is intentionally test-only. Unlike getStripeSecretKey(),
+ * this helper can never select a live key, even when the API is in production.
+ */
+export function getStripeConnectTestClient(): Stripe {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Affiliate Connect is restricted to Stripe test mode.");
+  }
+  const key = process.env.STRIPE_TEST_SECRET_KEY?.trim();
+  if (!key || !key.startsWith("sk_test_")) {
+    throw new Error("Stripe Connect test mode is not configured.");
+  }
+  return new Stripe(key, { apiVersion: "2026-07-29.dahlia" });
+}

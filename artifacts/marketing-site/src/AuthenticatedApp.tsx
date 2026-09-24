@@ -20,6 +20,14 @@ import NotFound from '@/pages/not-found';
 import BillingPage from '@/pages/billing';
 import AcceptTermsPage from '@/pages/accept-terms';
 import RegisterPage from '@/pages/register';
+import AffiliatePortalPage from '@/pages/affiliate-compliance/AffiliatePortalPage';
+import PayoutReturnPage from '@/pages/affiliate-compliance/PayoutReturnPage';
+import PayoutRefreshPage from '@/pages/affiliate-compliance/PayoutRefreshPage';
+import MarketingGuidelinesPage from '@/pages/affiliate-compliance/MarketingGuidelinesPage';
+import AdminAffiliatesList from '@/pages/affiliate-compliance/AdminAffiliatesList';
+import AdminAffiliateDetail from '@/pages/affiliate-compliance/AdminAffiliateDetail';
+import AdminCompliance from '@/pages/affiliate-compliance/AdminCompliance';
+import AdminPayouts from '@/pages/affiliate-compliance/AdminPayouts';
 import { Route, Switch, useLocation } from 'wouter';
 import './auth.css';
 
@@ -225,6 +233,17 @@ function Router() {
       <Route path="/billing" component={Billing} />
       <Route path="/register" component={Register} />
       <Route path="/accept-terms" component={AcceptTerms} />
+
+      <Route path="/partners/portal" component={AffiliatePortalPage} />
+      <Route path="/partners/portal/payout-return" component={PayoutReturnPage} />
+      <Route path="/partners/portal/payout-refresh" component={PayoutRefreshPage} />
+      <Route path="/partners/marketing-guidelines" component={MarketingGuidelinesPage} />
+
+      <Route path="/admin/affiliates" component={AdminAffiliatesList} />
+      <Route path="/admin/affiliates/:id" component={AdminAffiliateDetail} />
+      <Route path="/admin/affiliate-compliance" component={AdminCompliance} />
+      <Route path="/admin/affiliate-payouts" component={AdminPayouts} />
+
       <Route component={NotFound} />
     </Switch>
   );

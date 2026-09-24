@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Response } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import {
   accounts,
@@ -16,6 +16,8 @@ import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementExists, revie
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getReturnBase } from "../lib/return-base.js";
 import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
+import { auditBlockedPayoutAttempt, calculateAffiliatePayoutEligibility } from "../lib/affiliate-payout-eligibility.js";
+import { containsSensitiveFinancialNumber } from "../lib/affiliate-compliance.js";
 import {
   activityStatus,
   activityWindow,
@@ -496,6 +498,10 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
   const patch: Record<string, unknown> = {};
   const body = req.body ?? {};
 
+  if (["payoutMethod", "payoutReference", "adminNotes"].some((field) =>
+    typeof body[field] === "string" && containsSensitiveFinancialNumber(body[field]))) {
+    return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
+  }
   for (const field of ["companyName", "contactName", "email", "phone", "payoutMethod", "payoutReference", "adminNotes"]) {
     if (typeof body[field] === "string") patch[field] =
       field === "email" ? body[field].trim().toLowerCase() : body[field].trim() || null;
@@ -904,21 +910,25 @@ router.get("/payouts/preview", requireAnyAdmin, async (req, res) => {
       })
       .filter((r): r is NonNullable<typeof r> => r !== null)
       .sort((a, b) => b.netUsd - a.netUsd);
+    const reviewedRows = await Promise.all(rows.map(async (row) => ({
+      ...row,
+      payoutEligibility: await calculateAffiliatePayoutEligibility(row.affiliateId),
+    })));
 
     return res.json({
       quarter: bounds.label,
       minimumPayoutUsd: MINIMUM_PAYOUT_USD,
-      rows,
+      rows: reviewedRows,
       totals: {
-        payableNowUsd: money(rows.filter((r) => r.meetsMinimum).reduce((s, r) => s + r.netUsd, 0)),
-        carryingForwardUsd: money(rows.filter((r) => !r.meetsMinimum).reduce((s, r) => s + r.netUsd, 0)),
-        affiliatesPaid: rows.filter((r) => r.meetsMinimum).length,
+        payableNowUsd: money(reviewedRows.filter((r) => r.meetsMinimum && r.payoutEligibility.eligible).reduce((s, r) => s + r.netUsd, 0)),
+        carryingForwardUsd: money(reviewedRows.filter((r) => !r.meetsMinimum).reduce((s, r) => s + r.netUsd, 0)),
+        affiliatesPaid: reviewedRows.filter((r) => r.meetsMinimum && r.payoutEligibility.eligible).length,
         /**
          * §18 — Company may require tax information before paying. Surfaced so
          * the operator sees a blocked payout before the quarter closes rather
          * than on the day they try to send the money.
          */
-        blockedOnTaxInfo: rows.filter((r) => r.meetsMinimum && !r.taxInfoOnFile).length,
+        blockedOnTaxInfo: reviewedRows.filter((r) => r.meetsMinimum && r.payoutEligibility.compliance_status.taxStatus !== "verified_complete").length,
       },
     });
   } catch (error: any) {
@@ -942,7 +952,16 @@ router.get("/payouts/preview", requireAnyAdmin, async (req, res) => {
  * not from the preview — otherwise a row claimed by the other request would
  * still be paid for here.
  */
-router.post("/payouts", requireSuperAdmin, async (req, res) => {
+// Historical settlement stamps commissions paid before any transfer. Keep the
+// route for callers, but never execute that unsafe handler while the new,
+// reviewed workflow is the only payout path.
+function blockUnsafeLegacySettlement(_req: Request, res: Response): void {
+  res.status(409).json({
+    error: "Legacy payout settlement is disabled. Use the reviewed workflow in /admin/affiliate-payouts.",
+  });
+}
+
+router.post("/payouts", requireSuperAdmin, blockUnsafeLegacySettlement, async (req, res) => {
   const affiliateId = req.body?.affiliateId;
   const label = typeof req.body?.quarter === "string" ? req.body.quarter : quarterOf(new Date());
   const bounds = quarterBounds(label);
@@ -950,10 +969,18 @@ router.post("/payouts", requireSuperAdmin, async (req, res) => {
     return res.status(400).json({ error: "affiliateId is required." });
   }
   if (!bounds) return res.status(400).json({ error: "quarter must look like 2026-Q1." });
+  if (typeof req.body?.notes === "string" && containsSensitiveFinancialNumber(req.body.notes)) {
+    return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
+  }
 
   try {
     const [affiliate] = await db.select().from(affiliates).where(eq(affiliates.id, affiliateId)).limit(1);
     if (!affiliate) return res.status(404).json({ error: "Affiliate not found" });
+    const eligibility = await calculateAffiliatePayoutEligibility(affiliateId);
+    if (!eligibility.eligible) {
+      await auditBlockedPayoutAttempt(affiliateId, (req as any).clerkUserId ?? null, "legacy_payout_create", eligibility.blocking_reasons);
+      return res.status(409).json({ error: "Affiliate is not eligible for payouts.", blockingReasons: eligibility.blocking_reasons });
+    }
 
     const [existing] = await db.select().from(affiliatePayouts).where(and(
       eq(affiliatePayouts.affiliateId, affiliateId),
@@ -1029,12 +1056,23 @@ router.post("/payouts", requireSuperAdmin, async (req, res) => {
 
 // ─── PATCH /api/affiliates/payouts/:payoutId — mark approved or paid ─────────
 
-router.patch("/payouts/:payoutId", requireSuperAdmin, async (req, res) => {
+router.patch("/payouts/:payoutId", requireSuperAdmin, blockUnsafeLegacySettlement, async (req, res) => {
   const status = req.body?.status;
   if (!["approved", "paid"].includes(status)) {
     return res.status(400).json({ error: "status must be 'approved' or 'paid'." });
   }
+  if (typeof req.body?.reference === "string" && containsSensitiveFinancialNumber(req.body.reference)) {
+    return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
+  }
   try {
+    const [existing] = await db.select().from(affiliatePayouts)
+      .where(eq(affiliatePayouts.id, String(req.params.payoutId))).limit(1);
+    if (!existing) return res.status(404).json({ error: "Payout not found" });
+    const eligibility = await calculateAffiliatePayoutEligibility(existing.affiliateId);
+    if (!eligibility.eligible) {
+      await auditBlockedPayoutAttempt(existing.affiliateId, (req as any).clerkUserId ?? null, `legacy_payout_${status}`, eligibility.blocking_reasons);
+      return res.status(409).json({ error: "Affiliate is not eligible for payouts.", blockingReasons: eligibility.blocking_reasons });
+    }
     const patch: Record<string, unknown> = { status };
     if (status === "paid") patch.paidAt = new Date();
     // A reference, not an account number — see the payout field comments on

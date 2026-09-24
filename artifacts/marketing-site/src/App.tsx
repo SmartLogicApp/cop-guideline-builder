@@ -37,7 +37,9 @@ function RouteBoundary() {
     || normalizedLocation === '/sign-in'
     || normalizedLocation.startsWith('/sign-in/')
     || normalizedLocation === '/sign-up'
-    || normalizedLocation.startsWith('/sign-up/');
+    || normalizedLocation.startsWith('/sign-up/')
+    || normalizedLocation.startsWith('/partners')
+    || normalizedLocation.startsWith('/admin');
 
   return needsAuth ? (
     <ErrorBoundary FallbackComponent={AuthLoadError}>
