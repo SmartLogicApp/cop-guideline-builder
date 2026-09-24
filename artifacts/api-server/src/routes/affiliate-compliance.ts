@@ -8,7 +8,7 @@ import {
   affiliateEmailTemplates, affiliatePayoutWorkflow, affiliateCommissions,
   affiliatePayoutWorkflowCommissions,
 } from "@workspace/db";
-import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
 import { calculateAffiliatePayoutEligibility, auditBlockedPayoutAttempt, PAYOUT_MINIMUM_USD } from "../lib/affiliate-payout-eligibility.js";
@@ -18,6 +18,8 @@ import {
 } from "../lib/affiliate-compliance.js";
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getStripeConnectTestClient } from "../stripeClient.js";
+import { quarterBounds } from "../lib/affiliate-commission.js";
+import { eligibleQuarterCommission, sumCommissionCents } from "../lib/affiliate-quarterly-payout.js";
 import { createHash, randomUUID } from "node:crypto";
 
 const router: IRouter = Router();
@@ -332,6 +334,7 @@ function secureApplicationOrigin(): string {
 }
 
 router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
+  let stage = "prerequisites";
   try {
     const status = await ensureComplianceRecord(req.affiliateId);
     if (!status.state) {
@@ -355,6 +358,7 @@ router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
     const stripe = getStripeConnectTestClient();
     let accountId = status.stripeConnectedAccountId;
     if (!accountId) {
+      stage = "account_create";
       const account = await stripe.accounts.create({
         type: "express", country: "US", email: req.affiliate.email,
         capabilities: { transfers: { requested: true } },
@@ -366,7 +370,9 @@ router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
         stripeOnboardingStartedAt: new Date(), updatedAt: new Date(),
       }).where(eq(affiliateComplianceStatus.affiliateId, req.affiliateId));
     }
+    stage = "return_url";
     const origin = secureApplicationOrigin();
+    stage = "account_link";
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
       refresh_url: `${origin}/partners/portal/payout-refresh`,
@@ -376,7 +382,19 @@ router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
     });
     await auditCompliance(req.affiliateId, "affiliate", req.clerkUserId, "stripe_onboarding_link_created");
     res.json({ url: accountLink.url });
-  } catch {
+  } catch (error: any) {
+    const diagnostic = typeof error?.message === "string" ? error.message
+      .replace(/(?:sk|pk)_(?:test|live)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+/g, "[credential]")
+      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+      .replace(/\b(?:acct|tr|evt)_[A-Za-z0-9]+\b/g, "[stripe-id]")
+      .slice(0, 300) : undefined;
+    req.log?.warn({
+      stage, stripeCode: typeof error?.code === "string" ? error.code : undefined,
+      stripeType: typeof error?.type === "string" ? error.type : undefined,
+      httpStatus: typeof error?.statusCode === "number" ? error.statusCode : undefined,
+      stripeParam: typeof error?.param === "string" ? error.param : undefined,
+      diagnostic,
+    }, "Affiliate Connect test setup failed");
     res.status(503).json({ error: "Secure payment setup is temporarily unavailable." });
   }
 });
@@ -722,18 +740,9 @@ function stripeTestPayoutGuard(): void {
   if (process.env.NODE_ENV === "production" || !key.startsWith("sk_test_")) throw new Error("Test-mode payout sending is disabled.");
 }
 
-router.post("/admin/payouts/draft", requireSuperAdmin, async (req: any, res) => {
-  try { stripeTestPayoutGuard(); } catch {
-    res.status(403).json({ error: "Payout workflows are restricted to Stripe test mode." }); return;
-  }
-  const affiliateId = typeof req.body?.affiliateId === "string" ? req.body.affiliateId : "";
-  const start = new Date(req.body?.payoutPeriodStart);
-  const end = new Date(req.body?.payoutPeriodEnd);
-  if (!affiliateId || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end < start) {
-    res.status(400).json({ error: "Provide an affiliate and valid payout period." }); return;
-  }
-  const [affiliateExists] = await db.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, affiliateId)).limit(1);
-  if (!affiliateExists) { res.status(404).json({ error: "Affiliate not found." }); return; }
+// A single draft path serves both manual and quarterly runs. The affiliate lock
+// serializes the two paths with each other and with send/void.
+async function createReviewedDraft(affiliateId: string, start: Date, end: Date, quarterly: boolean) {
   const blocked: string[] = [];
   const created = await db.transaction(async (tx) => {
     await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, affiliateId)).for("update").limit(1);
@@ -744,32 +753,40 @@ router.post("/admin/payouts/draft", requireSuperAdmin, async (req: any, res) => 
         eq(affiliatePayoutWorkflow.affiliateId, affiliateId),
         eq(affiliatePayoutWorkflow.payoutPeriodStart, start),
         eq(affiliatePayoutWorkflow.payoutPeriodEnd, end),
+        // A transferred/reversed workflow still owns its historical period.
         ne(affiliatePayoutWorkflow.payoutStatus, "voided"),
-         ne(affiliatePayoutWorkflow.payoutStatus, "reversed"),
       )).limit(1);
     const activeDrafts = await tx.select({ id: affiliatePayoutWorkflow.id }).from(affiliatePayoutWorkflow)
       .where(and(eq(affiliatePayoutWorkflow.affiliateId, affiliateId), inArray(affiliatePayoutWorkflow.payoutStatus, ["payable_pending_admin_approval", "approved_for_payout", "payout_processing"]))).limit(1);
     if (existingDrafts.length || activeDrafts.length) { blocked.push("A payout already exists for this period or another payout is awaiting settlement."); return null; }
     const periodCommissions = await tx.select({
       id: affiliateCommissions.id, amount: affiliateCommissions.commissionUsd,
+      payableAt: affiliateCommissions.payableAt, accruedAt: affiliateCommissions.accruedAt,
+      payoutId: affiliateCommissions.payoutId, status: affiliateCommissions.status,
     }).from(affiliateCommissions).where(and(
       eq(affiliateCommissions.affiliateId, affiliateId),
       eq(affiliateCommissions.status, "payable"),
-      gte(affiliateCommissions.accruedAt, start),
-      lte(affiliateCommissions.accruedAt, end),
-      lte(affiliateCommissions.payableAt, new Date()),
+      isNull(affiliateCommissions.payoutId),
+      quarterly ? lt(affiliateCommissions.payableAt, end) : and(
+        gte(affiliateCommissions.accruedAt, start),
+        lte(affiliateCommissions.accruedAt, end),
+      ),
+       lte(affiliateCommissions.payableAt, new Date()),
     )).for("update");
     const existingClaims = periodCommissions.length
       ? await tx.select({ commissionId: affiliatePayoutWorkflowCommissions.commissionId })
-        .from(affiliatePayoutWorkflowCommissions).where(and(
+        .from(affiliatePayoutWorkflowCommissions)
+        .innerJoin(affiliatePayoutWorkflow, eq(affiliatePayoutWorkflow.id, affiliatePayoutWorkflowCommissions.payoutWorkflowId))
+        .where(and(
           inArray(affiliatePayoutWorkflowCommissions.commissionId, periodCommissions.map((row) => row.id)),
-          inArray(affiliatePayoutWorkflowCommissions.status, ["claimed", "paid"]),
+          or(inArray(affiliatePayoutWorkflowCommissions.status, ["claimed", "paid"]),
+            isNotNull(affiliatePayoutWorkflow.stripeTransferId)),
         ))
       : [];
     const claimedIds = new Set(existingClaims.map((claim) => claim.commissionId));
-    const availableCommissions = periodCommissions.filter((row) => !claimedIds.has(row.id)
-      && Number.isFinite(Number(row.amount)) && Number(row.amount) > 0);
-    const amountCents = availableCommissions.reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
+    const availableCommissions = periodCommissions.filter((row) =>
+      eligibleQuarterCommission(row, claimedIds, end, new Date(), quarterly));
+    const amountCents = sumCommissionCents(availableCommissions);
     if (amountCents < Math.round(PAYOUT_MINIMUM_USD * 100)) {
       blocked.push("Unclaimed payable commissions in this payout period must meet the minimum payout amount.");
       return null;
@@ -790,6 +807,119 @@ router.post("/admin/payouts/draft", requireSuperAdmin, async (req: any, res) => 
     })));
     return payout;
   });
+  return { created, blocked };
+}
+
+function completedQuarter(value: unknown) {
+  if (typeof value !== "string") return null;
+  const bounds = quarterBounds(value);
+  return bounds && bounds.end <= new Date() ? bounds : null;
+}
+
+async function quarterlyCandidates(end: Date) {
+  // Include an already-created period so a repeat run explicitly reports it,
+  // even when its commissions are no longer payable.
+  const [due, existing] = await Promise.all([
+    db.select({ affiliateId: affiliateCommissions.affiliateId }).from(affiliateCommissions)
+      .where(and(eq(affiliateCommissions.status, "payable"), isNull(affiliateCommissions.payoutId),
+        lt(affiliateCommissions.payableAt, end), lte(affiliateCommissions.payableAt, new Date()))),
+    db.select({ affiliateId: affiliatePayoutWorkflow.affiliateId }).from(affiliatePayoutWorkflow)
+      .where(eq(affiliatePayoutWorkflow.payoutPeriodEnd, end)),
+  ]);
+  return [...new Set([...due, ...existing].map((row) => row.affiliateId))].sort();
+}
+
+router.get("/admin/payouts/quarterly-preview", requireAnyAdmin, async (req, res) => {
+  const bounds = completedQuarter(req.query.quarter);
+  if (!bounds) { res.status(400).json({ error: "Choose a completed quarter like 2026-Q1." }); return; }
+  const ids = await quarterlyCandidates(bounds.end);
+  const rows = await Promise.all(ids.map(async (affiliateId) => {
+    const [[affiliate], eligibility, claims, existing, active] = await Promise.all([
+      db.select({ contactName: affiliates.contactName, companyName: affiliates.companyName, email: affiliates.email })
+        .from(affiliates).where(eq(affiliates.id, affiliateId)).limit(1),
+      calculateAffiliatePayoutEligibility(affiliateId),
+      db.select({ id: affiliateCommissions.id, amount: affiliateCommissions.commissionUsd,
+        payableAt: affiliateCommissions.payableAt, accruedAt: affiliateCommissions.accruedAt,
+        payoutId: affiliateCommissions.payoutId, status: affiliateCommissions.status })
+        .from(affiliateCommissions).where(and(eq(affiliateCommissions.affiliateId, affiliateId),
+          eq(affiliateCommissions.status, "payable"), isNull(affiliateCommissions.payoutId),
+          lt(affiliateCommissions.payableAt, bounds.end), lte(affiliateCommissions.payableAt, new Date()))),
+      db.select({ id: affiliatePayoutWorkflow.id }).from(affiliatePayoutWorkflow)
+        .where(and(eq(affiliatePayoutWorkflow.affiliateId, affiliateId),
+          eq(affiliatePayoutWorkflow.payoutPeriodStart, bounds.start),
+          eq(affiliatePayoutWorkflow.payoutPeriodEnd, bounds.end),
+          ne(affiliatePayoutWorkflow.payoutStatus, "voided"))).limit(1),
+      db.select({ id: affiliatePayoutWorkflow.id }).from(affiliatePayoutWorkflow)
+        .where(and(eq(affiliatePayoutWorkflow.affiliateId, affiliateId),
+          inArray(affiliatePayoutWorkflow.payoutStatus,
+            ["payable_pending_admin_approval", "approved_for_payout", "payout_processing"]))).limit(1),
+    ]);
+    const reserved = claims.length ? await db.select({ commissionId: affiliatePayoutWorkflowCommissions.commissionId })
+      .from(affiliatePayoutWorkflowCommissions)
+      .innerJoin(affiliatePayoutWorkflow, eq(affiliatePayoutWorkflow.id, affiliatePayoutWorkflowCommissions.payoutWorkflowId))
+      .where(and(inArray(affiliatePayoutWorkflowCommissions.commissionId, claims.map((row) => row.id)),
+        or(inArray(affiliatePayoutWorkflowCommissions.status, ["claimed", "paid"]),
+          isNotNull(affiliatePayoutWorkflow.stripeTransferId)))) : [];
+    const available = claims.filter((row) => eligibleQuarterCommission(row,
+      new Set(reserved.map((r) => r.commissionId)), bounds.end, new Date(), true));
+    const amountCents = sumCommissionCents(available);
+    const reasons = [...eligibility.blocking_reasons];
+    if (existing.length) reasons.push("A payout already exists for this quarter.");
+    else if (active.length) reasons.push("Another payout is awaiting settlement.");
+    if (!available.length) reasons.push("No unclaimed payable commissions are available for this quarter.");
+    else if (amountCents < PAYOUT_MINIMUM_USD * 100) reasons.push("Unclaimed payable commissions are below the minimum payout amount.");
+    return { affiliateId, affiliateName: affiliate?.contactName || affiliate?.companyName || affiliate?.email || affiliateId,
+      commissionCount: available.length, amountUsd: (amountCents / 100).toFixed(2),
+      eligible: reasons.length === 0, blocking_reasons: reasons };
+  }));
+  res.setHeader("Cache-Control", "private, no-store");
+  res.json({ quarter: bounds.label, rows });
+});
+
+router.post("/admin/payouts/quarterly-run", requireSuperAdmin, async (req: any, res) => {
+  try { stripeTestPayoutGuard(); } catch {
+    res.status(403).json({ error: "Payout workflows are restricted to Stripe test mode." }); return;
+  }
+  const bounds = completedQuarter(req.body?.quarter);
+  if (!bounds || req.body?.confirmed !== true) {
+    res.status(400).json({ error: "Confirm a completed quarter before preparing payout drafts." }); return;
+  }
+  const rows = [];
+  for (const affiliateId of await quarterlyCandidates(bounds.end)) {
+    const [affiliate] = await db.select({ contactName: affiliates.contactName, companyName: affiliates.companyName,
+      email: affiliates.email }).from(affiliates).where(eq(affiliates.id, affiliateId)).limit(1);
+    const affiliateName = affiliate?.contactName || affiliate?.companyName || affiliate?.email || affiliateId;
+    try {
+      const { created, blocked } = await createReviewedDraft(affiliateId, bounds.start, bounds.end, true);
+      if (!created) await auditBlockedPayoutAttempt(affiliateId, req.clerkUserId, "quarterly_draft", blocked);
+      rows.push({ affiliateId, affiliateName, status: created ? "drafted" : "held",
+        payoutId: created?.id ?? null, blocking_reasons: blocked });
+    } catch {
+      req.log?.error({ affiliateId }, "Quarterly draft preparation failed");
+      // The transaction may have committed before a later audit failed.
+      // Do not assert that the affiliate was held or suggest an unsafe retry.
+      rows.push({ affiliateId, affiliateName, status: "error", payoutId: null,
+        blocking_reasons: ["Could not confirm this result. Refresh the preview and review payouts before retrying."] });
+    }
+  }
+  res.json({ quarter: bounds.label, rows, drafted: rows.filter((row) => row.status === "drafted").length,
+    held: rows.filter((row) => row.status === "held").length,
+    errors: rows.filter((row) => row.status === "error").length });
+});
+
+router.post("/admin/payouts/draft", requireSuperAdmin, async (req: any, res) => {
+  try { stripeTestPayoutGuard(); } catch {
+    res.status(403).json({ error: "Payout workflows are restricted to Stripe test mode." }); return;
+  }
+  const affiliateId = typeof req.body?.affiliateId === "string" ? req.body.affiliateId : "";
+  const start = new Date(req.body?.payoutPeriodStart);
+  const end = new Date(req.body?.payoutPeriodEnd);
+  if (!affiliateId || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end < start) {
+    res.status(400).json({ error: "Provide an affiliate and valid payout period." }); return;
+  }
+  const [affiliateExists] = await db.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, affiliateId)).limit(1);
+  if (!affiliateExists) { res.status(404).json({ error: "Affiliate not found." }); return; }
+  const { created, blocked } = await createReviewedDraft(affiliateId, start, end, false);
   if (!created) {
     if (blocked.length) await auditBlockedPayoutAttempt(affiliateId, req.clerkUserId, "draft", blocked);
     res.status(409).json({ error: "Payout draft blocked.", blocking_reasons: blocked }); return;
@@ -836,7 +966,7 @@ router.post("/admin/payouts/:id/void", requireSuperAdmin, async (req: any, res) 
   const voided = await db.transaction(async (tx) => {
     await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, payout.affiliateId)).for("update").limit(1);
     const [locked] = await tx.select().from(affiliatePayoutWorkflow).where(eq(affiliatePayoutWorkflow.id, id)).for("update").limit(1);
-    if (!locked || !["payable_pending_admin_approval", "approved_for_payout"].includes(locked.payoutStatus)) return null;
+      if (!locked || locked.stripeTransferId || !["payable_pending_admin_approval", "approved_for_payout"].includes(locked.payoutStatus)) return null;
     const [updated] = await tx.update(affiliatePayoutWorkflow).set({
       payoutStatus: "voided", failureReason: null, updatedAt: new Date(),
     }).where(and(eq(affiliatePayoutWorkflow.id, id), inArray(affiliatePayoutWorkflow.payoutStatus, ["payable_pending_admin_approval", "approved_for_payout"]))).returning();
@@ -863,15 +993,33 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
   const [payout] = await db.select().from(affiliatePayoutWorkflow).where(eq(affiliatePayoutWorkflow.id, id)).limit(1);
   if (!payout) { res.status(404).json({ error: "Payout not found." }); return; }
   const blocked: string[] = [];
+  // Commit the attempt before calling Stripe. A lost Stripe response must not
+  // leave a voidable draft whose claims could be released and transferred again.
+  const attemptStarted = await db.transaction(async (tx) => {
+    await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, payout.affiliateId)).for("update").limit(1);
+    const [current] = await tx.select().from(affiliatePayoutWorkflow).where(eq(affiliatePayoutWorkflow.id, id)).for("update").limit(1);
+    if (!current || current.stripeTransferId || current.payoutStatus !== "approved_for_payout") return false;
+    const eligibility = await calculateAffiliatePayoutEligibility(payout.affiliateId, tx);
+    if (!eligibility.eligible) { blocked.push(...eligibility.blocking_reasons); return false; }
+    await tx.update(affiliatePayoutWorkflow).set({
+      payoutStatus: "payout_processing",
+      failureReason: "Transfer attempt in progress. Do not void or retry without reconciliation.",
+      updatedAt: new Date(),
+    }).where(and(eq(affiliatePayoutWorkflow.id, id), eq(affiliatePayoutWorkflow.payoutStatus, "approved_for_payout")));
+    return true;
+  });
+  if (!attemptStarted) {
+    if (blocked.length) await auditBlockedPayoutAttempt(payout.affiliateId, req.clerkUserId, "send", blocked);
+    res.status(409).json({ error: "Payout is ineligible, already sent, or awaiting transfer reconciliation.", blocking_reasons: blocked }); return;
+  }
   try {
-    // The eligibility snapshot, payout-state transition, external test transfer,
-    // and ledger settlement share one transaction while the affiliate row is
-    // locked. Stripe idempotency handles an uncertain response/retry.
+    // Recheck under the affiliate lock just before the external test transfer.
+    // On any uncertainty the durable processing state continues reserving claims.
     const result = await db.transaction(async (tx) => {
       await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, payout.affiliateId)).for("update").limit(1);
       const [locked] = await tx.select().from(affiliatePayoutWorkflow).where(eq(affiliatePayoutWorkflow.id, id)).for("update").limit(1);
-      if (!locked || locked.affiliateId !== payout.affiliateId || !(locked.payoutStatus === "approved_for_payout"
-          || (locked.payoutStatus === "payout_processing" && !locked.stripeTransferId))) return null;
+      if (!locked || locked.stripeTransferId || locked.affiliateId !== payout.affiliateId
+          || locked.payoutStatus !== "payout_processing") return null;
       const eligibility = await calculateAffiliatePayoutEligibility(payout.affiliateId, tx);
       if (!eligibility.eligible) { blocked.push(...eligibility.blocking_reasons); return null; }
       const [status] = await tx.select().from(affiliateComplianceStatus)
@@ -895,13 +1043,19 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
         eq(affiliateCommissions.status, "payable"),
       )).for("update") : [];
       const payableById = new Map(payable.map((row) => [row.id, row]));
+      const transferredClaims = claims.length ? await tx.select({ id: affiliatePayoutWorkflowCommissions.id })
+        .from(affiliatePayoutWorkflowCommissions)
+        .innerJoin(affiliatePayoutWorkflow, eq(affiliatePayoutWorkflow.id, affiliatePayoutWorkflowCommissions.payoutWorkflowId))
+        .where(and(inArray(affiliatePayoutWorkflowCommissions.commissionId, claims.map((claim) => claim.commissionId)),
+          isNotNull(affiliatePayoutWorkflow.stripeTransferId),
+          ne(affiliatePayoutWorkflow.id, locked.id))).limit(1) : [];
       const claimsMatchLedger = claims.length > 0 && payable.length === claims.length
         && claims.every((claim) => {
           const row = payableById.get(claim.commissionId);
           return row && row.payoutId == null && Math.round(Number(row.amount) * 100) === Math.round(Number(claim.commissionAmount) * 100);
         });
       const selectedAmountCents = claims.reduce((sum, claim) => sum + Math.round(Number(claim.commissionAmount) * 100), 0);
-      if (!claimsMatchLedger || selectedAmountCents !== Math.round(Number(locked.netPayoutAmount) * 100)
+      if (transferredClaims.length || !claimsMatchLedger || selectedAmountCents !== Math.round(Number(locked.netPayoutAmount) * 100)
           || locked.currency.toLowerCase() !== "usd") {
         blocked.push("Payable commissions changed after this payout was drafted; void it and create a new draft.");
         return null;
@@ -936,17 +1090,17 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
     });
     if (!result) {
       if (blocked.length) await auditBlockedPayoutAttempt(payout.affiliateId, req.clerkUserId, "send", blocked);
-      res.status(409).json({ error: "Payout send blocked or already processed.", blocking_reasons: blocked }); return;
+      res.status(409).json({ error: "Payout send blocked; review and reconcile this processing attempt before any retry.", blocking_reasons: blocked }); return;
     }
     await auditCompliance(payout.affiliateId, "admin", req.clerkUserId, "test_mode_transfer_created", confirmationReason, { payoutId: payout.id }, { transferId: result.transferId });
     res.json({ payout: result.updated, transferId: result.transferId, testMode: true });
   } catch {
-    // Rollback leaves the same key available for a safe retry. If Stripe
-    // accepted before the connection failed, idempotency returns that transfer.
+    // Even a failed response can mean Stripe accepted the transfer. Never
+    // release the claims or automatically repeat this send.
     await db.update(affiliatePayoutWorkflow).set({
-      failureReason: "Stripe test transfer result was not confirmed; retry remains idempotent.",
+      failureReason: "Stripe test transfer outcome is uncertain. Reconcile the transfer before any retry or release.",
       updatedAt: new Date(),
-    }).where(eq(affiliatePayoutWorkflow.id, payout.id));
+    }).where(and(eq(affiliatePayoutWorkflow.id, payout.id), isNull(affiliatePayoutWorkflow.stripeTransferId)));
     await auditCompliance(payout.affiliateId, "admin", req.clerkUserId, "test_transfer_attempt_uncertain", confirmationReason,
       { payoutStatus: payout.payoutStatus }, { outcome: "pending_reconciliation", payoutId: payout.id });
     res.status(502).json({ error: "Stripe test transfer failed." });

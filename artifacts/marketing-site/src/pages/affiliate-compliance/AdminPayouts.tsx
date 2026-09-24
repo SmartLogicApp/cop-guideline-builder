@@ -3,6 +3,8 @@ import { AdminShell } from './shells';
 import { 
   useAdminPayouts, 
   useAdminAffiliates,
+  useAdminQuarterlyPreview,
+  useAdminQuarterlyRun,
   useAdminPayoutDraft,
   useAdminPayoutApprove,
   useAdminPayoutSend,
@@ -12,12 +14,24 @@ import { Loader2, CheckCircle2, AlertCircle, Plus, ShieldAlert, Check } from 'lu
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 
+function lastCompletedQuarter(): string {
+  const previous = new Date();
+  previous.setDate(1);
+  previous.setMonth(previous.getMonth() - 3);
+  return `${previous.getFullYear()}-Q${Math.floor(previous.getMonth() / 3) + 1}`;
+}
+
 export default function AdminPayouts() {
   const { data: payouts, isLoading: isLoadingPayouts } = useAdminPayouts();
   const { data: affiliates, isLoading: isLoadingAffiliates } = useAdminAffiliates();
   const { toast } = useToast();
 
   const draft = useAdminPayoutDraft();
+  const [quarter, setQuarter] = useState(lastCompletedQuarter);
+  const [quarterConfirmed, setQuarterConfirmed] = useState(false);
+  const [quarterResult, setQuarterResult] = useState<any>(null);
+  const quarterlyPreview = useAdminQuarterlyPreview(quarter);
+  const quarterlyRun = useAdminQuarterlyRun();
   
   const [draftOpen, setDraftOpen] = useState(false);
   const [draftForm, setDraftForm] = useState({ affiliateId: '', payoutPeriodStart: '', payoutPeriodEnd: '' });
@@ -31,6 +45,17 @@ export default function AdminPayouts() {
       setDraftForm({ affiliateId: '', payoutPeriodStart: '', payoutPeriodEnd: '' });
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
+    }
+  };
+
+  const handleQuarterRun = async () => {
+    try {
+      const result = await quarterlyRun.mutateAsync(quarter);
+      setQuarterResult(result);
+      setQuarterConfirmed(false);
+      toast({ title: 'Quarter preparation finished', description: `${result.drafted} drafts created; ${result.held} held; ${result.errors} need review.` });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Quarter could not be prepared', description: err.message });
     }
   };
 
@@ -49,6 +74,51 @@ export default function AdminPayouts() {
           <Plus className="w-4 h-4 mr-2" /> Draft New Payout
         </Button>
       </div>
+
+      <section className="bg-white border rounded-xl shadow-sm p-6 mb-6 space-y-4" aria-label="Quarterly payout preparation">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">Prepare a quarterly payout run</h2>
+          <p className="text-sm text-slate-600 mt-1">Only a completed quarter can be prepared. This creates reviewed drafts for eligible affiliates; it does not send money. Approve and send each draft separately below. Ineligible affiliates stay on hold with a reason.</p>
+        </div>
+        <label className="block text-sm font-medium text-slate-700 max-w-48">Quarter (YYYY-Q1…Q4)
+          <input type="text" value={quarter} onChange={e => {
+            setQuarter(e.target.value.toUpperCase()); setQuarterResult(null); setQuarterConfirmed(false);
+          }} placeholder="2026-Q1" className="mt-1 block w-full rounded-md border px-3 py-2" />
+        </label>
+        {quarterlyPreview.isLoading && <p className="text-sm text-slate-500">Checking commissions and eligibility…</p>}
+        {quarterlyPreview.error && <p role="alert" className="text-sm text-red-700">{(quarterlyPreview.error as Error).message}</p>}
+        {quarterlyPreview.data && <div className="overflow-x-auto">
+          <p className="font-semibold text-sm text-slate-900 mb-2">Preview for {quarterlyPreview.data.quarter} — eligibility is checked again when you prepare each draft.</p>
+          <table className="w-full text-left text-sm">
+            <thead><tr className="border-b bg-slate-50">
+              <th className="p-2">Affiliate</th><th className="p-2">Available commissions</th><th className="p-2">Amount</th><th className="p-2">Decision / reason</th>
+            </tr></thead>
+            <tbody>{quarterlyPreview.data.rows.map((row: any) => <tr key={row.affiliateId} className="border-b align-top">
+              <td className="p-2 font-medium">{row.affiliateName}</td>
+              <td className="p-2">{row.commissionCount}</td>
+              <td className="p-2">${row.amountUsd}</td>
+              <td className="p-2">{row.eligible ? <span className="text-emerald-700">Ready to draft</span>
+                : <ul className="text-amber-800 list-disc pl-4">{row.blocking_reasons.map((reason: string, i: number) => <li key={i}>{reason}</li>)}</ul>}</td>
+            </tr>)}</tbody>
+          </table>
+          {quarterlyPreview.data.rows.length === 0 && <p className="p-3 text-slate-600 text-sm">No due commissions or existing payouts for this quarter.</p>}
+        </div>}
+        <label className="flex gap-2 items-start text-sm text-slate-800">
+          <input type="checkbox" className="mt-1" checked={quarterConfirmed} onChange={e => setQuarterConfirmed(e.target.checked)} />
+          I confirm I want to prepare payout drafts for this completed quarter. No Stripe transfers will be sent by this action.
+        </label>
+        <Button onClick={handleQuarterRun} disabled={!quarterConfirmed || !quarterlyPreview.data || quarterlyRun.isPending || quarterlyPreview.isFetching || quarterlyPreview.data.rows.length === 0}
+          className="bg-slate-900 text-white hover:bg-slate-800">
+          {quarterlyRun.isPending ? 'Preparing…' : 'Prepare eligible drafts'}
+        </Button>
+        {quarterResult && <div role="status" className="rounded-lg border bg-slate-50 p-4 text-sm">
+          <strong>Run result for {quarterResult.quarter}: {quarterResult.drafted} drafted, {quarterResult.held} held, {quarterResult.errors} need review.</strong>
+          <ul className="mt-2 space-y-2">{quarterResult.rows.map((row: any) => <li key={row.affiliateId}>
+            <span className="font-medium">{row.affiliateName}</span> — {row.status === 'drafted' ? 'Draft ready for approval' : row.status === 'held' ? 'Held' : 'Result uncertain'}
+            {row.blocking_reasons.length > 0 && <span className="text-amber-800">: {row.blocking_reasons.join('; ')}</span>}
+          </li>)}</ul>
+        </div>}
+      </section>
 
       {draftOpen && (
         <form onSubmit={handleDraft} className="bg-white border rounded-xl shadow-sm p-6 mb-6">
@@ -186,6 +256,7 @@ function PayoutRow({ payout, affiliate }: { payout: any, affiliate: any }) {
               'bg-blue-100 text-blue-800'}`}>
             {payout.payoutStatus.replace(/_/g, ' ')}
           </span>
+          {payout.failureReason && <p className="mt-2 max-w-52 text-xs text-amber-800">{payout.failureReason}</p>}
         </td>
         <td className="px-4 py-4">
           {payout.eligibility?.eligible ? (
@@ -194,7 +265,7 @@ function PayoutRow({ payout, affiliate }: { payout: any, affiliate: any }) {
             <div className="text-red-600 flex flex-col gap-1">
               <div className="flex items-center gap-1"><AlertCircle className="w-4 h-4 flex-shrink-0" /> Blocked</div>
               {payout.eligibility?.blocking_reasons?.map((br: string, idx: number) => (
-                <span key={idx} className="text-[10px] leading-tight opacity-80" title={br}>• {br.length > 30 ? br.substring(0,30) + '...' : br}</span>
+                <span key={idx} className="text-xs leading-tight" title={br}>• {br}</span>
               ))}
             </div>
           )}
@@ -202,13 +273,13 @@ function PayoutRow({ payout, affiliate }: { payout: any, affiliate: any }) {
         <td className="px-4 py-4 text-right space-x-2">
           {payout.payoutStatus === 'payable_pending_admin_approval' && (
             <>
-              <Button size="sm" variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setAction('approve')}>Approve</Button>
+              <Button size="sm" variant="outline" disabled={!payout.eligibility?.eligible} className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setAction('approve')}>Approve</Button>
               <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => setAction('void')}>Void</Button>
             </>
           )}
           {payout.payoutStatus === 'approved_for_payout' && (
             <>
-              <Button size="sm" variant="outline" className="border-blue-200 text-blue-700 hover:bg-blue-50" onClick={() => setAction('send')}>Send</Button>
+              <Button size="sm" variant="outline" disabled={!payout.eligibility?.eligible} className="border-blue-200 text-blue-700 hover:bg-blue-50" onClick={() => setAction('send')}>Send</Button>
               <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => setAction('void')}>Void</Button>
             </>
           )}
@@ -235,8 +306,8 @@ function PayoutRow({ payout, affiliate }: { payout: any, affiliate: any }) {
                     </div>
                     
                     <div className="border-t pt-3 mt-3">
-                      <div className="flex items-center gap-2 text-emerald-700 font-medium">
-                        <Check className="w-4 h-4" /> All compliance checks marked complete
+                       <div className="flex items-center gap-2 text-slate-700 font-medium">
+                         <Check className="w-4 h-4" /> Current eligibility is checked again on the server immediately before transfer.
                       </div>
                     </div>
                   </div>

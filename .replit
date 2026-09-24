@@ -80,6 +80,7 @@ packages = ["glib", "gtk3", "nss", "nspr", "atk", "at-spi2-atk", "cups", "dbus",
 STRIPE_PRICE_ID = "price_1UGPfL1UzjLE6pyHVUdEWiuT"
 PAYMENT_ACCEPTANCE_ENABLED = "true"
 STRIPE_PORTAL_CONFIGURATION_ID = "bpc_1UGPfL1UzjLE6pyH3pHAW2gn"
+PUBLIC_APP_URL = "https://c74f4f5a-4945-488f-8870-64d8cc2e87fc-00-2q1tzsne2tf4v.riker.replit.dev"
 
 [userenv.production]
 NODE_ENV = "production"

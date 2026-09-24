@@ -160,7 +160,10 @@ test("I.11 modern and legacy payout operations re-check eligibility before payou
   const draft = modern.slice(modern.indexOf('router.post("/admin/payouts/draft"'), modern.indexOf('router.post("/admin/payouts/:id/approve"'));
   const approve = modern.slice(modern.indexOf('router.post("/admin/payouts/:id/approve"'), modern.indexOf('router.post("/admin/payouts/:id/void"'));
   const send = modern.slice(modern.indexOf('router.post("/admin/payouts/:id/send"'));
-  assert.match(draft, /calculateAffiliatePayoutEligibility\(affiliateId,\s*tx\)/);
+  const sharedDraft = modern.slice(modern.indexOf("async function createReviewedDraft"), modern.indexOf("function completedQuarter"));
+  assert.match(draft, /createReviewedDraft\(affiliateId,\s*start,\s*end,\s*false\)/);
+  assert.match(sharedDraft, /calculateAffiliatePayoutEligibility\(affiliateId,\s*tx\)/);
+  assert.match(sharedDraft, /if \(!eligibility\.eligible\)/);
   assert.match(approve, /calculateAffiliatePayoutEligibility\(payout\.affiliateId,\s*tx\)/);
   assert.match(send, /const \[locked\]\s*=\s*await tx\.select\(\)\.from\(affiliatePayoutWorkflow\)[\s\S]*?for\("update"\)/);
   assert.match(send, /calculateAffiliatePayoutEligibility\(payout\.affiliateId,\s*tx\)/);

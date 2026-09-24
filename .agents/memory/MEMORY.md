@@ -26,3 +26,4 @@
 - [Public document bundling boundary](public-document-bundling.md) — trim and transform draft documents before Vite embeds them; runtime slicing leaks the original raw import.
 - [Affiliate agreement identity revisions](affiliate-agreement-identity-revisions.md) — scope acceptance to the applicant contact revision, while preserving older evidence for audit.
 - [Affiliate payout settlement boundary](affiliate-payout-settlement-boundary.md) — legacy settlement must stay blocked until it shares verified transfer evidence and exact commission claims.
+- [Stripe Connect account policy](stripe-connect-account-policy.md) — a newly enabled sandbox may still reject v1 connected-account creation; check Stripe's Accounts v1 API policy before testing onboarding.

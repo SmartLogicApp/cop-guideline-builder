@@ -186,6 +186,31 @@ export function useAdminPayouts() {
   });
 }
 
+export function useAdminQuarterlyPreview(quarter: string) {
+  const fetchAuth = useFetchAuth();
+  return useQuery({
+    queryKey: ['admin-quarterly-preview', quarter],
+    queryFn: () => fetchAuth(`/admin/payouts/quarterly-preview?quarter=${encodeURIComponent(quarter)}`),
+    enabled: /^\d{4}-Q[1-4]$/.test(quarter),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useAdminQuarterlyRun() {
+  const fetchAuth = useFetchAuth();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (quarter: string) => fetchAuth('/admin/payouts/quarterly-run',
+      { method: 'POST', body: JSON.stringify({ quarter, confirmed: true }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-payouts'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-affiliates'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-quarterly-preview'] });
+    },
+  });
+}
+
 export function useAdminPayoutDraft() {
   const fetchAuth = useFetchAuth();
   const queryClient = useQueryClient();
