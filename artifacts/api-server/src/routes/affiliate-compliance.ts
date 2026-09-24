@@ -11,6 +11,8 @@ import {
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
+import { isTestExpressRecipient } from "../lib/affiliate-connect-account.js";
+import { SAMPLE_AGREEMENT_BODY, SAMPLE_AGREEMENT_VERSION, sampleAgreementAvailable } from "../lib/affiliate-sample-agreement.js";
 import { calculateAffiliatePayoutEligibility, auditBlockedPayoutAttempt, PAYOUT_MINIMUM_USD } from "../lib/affiliate-payout-eligibility.js";
 import {
   auditCompliance, ensureBaselineDocuments, ensureComplianceRecord,
@@ -116,10 +118,22 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
     && paymentAuth[0].authorizationDocumentVersionId === paymentAuthorizationDoc.id
     && paymentAuth[0].authorizationVersion === paymentAuthorizationDoc.version);
   const agreementVersion = reviewedAffiliateAgreementVersion();
-  const [agreement, agreementAccepted] = await Promise.all([
+  const showSample = !agreementVersion && sampleAgreementAvailable();
+  const [agreement, agreementAccepted, sampleAcceptance] = await Promise.all([
     agreementVersion ? db.select({ version: affiliateAgreements.version, body: affiliateAgreements.body })
       .from(affiliateAgreements).where(eq(affiliateAgreements.version, agreementVersion)).limit(1) : Promise.resolve([]),
     hasReviewedAffiliateAcceptance(affiliateId),
+    showSample ? db.select({
+      acceptedAt: affiliateAgreementAcceptances.acceptedAt,
+      agreementVersion: affiliateAgreementAcceptances.agreementVersion,
+    }).from(affiliateAgreementAcceptances)
+      .where(and(
+        eq(affiliateAgreementAcceptances.affiliateId, affiliateId),
+        eq(affiliateAgreementAcceptances.agreementVersion, SAMPLE_AGREEMENT_VERSION),
+        eq(affiliateAgreementAcceptances.contentSha256, sha256(SAMPLE_AGREEMENT_BODY)),
+        eq(affiliateAgreementAcceptances.signerEmail, req.affiliate.email.toLowerCase()),
+        eq(affiliateAgreementAcceptances.identityEpoch, req.affiliate.agreementIdentityEpoch),
+      )).limit(1) : Promise.resolve([]),
   ]);
   const country = status[0]?.country ?? "US";
   const checklist = [
@@ -152,7 +166,10 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
   res.setHeader("Cache-Control", "private, no-store");
   res.json({
     affiliate: { id: req.affiliate.id, contactName: req.affiliate.contactName, companyName: req.affiliate.companyName, email: req.affiliate.email },
-    agreementDocument: agreement[0] ?? null,
+    agreementDocument: agreement[0] ?? (showSample
+      ? { version: SAMPLE_AGREEMENT_VERSION, body: SAMPLE_AGREEMENT_BODY, isSample: true }
+      : null),
+    sampleAgreementAcceptance: sampleAcceptance[0] ?? null,
     checklist,
     overall_status: eligibility.overall_status,
     eligible: eligibility.eligible,
@@ -168,17 +185,28 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
 });
 
 router.post("/portal/agreement-accept", requireAffiliate, async (req: any, res) => {
-  const currentVersion = reviewedAffiliateAgreementVersion();
+  const reviewedVersion = reviewedAffiliateAgreementVersion();
+  const isSample = !reviewedVersion && sampleAgreementAvailable();
+  const currentVersion = reviewedVersion ?? (isSample ? SAMPLE_AGREEMENT_VERSION : null);
   const requestedVersion = typeof req.body?.agreementVersion === "string" ? req.body.agreementVersion : "";
   const signerName = typeof req.body?.typedLegalName === "string" ? req.body.typedLegalName.trim() : "";
   if (req.body?.agreed !== true || signerName.length < 2 || signerName.length > 200
       || containsSensitiveFinancialNumber(signerName) || !currentVersion || requestedVersion !== currentVersion) {
     res.status(400).json({ error: "Review the current agreement, enter your legal name, and confirm acceptance." }); return;
   }
+  if (isSample) {
+    await db.insert(affiliateAgreements).values({
+      version: SAMPLE_AGREEMENT_VERSION,
+      body: SAMPLE_AGREEMENT_BODY,
+      contentSha256: sha256(SAMPLE_AGREEMENT_BODY),
+      publishedBy: "development-sample-not-reviewed",
+    }).onConflictDoNothing();
+  }
   const [agreement] = await db.select().from(affiliateAgreements)
     .where(eq(affiliateAgreements.version, currentVersion)).limit(1);
-  if (!agreement || sha256(agreement.body) !== agreement.contentSha256) {
-    res.status(409).json({ error: "The current reviewed affiliate agreement is unavailable or failed its integrity check." }); return;
+  if (!agreement || sha256(agreement.body) !== agreement.contentSha256
+      || (isSample && agreement.body !== SAMPLE_AGREEMENT_BODY)) {
+    res.status(409).json({ error: "The agreement version is unavailable or failed its integrity check." }); return;
   }
   const result = await db.transaction(async (tx) => {
     const [affiliate] = await tx.select().from(affiliates)
@@ -217,8 +245,9 @@ router.post("/portal/agreement-accept", requireAffiliate, async (req: any, res) 
     });
     await tx.insert(affiliateComplianceAuditLog).values({
       affiliateId: affiliate.id, actorType: "affiliate", actorId: req.clerkUserId,
-      eventType: "agreement_reaccepted", newValue: { agreementVersion: agreement.version },
-      metadata: { agreementVersion: agreement.version, contentSha256: agreement.contentSha256 },
+      eventType: isSample ? "sample_agreement_accepted" : "agreement_reaccepted",
+      newValue: { agreementVersion: agreement.version, isSample },
+      metadata: { agreementVersion: agreement.version, contentSha256: agreement.contentSha256, isSample },
     });
     return { acceptedAt: now, version: agreement.version };
   });
@@ -232,6 +261,7 @@ router.post("/portal/agreement-accept", requireAffiliate, async (req: any, res) 
     accepted: true,
     agreementVersion: result.version,
     acceptedAt: result.acceptedAt.toISOString(),
+    isSample,
   });
 });
 
@@ -359,11 +389,17 @@ router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
     let accountId = status.stripeConnectedAccountId;
     if (!accountId) {
       stage = "account_create";
-      const account = await stripe.accounts.create({
-        type: "express", country: "US", email: req.affiliate.email,
-        capabilities: { transfers: { requested: true } },
+      const account = await stripe.v2.core.accounts.create({
+        contact_email: req.affiliate.email,
+        display_name: req.affiliate.companyName || req.affiliate.contactName,
+        dashboard: "express",
+        defaults: { responsibilities: { fees_collector: "application", losses_collector: "application" } },
+        identity: { country: "us" },
+        configuration: {
+          recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } },
+        },
         metadata: { affiliateId: req.affiliateId },
-      }, { idempotencyKey: `affiliate-connect-${req.affiliateId}` });
+      }, { idempotencyKey: `affiliate-connect-v2-${req.affiliateId}` });
       accountId = account.id;
       await db.update(affiliateComplianceStatus).set({
         stripeConnectedAccountId: accountId, stripeAccountType: "express", stripeOnboardingStatus: "started",
@@ -405,6 +441,7 @@ async function synchronizeStripeAccount(affiliateId: string) {
   const stripe = getStripeConnectTestClient();
   const account = await stripe.accounts.retrieve(status.stripeConnectedAccountId);
   if ("deleted" in account && account.deleted) throw new Error("Connected account unavailable");
+  if (!(await isTestExpressRecipient(stripe, account))) throw new Error("Connected account is not a Test-mode Express recipient");
   const due = [...(account.requirements?.currently_due ?? []), ...(account.requirements?.past_due ?? [])].filter((v): v is string => typeof v === "string").slice(0, 50);
   const detailsSubmitted = Boolean(account.details_submitted);
   const payoutsEnabled = Boolean(account.payouts_enabled);

@@ -67,7 +67,7 @@ export default function AffiliatePortalPage() {
                 <RegionSelector />
               )}
             
-              {agreement && <AgreementItem agreement={agreement} document={portalData?.agreementDocument} icon={getStatusIcon(agreement.status)} />}
+              {agreement && <AgreementItem agreement={agreement} document={portalData?.agreementDocument} sampleAcceptance={portalData?.sampleAgreementAcceptance} icon={getStatusIcon(agreement.status)} />}
               <div className="border-t border-slate-100" />
               
               {privacy && <ChecklistItem title={`2. ${privacy.title}`} status={privacy.status}
@@ -166,7 +166,7 @@ export default function AffiliatePortalPage() {
   );
 }
 
-function AgreementItem({ agreement, document, icon }: { agreement: any; document: any; icon: React.ReactNode }) {
+function AgreementItem({ agreement, document, sampleAcceptance, icon }: { agreement: any; document: any; sampleAcceptance: any; icon: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [agreed, setAgreed] = useState(false);
@@ -177,7 +177,7 @@ function AgreementItem({ agreement, document, icon }: { agreement: any; document
     event.preventDefault();
     try {
       await accept.mutateAsync({ agreementVersion: document.version, typedLegalName: name, agreed });
-      toast({ title: 'Agreement accepted', description: 'Your signed acknowledgement has been recorded.' });
+      toast({ title: document.isSample ? 'Sample consent recorded' : 'Agreement accepted', description: document.isSample ? 'This does not satisfy the reviewed-agreement requirement.' : 'Your signed acknowledgement has been recorded.' });
       setOpen(false);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Unable to accept agreement', description: error.message });
@@ -190,26 +190,28 @@ function AgreementItem({ agreement, document, icon }: { agreement: any; document
       <div>
         <h3 className="font-semibold text-slate-900">1. {agreement.title}</h3>
         <p className="text-sm text-slate-500">Status: {agreement.status}</p>
+        {document?.isSample && <p className="mt-2 text-sm font-semibold text-amber-900">SAMPLE / PLACEHOLDER — not attorney-reviewed or final legal copy. Test consent does not enroll you or make you eligible for payouts.</p>}
+        {document?.isSample && sampleAcceptance && <p className="mt-2 text-sm text-teal-800">Sample consent recorded for version {sampleAcceptance.agreementVersion} on {new Date(sampleAcceptance.acceptedAt).toLocaleString()}. The reviewed agreement is still required.</p>}
       </div>
     </div>
-    {agreement.status !== 'Complete' && (document?.body ? <>
+    {agreement.status !== 'Complete' && !sampleAcceptance && (document?.body ? <>
       <a href="#current-affiliate-agreement" onClick={() => setOpen(true)} className="text-sm font-medium text-teal-800 underline">
-        View current agreement (version {document.version})
+         View {document.isSample ? 'sample' : 'current'} agreement (version {document.version})
       </a>
       {open && <div id="current-affiliate-agreement" className="space-y-4">
         <div className="max-h-72 overflow-y-auto rounded-lg border bg-slate-50 p-4 text-sm text-slate-700 whitespace-pre-wrap">{document.body}</div>
         <form onSubmit={submit} className="space-y-3">
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" required checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-1" />
-            <span>I have read and agree to this version of the Affiliate Partner Agreement.</span>
+             <span>{document.isSample ? 'I have read this sample and consent to recording a test acknowledgement; I understand these are not final legal terms.' : 'I have read and agree to this version of the Affiliate Partner Agreement.'}</span>
           </label>
           <label className="block text-sm font-medium">Type your full legal name
             <input required value={name} onChange={e => setName(e.target.value)} autoComplete="name" className="mt-1 block w-full rounded-md border px-3 py-2" />
           </label>
-          <Button type="submit" disabled={!agreed || !name.trim() || accept.isPending}>{accept.isPending ? 'Saving…' : 'Accept agreement'}</Button>
+          <Button type="submit" disabled={!agreed || !name.trim() || accept.isPending}>{accept.isPending ? 'Saving…' : document.isSample ? 'Record sample consent' : 'Accept agreement'}</Button>
         </form>
       </div>}
-    </> : <p className="text-sm text-amber-800">The current reviewed agreement is not available yet. Contact the program administrator.</p>)}
+    </> : !document?.isSample && agreement.status !== 'Complete' && <p className="text-sm text-amber-800">The current reviewed agreement is not available yet. Contact the program administrator.</p>)}
   </section>;
 }
 

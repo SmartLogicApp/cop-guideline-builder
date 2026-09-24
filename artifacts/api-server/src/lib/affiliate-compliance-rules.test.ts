@@ -57,6 +57,29 @@ test("all required checks, threshold, and payout hold jointly control eligibilit
   assert.ok(payoutEligibilityReasons({ ...fullyEligible, payableAmount: 99.99 }).some((reason) => reason.includes("$100 minimum")));
 });
 
+test("reviewed agreement, completed Stripe onboarding, and admin approval are all necessary", () => {
+  // All other checks pass in this fixture; the sample agreement never supplies
+  // agreementAccepted because only a reviewed-version acceptance can set it.
+  for (const agreementAccepted of [false, true]) {
+    for (const stripeComplete of [false, true]) {
+      for (const adminApproved of [false, true]) {
+        const reasons = payoutEligibilityReasons({
+          ...fullyEligible,
+          agreementAccepted,
+          stripeConnected: stripeComplete,
+          stripeDetailsSubmitted: stripeComplete,
+          stripePayoutsEnabled: stripeComplete,
+          adminApprovalStatus: adminApproved ? "approved" : "pending",
+        });
+        assert.equal(reasons.length === 0, agreementAccepted && stripeComplete && adminApproved);
+        assert.equal(reasons.some((reason) => reason.includes("Affiliate Partner Agreement")), !agreementAccepted);
+        assert.equal(reasons.some((reason) => reason.includes("Stripe Express")), !stripeComplete);
+        assert.equal(reasons.some((reason) => reason.includes("Admin approval")), !adminApproved);
+      }
+    }
+  }
+});
+
 test("Connect transfer webhook transitions are idempotent", () => {
   assert.equal(shouldApplyTransferWebhook("payout_processing", "transfer.created"), true);
   assert.equal(shouldApplyTransferWebhook("paid", "transfer.created"), false);

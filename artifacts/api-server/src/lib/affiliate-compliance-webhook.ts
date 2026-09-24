@@ -5,6 +5,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { getStripeConnectTestClient } from "../stripeClient.js";
+import { isTestExpressRecipient } from "./affiliate-connect-account.js";
 
 function destinationId(destination: Stripe.Transfer["destination"]): string | null {
   return typeof destination === "string" ? destination : destination?.id ?? null;
@@ -14,7 +15,7 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
   if (event.type === "account.updated") {
     const account = event.data.object as Stripe.Account;
     const affiliateId = account.metadata?.affiliateId;
-    if (!affiliateId || account.type !== "express" || event.livemode) return;
+    if (!affiliateId || event.livemode) return;
     const [linkedStatus] = await db.select({
       affiliateId: affiliateComplianceStatus.affiliateId,
       stripeConnectedAccountId: affiliateComplianceStatus.stripeConnectedAccountId,
@@ -23,6 +24,7 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
     // an account; the previously persisted account ID is authoritative.
     if (!linkedStatus || linkedStatus.affiliateId !== affiliateId
         || linkedStatus.stripeConnectedAccountId !== account.id) return;
+    if (!(await isTestExpressRecipient(getStripeConnectTestClient(), account))) return;
     const due = [...(account.requirements?.currently_due ?? []), ...(account.requirements?.past_due ?? [])]
       .filter((item): item is string => typeof item === "string").slice(0, 50);
     const detailsSubmitted = Boolean(account.details_submitted);
@@ -34,6 +36,10 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
       const [currentStatus] = await tx.select().from(affiliateComplianceStatus)
         .where(eq(affiliateComplianceStatus.affiliateId, affiliateId)).for("update").limit(1);
       if (currentStatus?.stripeConnectedAccountId !== account.id) return;
+      const [alreadyProcessed] = await tx.select({ id: affiliateComplianceAuditLog.id })
+        .from(affiliateComplianceAuditLog)
+        .where(eq(sql`${affiliateComplianceAuditLog.metadata}->>'stripeEventId'`, event.id)).limit(1);
+      if (alreadyProcessed) return;
       await tx.update(affiliateComplianceStatus).set({
         stripeAccountType: "express",
         stripeDetailsSubmitted: detailsSubmitted,
@@ -45,6 +51,15 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
         stripeAccountLastSyncedAt: now,
         updatedAt: now,
       }).where(eq(affiliateComplianceStatus.affiliateId, affiliateId));
+      await tx.insert(affiliateComplianceAuditLog).values({
+        affiliateId,
+        actorType: "stripe_webhook",
+        actorId: null,
+        eventType: "stripe_account_updated_verified",
+        priorValue: { onboardingStatus: currentStatus.stripeOnboardingStatus },
+        newValue: { onboardingStatus: complete ? "complete" : "action_required" },
+        metadata: { stripeEventId: event.id, detailsSubmitted, payoutsEnabled, requirementsDueCount: due.length },
+      });
     });
     // Deliberately do not infer a completed W-9 from account.updated.
     return;

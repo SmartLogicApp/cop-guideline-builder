@@ -1,8 +1,10 @@
 import { db, affiliates, affiliateAgreements, affiliateAgreementAcceptances } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
+import { eligibleReviewedAgreementVersion } from "./affiliate-sample-agreement.js";
 
 export function reviewedAffiliateAgreementVersion(): string | null {
-  return process.env.AFFILIATE_REVIEWED_TERMS_VERSION?.trim() || null;
+  // A sample record can never become a reviewed agreement through configuration.
+  return eligibleReviewedAgreementVersion(process.env.AFFILIATE_REVIEWED_TERMS_VERSION);
 }
 
 export async function reviewedAffiliateAgreementExists(): Promise<boolean> {

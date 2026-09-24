@@ -7,6 +7,7 @@ import { requireSuperAdmin } from "../lib/admin-guards.js";
 import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getReturnBase } from "../lib/return-base.js";
+import { isSampleAgreementVersion } from "../lib/affiliate-sample-agreement.js";
 
 const router: IRouter = Router();
 const publicLimit = rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
@@ -20,6 +21,7 @@ router.post("/publish", requireSuperAdmin, async (req, res) => {
   const version = typeof req.body?.version === "string" ? req.body.version.trim() : "";
   const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(version)
+      || isSampleAgreementVersion(version)
       || body.length < 100 || body.length > 150_000
       || req.body?.confirmedReviewed !== true) {
     return res.status(400).json({ error: "Provide a version and the full reviewed agreement, then confirm owner review." });
