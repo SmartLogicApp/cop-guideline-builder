@@ -30,11 +30,19 @@ const DOCUMENTS: Record<string, string> = {
 export const CLIENT_CURRENT_TERMS_VERSION = '2026-09-23';
 
 function renderInline(text: string): ReactNode[] {
-  return text.split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) =>
-    part.startsWith('**') && part.endsWith('**')
-      ? <strong key={index} className="font-semibold text-slate-950">{part.slice(2, -2)}</strong>
-      : part,
-  );
+  return text.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index} className="font-semibold text-slate-950">{part.slice(2, -2)}</strong>;
+    }
+    const match = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+    if (match) {
+      const [, label, href] = match;
+      if (href.startsWith('https://') || href.startsWith('mailto:')) {
+        return <a key={index} href={href} className="font-medium text-teal-800 underline underline-offset-2">{label}</a>;
+      }
+    }
+    return part;
+  });
 }
 
 export function TermsDocument({ version }: { version?: string }) {
