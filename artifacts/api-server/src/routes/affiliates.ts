@@ -6,10 +6,13 @@ import {
   affiliateCommissions,
   affiliatePayouts,
   affiliateRateChanges,
+  affiliateAgreementAcceptances,
+  affiliateAgreements,
 } from "@workspace/db";
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { affiliateActivationEnabled, isBlockedAffiliateActivation } from "../lib/affiliate-activation.js";
+import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementExists, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getReturnBase } from "../lib/return-base.js";
 import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
@@ -204,7 +207,7 @@ router.get("/", requireAnyAdmin, async (req, res) => {
 
     const ids = rows.map((r) => r.id);
 
-    const [referredCounts, commissionRollup] = await Promise.all([
+    const [referredCounts, commissionRollup, acceptedAgreements] = await Promise.all([
       db
         .select({
           referralCode: accounts.referralCode,
@@ -223,7 +226,25 @@ router.get("/", requireAnyAdmin, async (req, res) => {
         .from(affiliateCommissions)
         .where(inArray(affiliateCommissions.affiliateId, ids))
         .groupBy(affiliateCommissions.affiliateId, affiliateCommissions.status),
+      db.select({
+        affiliateId: affiliateAgreementAcceptances.affiliateId,
+        version: affiliateAgreementAcceptances.agreementVersion,
+        acceptedAt: affiliateAgreementAcceptances.acceptedAt,
+        signerName: affiliateAgreementAcceptances.signerName,
+      }).from(affiliateAgreementAcceptances)
+        .innerJoin(affiliateAgreements, and(
+          eq(affiliateAgreementAcceptances.agreementVersion, affiliateAgreements.version),
+          eq(affiliateAgreementAcceptances.contentSha256, affiliateAgreements.contentSha256),
+        )).innerJoin(affiliates, and(
+          eq(affiliateAgreementAcceptances.affiliateId, affiliates.id),
+          eq(affiliateAgreementAcceptances.signerEmail, sql`lower(${affiliates.email})`),
+          eq(affiliateAgreementAcceptances.identityEpoch, affiliates.agreementIdentityEpoch),
+        )).where(inArray(affiliateAgreementAcceptances.affiliateId, ids)),
     ]);
+    const currentAgreementVersion = reviewedAffiliateAgreementVersion();
+    const acceptedById = new Map(acceptedAgreements
+      .filter((record) => record.version === currentAgreementVersion)
+      .map((record) => [record.affiliateId, record]));
 
     const referredByCode = new Map(
       referredCounts
@@ -255,6 +276,7 @@ router.get("/", requireAnyAdmin, async (req, res) => {
           ? row.adminNotes.slice("Application note: ".length)
           : null,
         status: row.status,
+        agreementAcceptance: acceptedById.get(row.id) ?? null,
         commissionRatePct: row.commissionRatePct,
         lastQualifyingReferralAt: row.lastQualifyingReferralAt,
         taxInfoReceivedAt: row.taxInfoReceivedAt,
@@ -314,7 +336,7 @@ router.get("/stats", requireAnyAdmin, async (req, res) => {
       totalAffiliates:   affiliateRows.length,
       activeAffiliates:  affiliateRows.filter((r) => r.status === "active").length,
       pendingAffiliates: affiliateRows.filter((r) => r.status === "pending").length,
-      activationEnabled: affiliateActivationEnabled(),
+      activationEnabled: affiliateActivationEnabled() && await reviewedAffiliateAgreementExists(),
       /** Affiliates inside the §11 grace period or already past it. */
       lapsingAffiliates: lapsing,
       thisMonth: {
@@ -392,6 +414,12 @@ router.post("/", requireSuperAdmin, async (req, res) => {
     commissionRatePct, enrollmentSignedAt, enrollmentVersion, agreementVersion,
     subscriptionFeeWaived, adminNotes, status,
   } = req.body ?? {};
+  // An applicant must accept the reviewed document before activation. A new
+  // admin-created row has no verified applicant identity or acceptance yet.
+  if (status === "active") {
+    return res.status(409).json({ code: "AGREEMENT_ACCEPTANCE_REQUIRED",
+      error: "Create a pending application, invite the applicant to accept, then approve it." });
+  }
 
   const code = normalizeReferralCode(referralCode);
   if (!code || !isValidReferralCode(code)) {
@@ -422,8 +450,8 @@ router.post("/", requireSuperAdmin, async (req, res) => {
       contactName: typeof contactName === "string" ? contactName.trim() || null : null,
       email: email.trim(),
       phone: typeof phone === "string" ? phone.trim() || null : null,
-      status: status === "active" ? "active" : "pending",
-      commissionRatePct: rate,
+      status: "pending",
+      commissionRatePct: 0,
       rateEffectiveAt: now,
       enrollmentSignedAt: enrollmentSignedAt ? new Date(enrollmentSignedAt) : null,
       enrollmentVersion: typeof enrollmentVersion === "string" ? enrollmentVersion : null,
@@ -469,7 +497,8 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
   const body = req.body ?? {};
 
   for (const field of ["companyName", "contactName", "email", "phone", "payoutMethod", "payoutReference", "adminNotes"]) {
-    if (typeof body[field] === "string") patch[field] = body[field].trim() || null;
+    if (typeof body[field] === "string") patch[field] =
+      field === "email" ? body[field].trim().toLowerCase() : body[field].trim() || null;
   }
   if (["pending", "active", "suspended", "terminated"].includes(body.status)) patch.status = body.status;
   if (typeof body.subscriptionFeeWaived === "boolean") patch.subscriptionFeeWaived = body.subscriptionFeeWaived;
@@ -482,30 +511,67 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
   if (Object.keys(patch).length === 0) {
     return res.status(400).json({ error: "No editable fields supplied." });
   }
+  if (patch.email !== undefined && (typeof patch.email !== "string"
+      || !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(patch.email))) {
+    return res.status(400).json({ error: "Enter a valid contact email." });
+  }
   patch.updatedAt = new Date();
 
   try {
-    // When the gate is closed, an explicitly requested active status may only
-    // preserve an already-active partner; it must never activate another row.
-    const retainingActiveStatus = body.status === "active" && !affiliateActivationEnabled();
-    if (retainingActiveStatus) {
-      const [existing] = await db.select({ status: affiliates.status }).from(affiliates)
-        .where(eq(affiliates.id, String(req.params.id))).limit(1);
+    let expectedStatus: string | null = null;
+    let expectedEmail: string | null = null;
+    let expectedEpoch: number | null = null;
+    if (body.status === "active") {
+      const [existing] = await db.select({
+        status: affiliates.status, email: affiliates.email, identityEpoch: affiliates.agreementIdentityEpoch,
+      })
+        .from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
       if (!existing) return res.status(404).json({ error: "Affiliate not found" });
+      expectedStatus = existing.status;
+      expectedEmail = existing.email;
+      expectedEpoch = existing.identityEpoch;
+      if (typeof patch.email === "string" && patch.email.toLowerCase() !== existing.email.toLowerCase()) {
+        patch.agreementIdentityEpoch = sql`${affiliates.agreementIdentityEpoch} + 1`;
+      }
+      // Preserve an existing active partner even while enrollment is paused.
+      // Reactivation, however, needs both the owner switch and acceptance.
       if (isBlockedAffiliateActivation(existing.status, body.status)) {
         return res.status(403).json({
           code: "AFFILIATE_ACTIVATION_PAUSED",
           error: "New paid affiliate activations are paused until the owner enables reviewed program terms.",
         });
       }
+      if (existing.status !== "active" && typeof patch.email === "string"
+          && patch.email.toLowerCase() !== existing.email.toLowerCase()) {
+        return res.status(409).json({ error: "Change the email first, then invite that applicant to accept." });
+      }
+      if (existing.status !== "active" && !(await hasReviewedAffiliateAcceptance(String(req.params.id)))) {
+        return res.status(409).json({ code: "AGREEMENT_ACCEPTANCE_REQUIRED",
+          error: "The applicant must accept the current reviewed agreement before activation." });
+      }
+    }
+    if (body.status !== "active" && typeof patch.email === "string") {
+      const [existing] = await db.select({
+        email: affiliates.email, status: affiliates.status, identityEpoch: affiliates.agreementIdentityEpoch,
+      })
+        .from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
+      if (!existing) return res.status(404).json({ error: "Affiliate not found" });
+      expectedEmail = existing.email;
+      expectedStatus = existing.status;
+      expectedEpoch = existing.identityEpoch;
+      if (patch.email !== existing.email.toLowerCase()) {
+        patch.agreementIdentityEpoch = sql`${affiliates.agreementIdentityEpoch} + 1`;
+      }
     }
     const [updated] = await db.update(affiliates).set(patch)
-      .where(retainingActiveStatus
-        ? and(eq(affiliates.id, String(req.params.id)), eq(affiliates.status, "active"))
+      .where(expectedStatus !== null && expectedEmail !== null && expectedEpoch !== null
+        ? and(eq(affiliates.id, String(req.params.id)),
+          eq(affiliates.status, expectedStatus), eq(affiliates.email, expectedEmail),
+          eq(affiliates.agreementIdentityEpoch, expectedEpoch))
         : eq(affiliates.id, String(req.params.id)))
       .returning();
-    if (!updated) return res.status(retainingActiveStatus ? 409 : 404).json({
-      error: retainingActiveStatus ? "Affiliate status changed; reload before editing." : "Affiliate not found",
+    if (!updated) return res.status(expectedStatus !== null ? 409 : 404).json({
+      error: expectedStatus !== null ? "Affiliate changed; reload before editing." : "Affiliate not found",
     });
     return res.json(updated);
   } catch (error: any) {
@@ -530,6 +596,10 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
  */
 router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
   if (activationBlocked(res)) return;
+  if (!(await reviewedAffiliateAgreementExists())) {
+    return res.status(409).json({ code: "AGREEMENT_NOT_PUBLISHED",
+      error: "Publish the reviewed agreement before approving applicants." });
+  }
   const requestedCode = normalizeReferralCode(req.body?.referralCode);
   const ratePct = Number.isFinite(Number(req.body?.commissionRatePct))
     ? Number(req.body.commissionRatePct)
@@ -554,6 +624,10 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
         error: `This affiliate is already ${row.status}. Only a pending application can be approved.`,
       });
     }
+    if (!(await hasReviewedAffiliateAcceptance(row.id))) {
+      return res.status(409).json({ code: "AGREEMENT_ACCEPTANCE_REQUIRED",
+        error: `The applicant must accept agreement ${reviewedAffiliateAgreementVersion()} before approval.` });
+    }
 
     const now = new Date();
     const [updated] = await db.update(affiliates)
@@ -564,7 +638,10 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
         rateEffectiveAt: now,
         updatedAt: now,
       })
-      .where(and(eq(affiliates.id, row.id), eq(affiliates.status, "pending")))
+      .where(and(
+        eq(affiliates.id, row.id), eq(affiliates.status, "pending"),
+        eq(affiliates.email, row.email), eq(affiliates.agreementIdentityEpoch, row.agreementIdentityEpoch),
+      ))
       .returning();
 
     if (!updated) {

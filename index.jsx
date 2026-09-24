@@ -4238,7 +4238,7 @@ function AffiliateAdminSection({ basePath, month }) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, status: "active" }),
+        body: JSON.stringify({ ...form, status: "pending" }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || "Unable to enroll affiliate");
@@ -4328,7 +4328,7 @@ function AffiliateAdminSection({ basePath, month }) {
           onClick={() => setShowEnroll((open) => !open)}
           style={{ padding: "6px 14px", background: showEnroll ? "#F5C542" : "rgba(245,197,66,0.2)", border: "1px solid #F5C542", borderRadius: "6px", color: showEnroll ? "#0B1F3A" : "#F5C542", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
         >
-          {showEnroll ? "Cancel" : "+ Enroll affiliate"}
+          {showEnroll ? "Cancel" : "+ Add pending affiliate"}
         </button>}
       </div>
 
@@ -4355,7 +4355,7 @@ function AffiliateAdminSection({ basePath, month }) {
           {enrollError && <div role="alert" style={{ color: "#FCA5A5", fontSize: "11px", marginBottom: "8px" }}>{enrollError}</div>}
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <button type="submit" disabled={enrollBusy} style={{ padding: "7px 18px", background: "#F5C542", border: "none", borderRadius: "6px", color: "#0B1F3A", fontSize: "12px", fontWeight: 800, cursor: enrollBusy ? "wait" : "pointer", opacity: enrollBusy ? 0.6 : 1 }}>
-              {enrollBusy ? "Enrolling…" : "Enroll at 20%"}
+              {enrollBusy ? "Adding…" : "Add pending affiliate (0%)"}
             </button>
             <span style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.4)" }}>
               The referral code is permanent and is never reused — a retired code would attribute new customers to an old flyer.
@@ -4435,6 +4435,13 @@ function AffiliateAdminSection({ basePath, month }) {
 function AffiliateApplicationsSection({ basePath }) {
   const [applications, setApplications] = useState([]);
   const [activationEnabled, setActivationEnabled] = useState(false);
+  const [agreementStatus, setAgreementStatus] = useState(null);
+  const [version, setVersion] = useState("");
+  const [agreementBody, setAgreementBody] = useState("");
+  const [confirmedReviewed, setConfirmedReviewed] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [approvingId, setApprovingId] = useState(null);
@@ -4444,15 +4451,18 @@ function AffiliateApplicationsSection({ basePath }) {
     Promise.all([
       fetch(`${basePath}/api/affiliates`, { credentials: "include", cache: "no-store", signal: controller.signal }),
       fetch(`${basePath}/api/affiliates/stats`, { credentials: "include", cache: "no-store", signal: controller.signal }),
+      fetch(`${basePath}/api/affiliates/agreements/current`, { credentials: "include", cache: "no-store", signal: controller.signal }),
     ])
-      .then(async ([listResponse, statsResponse]) => {
-        if (!listResponse.ok || !statsResponse.ok) throw new Error("Unable to load applications");
-        return Promise.all([listResponse.json(), statsResponse.json()]);
+      .then(async ([listResponse, statsResponse, agreementResponse]) => {
+        if (!listResponse.ok || !statsResponse.ok || !agreementResponse.ok) throw new Error("Unable to load applications");
+        return Promise.all([listResponse.json(), statsResponse.json(), agreementResponse.json()]);
       })
-      .then(([rows, stats]) => {
+      .then(([rows, stats, agreement]) => {
         if (controller.signal.aborted) return;
         setApplications(Array.isArray(rows) ? rows.filter((row) => row.status === "pending") : []);
         setActivationEnabled(stats.activationEnabled === true);
+        setAgreementStatus(agreement);
+        if (agreement.version) setVersion(agreement.version);
         setLoading(false);
       })
       .catch(() => {
@@ -4462,7 +4472,48 @@ function AffiliateApplicationsSection({ basePath }) {
         }
       });
     return () => controller.abort();
-  }, [basePath]);
+  }, [basePath, refreshKey]);
+
+  async function publishAgreement(event) {
+    event.preventDefault();
+    setActionBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${basePath}/api/affiliates/agreements/publish`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version, body: agreementBody, confirmedReviewed }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Could not publish agreement");
+      setAgreementBody("");
+      setConfirmedReviewed(false);
+      setNotice(`Agreement ${result.version} published. Set the reviewed version in server configuration before sending invitations.`);
+      setRefreshKey((key) => key + 1);
+    } catch (failure) {
+      setError(failure.message || "Could not publish agreement");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function invite(row) {
+    setActionBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${basePath}/api/affiliates/agreements/${encodeURIComponent(row.id)}/invite`, {
+        method: "POST", credentials: "include",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Could not send invitation");
+      setNotice(`Agreement invitation sent to ${row.email}. Acceptance is required before approval.`);
+    } catch (failure) {
+      setError(failure.message || "Could not send invitation");
+    } finally {
+      setActionBusy(false);
+    }
+  }
 
   async function approve(row) {
     const suggested = row.companyName.toUpperCase()
@@ -4507,6 +4558,31 @@ function AffiliateApplicationsSection({ basePath }) {
       </p>
       {loading && <p style={{ color: "#fff" }}>Loading applications…</p>}
       {error && <p role="alert" style={{ color: "#FCA5A5" }}>{error}</p>}
+      {notice && <p role="status" style={{ color: "#86EFAC" }}>{notice}</p>}
+      {!loading && <section style={{ padding: "14px", margin: "12px 0", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px" }}>
+        <h3 style={{ color: "#fff", margin: "0 0 8px", fontSize: "14px" }}>Reviewed affiliate agreement</h3>
+        <p style={{ color: "#ddd", fontSize: "12px" }}>
+          Current configured version: {agreementStatus?.version || "not set"} ·
+          {agreementStatus?.published ? " document published" : " document not published"}.
+          Published versions cannot be edited. Keep paid approvals paused until each applicant accepts the matching version.
+        </p>
+        <form onSubmit={publishAgreement} style={{ display: "grid", gap: "8px" }}>
+          <input aria-label="New agreement version" value={version} onChange={(event) => setVersion(event.target.value)}
+            placeholder="Approved version" maxLength={64} required style={{ padding: "8px" }} />
+          <textarea aria-label="Full owner-reviewed affiliate agreement text" value={agreementBody}
+            onChange={(event) => setAgreementBody(event.target.value)}
+            placeholder="Paste the complete owner-reviewed agreement text here" rows={5} required style={{ padding: "8px" }} />
+          <label style={{ color: "#fff", fontSize: "12px" }}>
+            <input type="checkbox" checked={confirmedReviewed} onChange={(event) => setConfirmedReviewed(event.target.checked)} required />
+            {" "}I confirm this exact version and text have been reviewed and approved by the owner.
+          </label>
+          <button type="submit" disabled={actionBusy || !confirmedReviewed}
+            style={{ padding: "8px", cursor: "pointer" }}>Publish immutable agreement version</button>
+        </form>
+      </section>}
+      <button type="button" onClick={() => setRefreshKey((key) => key + 1)} style={{ marginBottom: "10px" }}>
+        Refresh applications and acceptance status
+      </button>
       {!loading && !activationEnabled && <p role="status" style={{ color: "#FBBF24", fontSize: "12px" }}>
         Paid partner approvals are paused until the owner enables reviewed program terms.
       </p>}
@@ -4523,7 +4599,16 @@ function AffiliateApplicationsSection({ basePath }) {
             {row.referralPlan && <p style={{ color: "rgba(255,255,255,0.8)", fontSize: "12px", whiteSpace: "pre-wrap", margin: "10px 0 0" }}>
               <strong>How they plan to refer clients:</strong> {row.referralPlan}
             </p>}
-            {activationEnabled && <button type="button" disabled={approvingId != null} onClick={() => approve(row)}
+            <p style={{ color: row.agreementAcceptance ? "#86EFAC" : "#FBBF24", fontSize: "12px" }}>
+              {row.agreementAcceptance
+                ? `Accepted ${row.agreementAcceptance.version} on ${new Date(row.agreementAcceptance.acceptedAt).toLocaleDateString()} by ${row.agreementAcceptance.signerName}`
+                : "No acceptance of the current reviewed agreement recorded."}
+            </p>
+            {!row.agreementAcceptance && <button type="button" disabled={actionBusy || !agreementStatus?.published}
+              onClick={() => invite(row)} style={{ marginRight: "8px", padding: "7px 14px", cursor: "pointer" }}>
+              Send agreement invitation
+            </button>}
+            {activationEnabled && row.agreementAcceptance && <button type="button" disabled={approvingId != null} onClick={() => approve(row)}
               style={{ marginTop: "12px", padding: "7px 14px", background: "#F5C542", border: "none", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, cursor: approvingId ? "wait" : "pointer" }}>
               {approvingId === row.id ? "Approving…" : "Approve after terms review"}
             </button>}

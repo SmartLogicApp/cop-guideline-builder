@@ -5,6 +5,7 @@ import LandingPage from '@/pages/landing';
 import TermsPage from '@/pages/terms';
 import PrivacyPage from '@/pages/privacy';
 import AffiliatesPage from '@/pages/affiliates';
+import AffiliateAgreementPage from '@/pages/affiliate-agreement';
 import {
   Route,
   Switch,
@@ -71,6 +72,7 @@ function PublicRouter() {
           above, unlike /register.
         */}
         <Route path="/affiliates" component={AffiliatesPage} />
+        <Route path="/affiliate-agreement" component={AffiliateAgreementPage} />
         <Route component={NotFound} />
       </Switch>
     </RoutedErrorBoundary>

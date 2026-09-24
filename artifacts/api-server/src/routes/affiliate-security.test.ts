@@ -188,20 +188,39 @@ test("every legacy paid activation path checks the reviewed-terms gate", () => {
   const rate = routes.slice(routes.indexOf('router.post("/:id/rate"'), routes.indexOf('router.post("/:id/commissions"'));
   const manualCommission = routes.slice(routes.indexOf('router.post("/:id/commissions"'), routes.indexOf('router.post("/commissions/:commissionId/reverse"'));
   assert.match(enroll, /if \(activationBlocked\(res\)\) return;/);
-  assert.match(patch, /body\.status === "active" && !affiliateActivationEnabled\(\)/);
+  assert.match(patch, /if \(body\.status === "active"\)/);
   assert.match(patch, /isBlockedAffiliateActivation\(existing\.status, body\.status\)/);
-  assert.match(patch, /eq\(affiliates\.status, "active"\)/);
+  assert.match(patch, /eq\(affiliates\.status, expectedStatus\)/);
+  assert.match(patch, /eq\(affiliates\.agreementIdentityEpoch, expectedEpoch\)/);
+  assert.match(patch, /hasReviewedAffiliateAcceptance/);
   assert.match(approve, /if \(activationBlocked\(res\)\) return;/);
+  assert.match(approve, /hasReviewedAffiliateAcceptance\(row\.id\)/);
+  assert.match(approve, /eq\(affiliates\.email, row\.email\)/);
+  assert.match(approve, /eq\(affiliates\.agreementIdentityEpoch, row\.agreementIdentityEpoch\)/);
   assert.match(rate, /row\.status === "pending"/);
   assert.match(manualCommission, /row\.status === "pending"/);
-  assert.match(routes, /activationEnabled: affiliateActivationEnabled\(\)/);
+  assert.match(routes, /activationEnabled: affiliateActivationEnabled\(\) && await reviewedAffiliateAgreementExists\(\)/);
   const ui = adminUi.slice(adminUi.indexOf("function AffiliateAdminSection("), adminUi.indexOf("function AffiliateApplicationsSection("));
   assert.match(ui, /stats\?\.activationEnabled === true && <button/);
   assert.match(ui, /showEnroll && stats\?\.activationEnabled === true/);
   const applicationsUi = adminUi.slice(adminUi.indexOf("function AffiliateApplicationsSection("), adminUi.indexOf("function AdminQuickPanel("));
   assert.match(applicationsUi, /setActivationEnabled\(stats\.activationEnabled === true\)/);
-  assert.match(applicationsUi, /activationEnabled && <button/);
+  assert.match(applicationsUi, /activationEnabled && row\.agreementAcceptance && <button/);
   assert.match(applicationsUi, /\/approve`/);
+});
+
+test("agreement acceptance is tied to the applicant identity revision and cannot be replayed after an email change", () => {
+  const agreementRoutes = readFileSync(new URL("./affiliate-agreements.ts", import.meta.url), "utf8");
+  const agreementState = readFileSync(new URL("../lib/affiliate-agreement-state.ts", import.meta.url), "utf8");
+  const agreementSchema = readFileSync(new URL("../../../../lib/db/src/schema/affiliate-agreements.ts", import.meta.url), "utf8");
+  const affiliateSchema = readFileSync(new URL("../../../../lib/db/src/schema/affiliates.ts", import.meta.url), "utf8");
+  assert.match(routes, /patch\.agreementIdentityEpoch = sql`\$\{affiliates\.agreementIdentityEpoch\} \+ 1`/);
+  assert.match(agreementRoutes, /for\("update"\)/);
+  assert.match(agreementRoutes, /row\.identityEpoch === row\.currentEpoch/);
+  assert.match(agreementRoutes, /identityEpoch: row!\.identityEpoch/);
+  assert.match(agreementState, /eq\(affiliateAgreementAcceptances\.identityEpoch, affiliates\.agreementIdentityEpoch\)/);
+  assert.match(agreementSchema, /uniqueIndex\("affiliate_agreement_acceptances_once_idx"\)\.on\(table\.affiliateId, table\.agreementVersion, table\.identityEpoch\)/);
+  assert.match(affiliateSchema, /agreementIdentityEpoch: integer\("agreement_identity_epoch"\)/);
 });
 
 test("guards are imported from the shared module, not redefined locally", () => {
