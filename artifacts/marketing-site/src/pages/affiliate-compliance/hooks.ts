@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 
 const API_BASE = '/api/affiliate-compliance';
 
-function useFetchAuth() {
+function useFetchAuth(base = API_BASE) {
   const { getToken } = useAuth();
   return useCallback(
     async (path: string, options?: RequestInit) => {
@@ -15,7 +15,7 @@ function useFetchAuth() {
         headers.set('Content-Type', 'application/json');
       }
 
-      const res = await fetch(`${API_BASE}${path}`, {
+      const res = await fetch(`${base}${path}`, {
         ...options,
         headers,
       });
@@ -32,8 +32,29 @@ function useFetchAuth() {
       }
       return res.json();
     },
-    [getToken]
+    [getToken, base]
   );
+}
+
+// The owner-reviewed Partner Agreement is stored separately from compliance
+// document drafts. Both routes require the server's super-admin guard.
+export function useAdminAgreementCurrent() {
+  const fetchAuth = useFetchAuth('/api/affiliates/agreements');
+  return useQuery<{ version: string | null; published: boolean; publishedAt?: string }>({
+    queryKey: ['admin-agreement-current'],
+    queryFn: () => fetchAuth('/current'),
+    retry: false,
+  });
+}
+
+export function useAdminAgreementPublish() {
+  const fetchAuth = useFetchAuth('/api/affiliates/agreements');
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { version: string; body: string; confirmedReviewed: boolean }) =>
+      fetchAuth('/publish', { method: 'POST', body: JSON.stringify(data) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-agreement-current'] }),
+  });
 }
 
 // PORTAL HOOKS

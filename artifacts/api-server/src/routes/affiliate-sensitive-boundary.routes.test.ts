@@ -21,10 +21,11 @@ registerHooks({
 });
 process.env.DATABASE_URL ??= "postgresql://test:test@localhost:1/disconnected";
 
-const [{ default: affiliateRouter }, { default: complianceRouter }, history] = await Promise.all([
+const [{ default: affiliateRouter }, { default: complianceRouter }, history, { default: agreementsRouter }] = await Promise.all([
   import("./affiliates.ts"),
   import("./affiliate-compliance.ts"),
   import("./gapHistory.ts"),
+  import("./affiliate-agreements.ts"),
 ]);
 const { db } = await import("@workspace/db");
 
@@ -143,4 +144,14 @@ test("actual history parser rejects nested suffixed numbers and serializer redac
     scannedAt: new Date(input.timestamp),
   });
   assert.equal(JSON.stringify(displayed).includes("0000-0000-ref"), false);
+});
+
+test("agreement publish handler rejects SAMPLE versions and missing explicit review before storage", async () => {
+  const publish = handler(agreementsRouter, "post", "/publish");
+  const body = "A synthetic full-length reviewed agreement body for validation only. ".repeat(3);
+  // These requests invoke only the final handler with invalid synthetic inputs;
+  // neither can pass validation or contact the database.
+  await rejects(publish, { version: "SAMPLE-test", body, confirmedReviewed: true });
+  await rejects(publish, { version: "reviewed-test", body, confirmedReviewed: false });
+  await rejects(publish, { version: "reviewed-test", body });
 });

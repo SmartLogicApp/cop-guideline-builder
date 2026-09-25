@@ -4,9 +4,10 @@ import { useAdminDocuments, useAdminDocumentDraft, useAdminDocumentPublish, useA
 import { Loader2, Plus, Edit2, CheckCircle2, FileText, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import AdminPartnerAgreement from './AdminPartnerAgreement';
 
 export default function AdminCompliance() {
-  const [activeTab, setActiveTab] = useState<'documents' | 'emails'>('documents');
+  const [activeTab, setActiveTab] = useState<'documents' | 'emails' | 'agreement'>('documents');
   
   return (
     <AdminShell title="Compliance Content" subtitle="Manage versioned legal documents and email templates">
@@ -23,9 +24,16 @@ export default function AdminCompliance() {
         >
           <Mail className="w-4 h-4 inline mr-2" /> Email Templates
         </button>
+        <button
+          data-testid="button-agreement-tab"
+          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'agreement' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          onClick={() => setActiveTab('agreement')}
+        >
+          <FileText className="w-4 h-4 inline mr-2" /> Partner Agreement
+        </button>
       </div>
 
-      {activeTab === 'documents' ? <DocumentsTab /> : <EmailsTab />}
+      {activeTab === 'documents' ? <DocumentsTab /> : activeTab === 'emails' ? <EmailsTab /> : <AdminPartnerAgreement />}
     </AdminShell>
   );
 }
@@ -75,7 +83,6 @@ function DocumentsTab() {
                   value={form.documentType} onChange={e => setForm({...form, documentType: e.target.value})}
                 >
                   <option value="marketing_guidelines">Marketing Guidelines</option>
-                  <option value="agreement">Partner Agreement</option>
                   <option value="privacy">Privacy Notice</option>
                   <option value="ftc_disclosure">FTC Disclosure</option>
                   <option value="payment_authorization">Payment Authorization</option>
