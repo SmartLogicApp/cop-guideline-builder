@@ -80,7 +80,7 @@ export default function AdminAffiliatesList() {
                   <div className="text-xs text-slate-400 mt-1">{affiliate.state} • {affiliate.country}</div>
                 </td>
                 <td className="px-4 py-4">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${affiliate.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800'}`}>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${affiliate.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800'}`}>
                     {affiliate.status}
                   </span>
                 </td>

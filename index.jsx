@@ -4542,9 +4542,37 @@ function AffiliateApplicationsSection({ basePath }) {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || "Unable to approve application");
+      if (body.status !== "active" || body.id !== row.id) throw new Error("Application status could not be confirmed. Refresh the list.");
       setApplications((current) => current.filter((item) => item.id !== row.id));
+      setNotice(`${row.companyName}'s application was approved and is now active.`);
     } catch (approveError) {
       setError(approveError.message || "Unable to approve application");
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
+  async function disapprove(row) {
+    const reason = window.prompt(`Why is ${row.companyName}'s application being declined? (at least 5 characters)`);
+    if (reason == null) return;
+    if (reason.trim().length < 5) {
+      setError("A review reason of at least 5 characters is required.");
+      return;
+    }
+    setApprovingId(row.id);
+    setError("");
+    try {
+      const response = await fetch(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/reject`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Unable to decline application");
+      if (result.status !== "rejected" || result.id !== row.id) throw new Error("Application status could not be confirmed. Refresh the list.");
+      setApplications((current) => current.filter((item) => item.id !== row.id));
+      setNotice(`${row.companyName}'s application was declined.`);
+    } catch (failure) {
+      setError(failure.message || "Unable to decline application");
     } finally {
       setApprovingId(null);
     }
@@ -4612,6 +4640,10 @@ function AffiliateApplicationsSection({ basePath }) {
               style={{ marginTop: "12px", padding: "7px 14px", background: "#F5C542", border: "none", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, cursor: approvingId ? "wait" : "pointer" }}>
               {approvingId === row.id ? "Approving…" : "Approve after terms review"}
             </button>}
+            <button type="button" disabled={approvingId != null} onClick={() => disapprove(row)}
+              style={{ marginTop: "12px", marginLeft: "8px", padding: "7px 14px", cursor: approvingId ? "wait" : "pointer" }}>
+              {approvingId === row.id ? "Updating…" : "Disapprove application"}
+            </button>
           </article>
         ))}
       </div>

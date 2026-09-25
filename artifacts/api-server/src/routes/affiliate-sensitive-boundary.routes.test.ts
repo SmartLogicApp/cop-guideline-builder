@@ -155,3 +155,73 @@ test("agreement publish handler rejects SAMPLE versions and missing explicit rev
   await rejects(publish, { version: "reviewed-test", body, confirmedReviewed: false });
   await rejects(publish, { version: "reviewed-test", body });
 });
+
+test("paid approval stays blocked while owner-reviewed terms are disabled", async () => {
+  const previousEnabled = process.env.AFFILIATE_ACTIVATION_ENABLED;
+  const previousVersion = process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
+  delete process.env.AFFILIATE_ACTIVATION_ENABLED;
+  delete process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
+  try {
+    await rejects(handler(affiliateRouter, "post", "/:id/approve"),
+      { referralCode: "TEST-PARTNER", commissionRatePct: 20 }, 403);
+  } finally {
+    if (previousEnabled === undefined) delete process.env.AFFILIATE_ACTIVATION_ENABLED;
+    else process.env.AFFILIATE_ACTIVATION_ENABLED = previousEnabled;
+    if (previousVersion === undefined) delete process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
+    else process.env.AFFILIATE_REVIEWED_TERMS_VERSION = previousVersion;
+  }
+});
+
+test("disapproval changes only pending applications to rejected and records a review audit", async () => {
+  let status = "pending";
+  const audits: Record<string, any>[] = [];
+  const updateFields: Record<string, unknown>[] = [];
+  const tx = {
+    update: () => ({
+      set(fields: Record<string, unknown>) {
+        updateFields.push(fields);
+        return {
+          where: () => ({
+            returning: async () => {
+              if (status !== "pending") return [];
+              status = fields.status as string;
+              return [{ id: "synthetic-affiliate", status }];
+            },
+          }),
+        };
+      },
+    }),
+    insert: () => ({
+      values: async (fields: Record<string, any>) => { audits.push(fields); },
+    }),
+  };
+  const transaction = mock.method(db, "transaction",
+    (async (callback: (trx: typeof tx) => Promise<unknown>) => callback(tx)) as unknown as typeof db.transaction);
+  try {
+    const reject = handler(affiliateRouter, "post", "/:id/reject");
+    async function decide(reason: string) {
+      let code = 200;
+      let payload: any;
+      const res = {
+        status(value: number) { code = value; return this; },
+        json(value: unknown) { payload = value; return this; },
+      };
+      await reject({ params: { id: "synthetic-affiliate" }, body: { reason }, clerkUserId: "synthetic-admin" }, res);
+      return { code, payload };
+    }
+    assert.equal((await decide("no")).code, 400);
+    assert.equal(status, "pending");
+    assert.deepEqual(await decide("Application did not meet the program requirements."), {
+      code: 200, payload: { id: "synthetic-affiliate", status: "rejected" },
+    });
+    assert.equal(status, "rejected");
+    assert.equal(updateFields[0]?.status, "rejected");
+    assert.equal(audits[0]?.eventType, "application_rejected");
+    assert.deepEqual(audits[0]?.newValue, { status: "rejected" });
+    assert.equal((await decide("Repeat decision")).code, 409);
+    assert.equal(status, "rejected");
+    assert.equal(transaction.mock.callCount(), 2);
+  } finally {
+    transaction.mock.restore();
+  }
+});

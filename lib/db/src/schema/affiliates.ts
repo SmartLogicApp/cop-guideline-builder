@@ -60,9 +60,9 @@ export const affiliates = pgTable("affiliates", {
   clerkUserId: text("clerk_user_id").unique("affiliates_clerk_user_id_key"),
 
   /**
-   * "pending" | "active" | "suspended" | "terminated"
+   * "pending" | "rejected" | "active" | "suspended" | "terminated"
    *
-   * Only "active" accrues new commissions. The other three keep the row (and
+   * Only "active" accrues new commissions. The other statuses keep the row (and
    * therefore the history) while stopping new accrual, which is what §20
    * describes: termination ends future entitlement without erasing what was
    * already earned.

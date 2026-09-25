@@ -8,6 +8,7 @@ import {
   affiliateRateChanges,
   affiliateAgreementAcceptances,
   affiliateAgreements,
+  affiliateComplianceAuditLog,
 } from "@workspace/db";
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
@@ -599,6 +600,34 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
 });
 
 // ─── POST /api/affiliates/:id/approve — pending → active ─────────────────────
+
+// A declined application is not an enrolled partner. Keep its record for the
+// review trail, but prevent subsequent approval or commission accrual.
+router.post("/:id/reject", requireSuperAdmin, async (req, res) => {
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (reason.length < 5 || reason.length > 2000 || containsSensitiveFinancialNumber(reason)) {
+    return res.status(400).json({ error: "Provide a safe review reason (5–2,000 characters)." });
+  }
+  try {
+    const rejected = await db.transaction(async (tx) => {
+      const [row] = await tx.update(affiliates)
+        .set({ status: "rejected", updatedAt: new Date() })
+        .where(and(eq(affiliates.id, String(req.params.id)), eq(affiliates.status, "pending")))
+        .returning({ id: affiliates.id, status: affiliates.status });
+      if (!row) return null;
+      await tx.insert(affiliateComplianceAuditLog).values({
+        affiliateId: row.id, actorType: "admin", actorId: (req as any).clerkUserId,
+        eventType: "application_rejected", reason,
+        priorValue: { status: "pending" }, newValue: { status: "rejected" },
+      });
+      return row;
+    });
+    if (!rejected) return res.status(409).json({ error: "Only a pending application can be rejected." });
+    return res.json(rejected);
+  } catch {
+    return res.status(500).json({ error: "Unable to reject application." });
+  }
+});
 
 /**
  * Approve an application: assign the real referral code and put the rate in

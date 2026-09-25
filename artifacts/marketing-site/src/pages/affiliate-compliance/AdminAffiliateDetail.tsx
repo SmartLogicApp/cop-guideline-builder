@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AdminShell } from './shells';
-import { useAdminAffiliateDetail, useAdminAction, useAdminRecheck, useAdminRemind } from './hooks';
+import { useAdminAffiliateDetail, useAdminAction, useAdminApplicationDecision, useAdminRecheck, useAdminRemind } from './hooks';
 import { useParams, Link } from 'wouter';
 import { Loader2, ArrowLeft, CheckCircle2, XCircle, AlertCircle, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,11 @@ export default function AdminAffiliateDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: affiliate, isLoading, error } = useAdminAffiliateDetail(id || '');
   const [reason, setReason] = useState('');
+  const [referralCode, setReferralCode] = useState('');
+  const [commissionRatePct, setCommissionRatePct] = useState(20);
+  const [decisionReason, setDecisionReason] = useState('');
   const action = useAdminAction(id || '');
+  const decision = useAdminApplicationDecision(id || '');
   const recheck = useAdminRecheck(id || '');
   const remind = useAdminRemind(id || '');
   const { toast } = useToast();
@@ -26,8 +30,8 @@ export default function AdminAffiliateDetail() {
   );
 
   const handleAction = async (actionType: string) => {
-    if (!reason.trim() && actionType !== 'approve') {
-      toast({ variant: "destructive", title: "Error", description: "Reason is required for this action." });
+    if (reason.trim().length < 5) {
+      toast({ variant: "destructive", title: "Error", description: "Enter a review reason of at least 5 characters." });
       return;
     }
     try {
@@ -39,6 +43,30 @@ export default function AdminAffiliateDetail() {
     }
   };
 
+  const decideApplication = async (type: 'approve' | 'reject') => {
+    if (type === 'approve' && !/^[A-Za-z0-9][A-Za-z0-9-]{1,63}$/.test(referralCode.trim())) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Enter a valid permanent referral code.' });
+      return;
+    }
+    if (type === 'reject' && decisionReason.trim().length < 5) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Enter a review reason of at least 5 characters.' });
+      return;
+    }
+    try {
+      const result = await decision.mutateAsync(type === 'approve'
+        ? { action: 'approve', referralCode: referralCode.trim(), commissionRatePct }
+        : { action: 'reject', reason: decisionReason.trim() });
+      if (result.status !== (type === 'approve' ? 'active' : 'rejected')) {
+        throw new Error('The application status could not be confirmed. Refresh this page.');
+      }
+      toast({ title: type === 'approve' ? 'Application approved' : 'Application disapproved',
+        description: `Affiliate status is now ${result.status}.` });
+      setDecisionReason('');
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    }
+  };
+
   const StatusIcon = ({ ok }: { ok: boolean }) => ok ? <CheckCircle2 className="w-5 h-5 text-emerald-600 inline mr-2" /> : <XCircle className="w-5 h-5 text-red-500 inline mr-2" />;
 
   return (
@@ -47,6 +75,9 @@ export default function AdminAffiliateDetail() {
         <Link href="/admin/affiliates" className="text-sm font-medium text-slate-600 hover:text-slate-900 inline-flex items-center">
           <ArrowLeft className="w-4 h-4 mr-1" /> Back to list
         </Link>
+        <p className="mt-3 text-sm font-semibold text-slate-800" data-testid="status-affiliate">
+          Affiliate status: {affiliate.affiliate?.status ?? 'Unavailable'}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -115,6 +146,39 @@ export default function AdminAffiliateDetail() {
         </div>
 
         <div className="space-y-6">
+          {affiliate.affiliate?.status === 'pending' && (
+            <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+              <h3 className="font-bold text-slate-900 text-lg">Pending application</h3>
+              <p className="text-sm text-slate-600">
+                Approval activates a paid affiliate and sends an email. It requires the owner-enabled reviewed
+                agreement and this applicant’s acceptance; the server refuses approval otherwise.
+                Disapproval keeps the application for audit but does not activate the affiliate.
+              </p>
+              <label className="block text-sm font-medium text-slate-700">
+                Permanent referral code
+                <input data-testid="input-referral-code" value={referralCode} onChange={e => setReferralCode(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2" maxLength={64} />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                Commission rate
+                <select data-testid="select-commission-rate" value={commissionRatePct}
+                  onChange={e => setCommissionRatePct(Number(e.target.value))}
+                  className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2">
+                  <option value={20}>20%</option><option value={10}>10%</option>
+                </select>
+              </label>
+              <Button data-testid="button-approve-application" disabled={decision.isPending}
+                onClick={() => decideApplication('approve')}>Approve paid application</Button>
+              <label className="block text-sm font-medium text-slate-700">
+                Reason for disapproval (required)
+                <textarea data-testid="input-disapproval-reason" value={decisionReason}
+                  onChange={e => setDecisionReason(e.target.value)} rows={2}
+                  className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2" />
+              </label>
+              <Button data-testid="button-disapprove-application" variant="outline" disabled={decision.isPending}
+                onClick={() => decideApplication('reject')}>Disapprove application</Button>
+            </div>
+          )}
           <div className="bg-slate-900 text-white rounded-xl shadow-sm border border-slate-800 p-6">
             <h3 className="font-bold text-lg mb-2">Overall Status</h3>
             {affiliate.payoutEligibility ? (
@@ -157,7 +221,7 @@ export default function AdminAffiliateDetail() {
             <h3 className="font-bold text-slate-900 text-lg mb-4">Admin Actions</h3>
             <div className="space-y-4">
               <label className="block text-sm font-medium text-slate-700">
-                Reason for action (required for holds/rejections)
+                Reason for compliance action (required)
                 <textarea 
                   className="mt-1 block w-full rounded-md border-slate-300 border px-3 py-2 shadow-sm focus:border-slate-800 focus:ring-slate-800 sm:text-sm"
                   rows={2}
@@ -171,14 +235,14 @@ export default function AdminAffiliateDetail() {
                   variant="outline" 
                   className="text-emerald-700 border-emerald-200 hover:bg-emerald-50"
                   onClick={() => handleAction('approve')}
-                  disabled={action.isPending}
+                  disabled={action.isPending || affiliate.affiliate?.status !== 'active'}
                 >
-                  Approve
+                  Approve payout eligibility
                 </Button>
                 <Button 
                   variant="outline" 
                   className="text-red-700 border-red-200 hover:bg-red-50"
-                  onClick={() => handleAction('hold')}
+                  onClick={() => handleAction('place_hold')}
                   disabled={action.isPending}
                 >
                   Place Hold
@@ -186,7 +250,7 @@ export default function AdminAffiliateDetail() {
                 <Button 
                   variant="outline" 
                   className="col-span-2 text-slate-700"
-                  onClick={() => handleAction('remove-hold')}
+                  onClick={() => handleAction('release_hold')}
                   disabled={action.isPending}
                 >
                   Remove Hold

@@ -153,6 +153,25 @@ export function useAdminAction(id: string) {
   });
 }
 
+export function useAdminApplicationDecision(id: string) {
+  const fetchAuth = useFetchAuth('/api/affiliates');
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (decision: { action: 'approve'; referralCode: string; commissionRatePct: number } | { action: 'reject'; reason: string }) =>
+      fetchAuth(`/${encodeURIComponent(id)}/${decision.action}`, {
+        method: 'POST', body: JSON.stringify(decision.action === 'approve'
+          ? { referralCode: decision.referralCode, commissionRatePct: decision.commissionRatePct }
+          : { reason: decision.reason }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-affiliate', id] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-affiliates'] }),
+      ]);
+    },
+  });
+}
+
 export function useAdminRecheck(id: string) {
   const fetchAuth = useFetchAuth();
   const queryClient = useQueryClient();
