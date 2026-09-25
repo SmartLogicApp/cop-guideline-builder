@@ -136,6 +136,9 @@ importers:
       '@workspace/cms-compliance-data':
         specifier: workspace:*
         version: link:../../lib/cms-compliance-data
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../../lib/db
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -341,9 +344,6 @@ importers:
       '@clerk/themes':
         specifier: ^2.4.57
         version: 2.4.57(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-      '@workspace/db':
-        specifier: workspace:*
-        version: link:../../lib/db
       mammoth:
         specifier: ^1.12.3
         version: 1.12.3

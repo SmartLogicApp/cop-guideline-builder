@@ -15,7 +15,7 @@ export const affiliateAgreementInvitations = pgTable("affiliate_agreement_invita
   id: uuid("id").primaryKey().defaultRandom(),
   affiliateId: uuid("affiliate_id").notNull().references(() => affiliates.id),
   agreementVersion: text("agreement_version").notNull().references(() => affiliateAgreements.version),
-  tokenSha256: text("token_sha256").notNull().unique(),
+  tokenSha256: text("token_sha256").notNull().unique("affiliate_agreement_invitations_token_sha256_key"),
   recipientEmail: text("recipient_email").notNull(),
   identityEpoch: integer("identity_epoch").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

@@ -45,7 +45,7 @@ export const affiliates = pgTable("affiliates", {
    * Unique, and never reused after termination: reissuing a retired code would
    * silently attribute a new customer to whoever printed the old flyer.
    */
-  referralCode: text("referral_code").unique().notNull(),
+  referralCode: text("referral_code").unique("affiliates_referral_code_key").notNull(),
 
   companyName: text("company_name").notNull(),
   contactName: text("contact_name"),
@@ -57,7 +57,7 @@ export const affiliates = pgTable("affiliates", {
    * then — an affiliate is enrolled by the operator and may refer customers
    * before ever logging in, so portal access is a later, separate event.
    */
-  clerkUserId: text("clerk_user_id").unique(),
+  clerkUserId: text("clerk_user_id").unique("affiliates_clerk_user_id_key"),
 
   /**
    * "pending" | "active" | "suspended" | "terminated"
@@ -160,7 +160,7 @@ export const affiliateCommissions = pgTable("affiliate_commissions", {
    * payout is wrong. The insert relies on this constraint rather than on a
    * prior SELECT, because two webhook deliveries can race a check-then-insert.
    */
-  stripeInvoiceId: text("stripe_invoice_id").unique(),
+  stripeInvoiceId: text("stripe_invoice_id").unique("affiliate_commissions_stripe_invoice_id_key"),
 
   /**
    * §7.1 — subscription amounts actually received and retained, excluding tax,
