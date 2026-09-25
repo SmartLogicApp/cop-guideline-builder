@@ -19,6 +19,7 @@ import {
   auditCompliance, ensureBaselineDocuments, ensureComplianceRecord,
   containsSensitiveFinancialNumber,
 } from "../lib/affiliate-compliance.js";
+import { redactSensitiveFinancialData } from "../lib/sensitive-financial-text.js";
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getStripeConnectTestClient } from "../stripeClient.js";
 import { quarterBounds } from "../lib/affiliate-commission.js";
@@ -180,7 +181,7 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
     { key: "admin", title: "Admin approval", status: status[0]?.adminApprovalStatus === "approved" ? "Complete" : "Under review" },
   ];
   res.setHeader("Cache-Control", "private, no-store");
-  res.json({
+  res.json(redactSensitiveFinancialData({
     affiliate: { id: req.affiliate.id, contactName: req.affiliate.contactName, companyName: req.affiliate.companyName, email: req.affiliate.email },
     agreementDocument: agreement[0] ?? (showSample
       ? { version: SAMPLE_AGREEMENT_VERSION, body: SAMPLE_AGREEMENT_BODY, isSample: true }
@@ -197,7 +198,7 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
     paymentAuthorizationText: paymentAuthorizationDoc?.content ?? null,
     paymentAuthorizationVersion: paymentAuthorizationDoc?.version ?? null,
     paymentAuthorizationAccepted,
-  });
+  }));
 });
 
 router.post("/portal/agreement-accept", requireAffiliate, async (req: any, res) => {
@@ -514,24 +515,24 @@ router.get("/admin", requireAnyAdmin, async (req, res) => {
       || (filter === "not_eligible" && !row.eligibility.eligible);
     return matchesSearch && matchesEligibility && matchesFilter;
   });
-  res.json(filtered);
+  res.json(redactSensitiveFinancialData(filtered));
 });
 
 router.get("/admin/documents", requireAnyAdmin, async (_req, res) => {
   await ensureBaselineDocuments();
-  res.json(await db.select().from(affiliateDocumentVersions).orderBy(desc(affiliateDocumentVersions.createdAt)));
+  res.json(redactSensitiveFinancialData(await db.select().from(affiliateDocumentVersions).orderBy(desc(affiliateDocumentVersions.createdAt))));
 });
 
 router.get("/admin/payouts", requireAnyAdmin, async (_req, res) => {
   const payouts = await db.select().from(affiliatePayoutWorkflow).orderBy(desc(affiliatePayoutWorkflow.createdAt));
-  res.json(await Promise.all(payouts.map(async (payout) => ({
+  res.json(redactSensitiveFinancialData(await Promise.all(payouts.map(async (payout) => ({
     ...payout, eligibility: await calculateAffiliatePayoutEligibility(payout.affiliateId),
-  }))));
+  })))));
 });
 
 router.get("/admin/email-templates", requireAnyAdmin, async (_req, res) => {
   await ensureBaselineDocuments();
-  res.json(await db.select().from(affiliateEmailTemplates).orderBy(affiliateEmailTemplates.templateKey));
+  res.json(redactSensitiveFinancialData(await db.select().from(affiliateEmailTemplates).orderBy(affiliateEmailTemplates.templateKey)));
 });
 
 router.get("/admin/:id", requireAnyAdmin, async (req, res) => {
@@ -553,10 +554,10 @@ router.get("/admin/:id", requireAnyAdmin, async (req, res) => {
     }).from(affiliateCommissions).where(eq(affiliateCommissions.affiliateId, id)).orderBy(desc(affiliateCommissions.accruedAt)).limit(500),
     db.select().from(affiliatePayoutWorkflow).where(eq(affiliatePayoutWorkflow.affiliateId, id)).orderBy(desc(affiliatePayoutWorkflow.createdAt)),
   ]);
-  res.json({
+  res.json(redactSensitiveFinancialData({
     affiliate, compliance: status ?? null, acknowledgements, paymentAuthorizations: authorizations,
     holds, auditLog, commissions, payouts, eligibility: await calculateAffiliatePayoutEligibility(id),
-  });
+  }));
 });
 
 router.post("/admin/:id/action", requireSuperAdmin, async (req: any, res) => {
@@ -898,7 +899,7 @@ router.get("/admin/payouts/quarterly-preview", requireAnyAdmin, async (req, res)
       eligible: reasons.length === 0, blocking_reasons: reasons };
   }));
   res.setHeader("Cache-Control", "private, no-store");
-  res.json({ quarter: bounds.label, rows });
+  res.json(redactSensitiveFinancialData({ quarter: bounds.label, rows }));
 });
 
 router.post("/admin/payouts/quarterly-run", requireSuperAdmin, async (req: any, res) => {
@@ -927,9 +928,9 @@ router.post("/admin/payouts/quarterly-run", requireSuperAdmin, async (req: any, 
         blocking_reasons: ["Could not confirm this result. Refresh the preview and review payouts before retrying."] });
     }
   }
-  res.json({ quarter: bounds.label, rows, drafted: rows.filter((row) => row.status === "drafted").length,
+  res.json(redactSensitiveFinancialData({ quarter: bounds.label, rows, drafted: rows.filter((row) => row.status === "drafted").length,
     held: rows.filter((row) => row.status === "held").length,
-    errors: rows.filter((row) => row.status === "error").length });
+    errors: rows.filter((row) => row.status === "error").length }));
 });
 
 router.post("/admin/payouts/draft", requireSuperAdmin, async (req: any, res) => {

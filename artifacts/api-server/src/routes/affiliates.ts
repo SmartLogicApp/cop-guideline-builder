@@ -18,6 +18,7 @@ import { getReturnBase } from "../lib/return-base.js";
 import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
 import { auditBlockedPayoutAttempt, calculateAffiliatePayoutEligibility } from "../lib/affiliate-payout-eligibility.js";
 import { containsSensitiveFinancialNumber } from "../lib/affiliate-compliance.js";
+import { redactSensitiveFinancialData } from "../lib/sensitive-financial-text.js";
 import {
   activityStatus,
   activityWindow,
@@ -129,6 +130,9 @@ router.post("/apply", async (req, res) => {
   }
   if (about.length < 10 || about.length > 2000) {
     return res.status(400).json({ error: "Please describe how you plan to refer clients (10–2,000 characters)." });
+  }
+  if ([companyName, contactName, about].some(containsSensitiveFinancialNumber)) {
+    return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
   }
 
   try {
@@ -261,7 +265,7 @@ router.get("/", requireAnyAdmin, async (req, res) => {
       commissionsById.set(row.affiliateId, bucket);
     }
 
-    return res.json(rows.map((row) => {
+    return res.json(redactSensitiveFinancialData(rows.map((row) => {
       const referred = referredByCode.get(row.referralCode) ?? { total: 0, active: 0 };
       const buckets = commissionsById.get(row.id) ?? {};
       const sumOf = (...statuses: string[]) =>
@@ -296,7 +300,7 @@ router.get("/", requireAnyAdmin, async (req, res) => {
         },
         ...affiliateSummaryFields(row, now),
       };
-    }));
+    })));
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? "Unable to load affiliates" });
   }
@@ -392,14 +396,14 @@ router.get("/:id", requireAnyAdmin, async (req, res) => {
         .orderBy(desc(affiliateRateChanges.effectiveAt)),
     ]);
 
-    return res.json({
+    return res.json(redactSensitiveFinancialData({
       ...row,
       ...affiliateSummaryFields(row, now),
       referredAccounts: referred,
       commissions,
       payouts,
       rateChanges,
-    });
+    }));
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? "Unable to load affiliate" });
   }
@@ -436,6 +440,10 @@ router.post("/", requireSuperAdmin, async (req, res) => {
   if (typeof email !== "string" || !email.includes("@")) {
     return res.status(400).json({ error: "A contact email is required." });
   }
+  if ([companyName, contactName, adminNotes, enrollmentVersion, agreementVersion]
+    .some((value) => typeof value === "string" && containsSensitiveFinancialNumber(value))) {
+    return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
+  }
 
   const rate = Number.isFinite(Number(commissionRatePct)) ? Number(commissionRatePct) : 20;
   if (!COMMISSION_RATE_LADDER.includes(rate as any)) {
@@ -471,7 +479,7 @@ router.post("/", requireSuperAdmin, async (req, res) => {
       effectiveAt: now,
     });
 
-    return res.status(201).json(created);
+    return res.status(201).json(redactSensitiveFinancialData(created));
   } catch (error: any) {
     // Unique violation on referral_code. Caught rather than pre-checked because
     // two enrollments can race a check-then-insert, and a reused code silently
@@ -482,7 +490,7 @@ router.post("/", requireSuperAdmin, async (req, res) => {
         code: "REFERRAL_CODE_TAKEN",
       });
     }
-    return res.status(500).json({ error: error?.message ?? "Unable to create affiliate" });
+    return res.status(500).json({ error: "Unable to create affiliate" });
   }
 });
 
@@ -498,7 +506,7 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
   const patch: Record<string, unknown> = {};
   const body = req.body ?? {};
 
-  if (["payoutMethod", "payoutReference", "adminNotes"].some((field) =>
+  if (["companyName", "contactName", "payoutMethod", "payoutReference", "adminNotes"].some((field) =>
     typeof body[field] === "string" && containsSensitiveFinancialNumber(body[field]))) {
     return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
   }
@@ -579,7 +587,7 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
     if (!updated) return res.status(expectedStatus !== null ? 409 : 404).json({
       error: expectedStatus !== null ? "Affiliate changed; reload before editing." : "Affiliate not found",
     });
-    return res.json(updated);
+    return res.json(redactSensitiveFinancialData(updated));
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? "Unable to update affiliate" });
   }
@@ -700,6 +708,9 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
 router.post("/:id/rate", requireSuperAdmin, async (req, res) => {
   const toPct = Number(req.body?.commissionRatePct);
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (typeof req.body?.note === "string" && containsSensitiveFinancialNumber(req.body.note)) {
+    return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
+  }
   if (!COMMISSION_RATE_LADDER.includes(toPct as any)) {
     return res.status(400).json({ error: `Rate must be one of ${COMMISSION_RATE_LADDER.join(", ")} (§14).` });
   }
@@ -792,6 +803,9 @@ router.post("/commissions/:commissionId/reverse", requireSuperAdmin, async (req,
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
   if (!reason) {
     return res.status(400).json({ error: "A reason is required — a reversal has to be explainable later." });
+  }
+  if (containsSensitiveFinancialNumber(reason)) {
+    return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
   }
   try {
     const now = new Date();
@@ -915,7 +929,7 @@ router.get("/payouts/preview", requireAnyAdmin, async (req, res) => {
       payoutEligibility: await calculateAffiliatePayoutEligibility(row.affiliateId),
     })));
 
-    return res.json({
+    return res.json(redactSensitiveFinancialData({
       quarter: bounds.label,
       minimumPayoutUsd: MINIMUM_PAYOUT_USD,
       rows: reviewedRows,
@@ -930,7 +944,7 @@ router.get("/payouts/preview", requireAnyAdmin, async (req, res) => {
          */
         blockedOnTaxInfo: reviewedRows.filter((r) => r.meetsMinimum && r.payoutEligibility.compliance_status.taxStatus !== "verified_complete").length,
       },
-    });
+    }));
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? "Unable to preview payouts" });
   }
@@ -1121,7 +1135,7 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
           ];
         }),
       );
-      return sendCsv(res, `cop-suite-affiliates-${now.toISOString().slice(0, 10)}.csv`, csv);
+      return sendCsv(res, `cop-suite-affiliates-${now.toISOString().slice(0, 10)}.csv`, redactSensitiveFinancialData(csv));
     }
 
     if (type === "commissions") {
@@ -1154,7 +1168,7 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
           (r.qualifyingRevenueUsd ?? 0).toFixed(2), r.ratePct, (r.commissionUsd ?? 0).toFixed(2),
         ]),
       );
-      return sendCsv(res, `cop-suite-affiliate-commissions-${label.replace(/ /g, "-")}.csv`, csv);
+      return sendCsv(res, `cop-suite-affiliate-commissions-${label.replace(/ /g, "-")}.csv`, redactSensitiveFinancialData(csv));
     }
 
     if (type === "payouts") {
@@ -1182,7 +1196,7 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
           r.paidAt?.toISOString().slice(0, 10) ?? "", r.reference ?? "",
         ]),
       );
-      return sendCsv(res, `cop-suite-affiliate-payouts-${now.toISOString().slice(0, 10)}.csv`, csv);
+      return sendCsv(res, `cop-suite-affiliate-payouts-${now.toISOString().slice(0, 10)}.csv`, redactSensitiveFinancialData(csv));
     }
 
     if (type === "attribution") {
@@ -1212,7 +1226,7 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
           r.affiliateName ?? "— UNMATCHED CODE —",
         ]),
       );
-      return sendCsv(res, `cop-suite-affiliate-attribution-${now.toISOString().slice(0, 10)}.csv`, csv);
+      return sendCsv(res, `cop-suite-affiliate-attribution-${now.toISOString().slice(0, 10)}.csv`, redactSensitiveFinancialData(csv));
     }
 
     // Unlike the client report endpoint, an unknown type is an explicit error

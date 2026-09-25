@@ -7,6 +7,7 @@ import {
 import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { reviewedAffiliateAgreementVersion } from "./affiliate-agreement-state.js";
 import { payoutEligibilityReasons } from "./affiliate-compliance-rules.js";
+import { redactSensitiveFinancialData } from "./sensitive-financial-text.js";
 
 export type AffiliatePayoutEligibility = {
   eligible: boolean;
@@ -121,7 +122,7 @@ export async function calculateAffiliatePayoutEligibility(affiliateId: string, e
       updatedAt: checkedAt,
     }).where(eq(affiliateComplianceStatus.affiliateId, affiliateId));
   }
-  return { eligible, overall_status, blocking_reasons: reasons, compliance_status: snapshot, checked_at: checkedAt.toISOString() };
+  return { eligible, overall_status, blocking_reasons: redactSensitiveFinancialData(reasons), compliance_status: redactSensitiveFinancialData(snapshot), checked_at: checkedAt.toISOString() };
 }
 
 export async function auditBlockedPayoutAttempt(
@@ -129,7 +130,7 @@ export async function auditBlockedPayoutAttempt(
 ): Promise<void> {
   await db.insert(affiliateComplianceAuditLog).values({
     affiliateId, actorType: actorId ? "admin" : "system", actorId,
-    eventType: "payout_blocked", reason: reasons.join(" "),
-    metadata: { attemptedAction: action },
+    eventType: "payout_blocked", reason: redactSensitiveFinancialData(reasons.join(" ")),
+    metadata: { attemptedAction: redactSensitiveFinancialData(action) },
   });
 }
