@@ -4,8 +4,8 @@ import {
 } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { PRIVACY_V2_EFFECTIVE_AT, PRIVACY_V2_VERSION, privacyV2 } from "@workspace/db";
-import { redactSensitiveFinancialData } from "./sensitive-financial-text.js";
-export { containsSensitiveFinancialNumber } from "./sensitive-financial-text.js";
+import { redactSensitiveFinancialData } from "./affiliate-sensitive-boundary.js";
+export { containsSensitiveFinancialNumber } from "./affiliate-sensitive-boundary.js";
 
 export const PAYMENT_AUTHORIZATION_VERSION = "1.0";
 export const PAYMENT_AUTHORIZATION_TEXT = "By selecting Continue to secure payment setup, I authorize CMS Compliance Guardian LLC to send approved affiliate commission payments to the payout account that I securely establish and maintain through Stripe. I confirm that I am authorized to receive payments to that account, that the payee information I provide is accurate, and that CMS Compliance Guardian LLC may correct, reverse, offset, or recover a payment when required because of an error, refund, chargeback, fraud, duplicate payment, or violation of the Affiliate Partner Agreement. This authorization does not guarantee payment and is subject to the Affiliate Partner Agreement and payout eligibility rules.";

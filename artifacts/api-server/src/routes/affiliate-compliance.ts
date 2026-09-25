@@ -19,7 +19,10 @@ import {
   auditCompliance, ensureBaselineDocuments, ensureComplianceRecord,
   containsSensitiveFinancialNumber,
 } from "../lib/affiliate-compliance.js";
-import { redactSensitiveFinancialData } from "../lib/sensitive-financial-text.js";
+import {
+  isSafeAffiliateIdentifier, isSafeDocumentVersion, isSafeEmailTemplateKey,
+  redactSensitiveFinancialData,
+} from "../lib/affiliate-sensitive-boundary.js";
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getStripeConnectTestClient } from "../stripeClient.js";
 import { quarterBounds } from "../lib/affiliate-commission.js";
@@ -208,7 +211,8 @@ router.post("/portal/agreement-accept", requireAffiliate, async (req: any, res) 
   const requestedVersion = typeof req.body?.agreementVersion === "string" ? req.body.agreementVersion : "";
   const signerName = typeof req.body?.typedLegalName === "string" ? req.body.typedLegalName.trim() : "";
   if (req.body?.agreed !== true || signerName.length < 2 || signerName.length > 200
-      || containsSensitiveFinancialNumber(signerName) || !currentVersion || requestedVersion !== currentVersion) {
+      || containsSensitiveFinancialNumber(signerName) || !currentVersion || requestedVersion !== currentVersion
+      || !isSafeAffiliateIdentifier(requestedVersion)) {
     res.status(400).json({ error: "Review the current agreement, enter your legal name, and confirm acceptance." }); return;
   }
   if (isSample) {
@@ -322,6 +326,9 @@ router.post("/portal/acknowledgements", requireAffiliate, async (req: any, res) 
   if (!document || !LEGAL_DOCUMENT_TYPES.has(document.documentType)) {
     res.status(404).json({ error: "Current document was not found." }); return;
   }
+  if (!isSafeDocumentVersion(document.version)) {
+    res.status(409).json({ error: "Document version requires administrator review before acknowledgement." }); return;
+  }
   const current = await getPublishedDocument(document.documentType);
   if (current?.id !== document.id) { res.status(409).json({ error: "The document changed. Refresh and review the current version." }); return; }
   const now = new Date();
@@ -352,7 +359,7 @@ router.post("/portal/payment-authorization", requireAffiliate, async (req: any, 
   }
   await ensureBaselineDocuments();
   const authorizationDoc = await getPublishedDocument(PAYMENT_AUTH_DOCUMENT_TYPE);
-  if (!authorizationDoc) {
+  if (!authorizationDoc || !isSafeDocumentVersion(authorizationDoc.version)) {
     res.status(409).json({ error: "No current published payment authorization is available." }); return;
   }
   const now = new Date();
@@ -627,8 +634,8 @@ router.post("/admin/:id/recheck", requireSuperAdmin, async (req, res) => {
 
 router.post("/admin/documents", requireSuperAdmin, async (req: any, res) => {
   const { documentType, version, title, content } = req.body ?? {};
-  if (!["privacy", "ftc_disclosure", "marketing_guidelines", PAYMENT_AUTH_DOCUMENT_TYPE].includes(documentType) || typeof version !== "string"
-      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(version)
+  if (!["privacy", "ftc_disclosure", "marketing_guidelines", PAYMENT_AUTH_DOCUMENT_TYPE].includes(documentType)
+      || !isSafeDocumentVersion(version)
       || typeof title !== "string" || title.trim().length < 2 || title.length > 200
       || typeof content !== "string" || content.trim().length < 20 || content.length > 150_000) {
     res.status(400).json({ error: "Provide a valid document type, immutable version, title, and document content." }); return;
@@ -640,7 +647,7 @@ router.post("/admin/documents", requireSuperAdmin, async (req: any, res) => {
     const [created] = await db.insert(affiliateDocumentVersions).values({
       documentType, version, title: title.trim(), content, status: "draft",
     }).returning();
-    res.status(201).json(created);
+    res.status(201).json(redactSensitiveFinancialData(created));
   } catch {
     res.status(409).json({ error: "That document version already exists and cannot be changed." });
   }
@@ -649,7 +656,9 @@ router.post("/admin/documents", requireSuperAdmin, async (req: any, res) => {
 router.patch("/admin/documents/:id", requireSuperAdmin, async (req, res) => {
   const id = currentParam(req.params.id);
   const [document] = await db.select().from(affiliateDocumentVersions).where(eq(affiliateDocumentVersions.id, id)).limit(1);
-  if (!document || document.status !== "draft") { res.status(409).json({ error: "Only a draft document can be edited." }); return; }
+  if (!document || document.status !== "draft" || !isSafeDocumentVersion(document.version)) {
+    res.status(409).json({ error: "Only a draft with a safe version can be edited." }); return;
+  }
   const title = typeof req.body?.title === "string" ? req.body.title.trim() : document.title;
   const content = typeof req.body?.content === "string" ? req.body.content : document.content;
   if (title.length < 2 || title.length > 200 || content.trim().length < 20 || content.length > 150_000
@@ -659,7 +668,7 @@ router.patch("/admin/documents/:id", requireSuperAdmin, async (req, res) => {
   const [updated] = await db.update(affiliateDocumentVersions).set({ title, content, updatedAt: new Date() })
     .where(and(eq(affiliateDocumentVersions.id, id), eq(affiliateDocumentVersions.status, "draft"))).returning();
   if (!updated) { res.status(409).json({ error: "Draft document changed; reload and try again." }); return; }
-  res.json(updated);
+  res.json(redactSensitiveFinancialData(updated));
 });
 
 router.post("/admin/documents/:id/publish", requireSuperAdmin, async (req: any, res) => {
@@ -667,7 +676,9 @@ router.post("/admin/documents/:id/publish", requireSuperAdmin, async (req: any, 
   const effectiveAt = req.body?.effectiveAt ? new Date(req.body.effectiveAt) : new Date();
   if (!Number.isFinite(effectiveAt.getTime())) { res.status(400).json({ error: "Provide a valid effective date." }); return; }
   const [document] = await db.select().from(affiliateDocumentVersions).where(eq(affiliateDocumentVersions.id, id)).limit(1);
-  if (!document || document.status !== "draft") { res.status(404).json({ error: "Draft document not found." }); return; }
+  if (!document || document.status !== "draft" || !isSafeDocumentVersion(document.version)) {
+    res.status(409).json({ error: "Draft document version requires administrator review." }); return;
+  }
   if (document.documentType === "privacy" && req.body?.confirmedReviewed !== true) {
     res.status(409).json({ error: "Confirm that this is the exact owner-approved current Privacy Notice before publishing." }); return;
   }
@@ -689,11 +700,16 @@ router.post("/admin/documents/:id/publish", requireSuperAdmin, async (req: any, 
   for (const row of impacted) {
     await auditCompliance(row.affiliateId, "admin", req.clerkUserId, "document_version_published", `Published ${document.documentType} version ${document.version}.`, undefined, { previousVersion: true }, { documentType: document.documentType, documentVersion: document.version });
   }
-  res.json({ published: true, documentVersion: document.version, affectedAffiliateCount: impacted.length });
+  res.json(redactSensitiveFinancialData({ published: true, documentVersion: document.version, affectedAffiliateCount: impacted.length }));
 });
 
 router.patch("/admin/email-templates/:id", requireSuperAdmin, async (req: any, res) => {
   const id = currentParam(req.params.id);
+  const [existing] = await db.select({ templateKey: affiliateEmailTemplates.templateKey })
+    .from(affiliateEmailTemplates).where(eq(affiliateEmailTemplates.id, id)).limit(1);
+  if (existing && !isSafeEmailTemplateKey(existing.templateKey)) {
+    res.status(409).json({ error: "Template key requires administrator review." }); return;
+  }
   const patch: Record<string, unknown> = { updatedAt: new Date(), updatedByAdminId: req.clerkUserId };
   if (typeof req.body?.subject === "string" && req.body.subject.length <= 200) patch.subject = req.body.subject;
   if (typeof req.body?.body === "string" && req.body.body.length <= 20_000) patch.body = req.body.body;
@@ -704,12 +720,12 @@ router.patch("/admin/email-templates/:id", requireSuperAdmin, async (req: any, r
   }
   const [updated] = await db.update(affiliateEmailTemplates).set(patch).where(eq(affiliateEmailTemplates.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Email template not found." }); return; }
-  res.json(updated);
+  res.json(redactSensitiveFinancialData(updated));
 });
 
 router.post("/admin/email-templates", requireSuperAdmin, async (req: any, res) => {
   const { templateKey, subject, body } = req.body ?? {};
-  if (typeof templateKey !== "string" || !/^[a-z][a-z0-9_]{2,63}$/.test(templateKey)
+  if (!isSafeEmailTemplateKey(templateKey)
       || typeof subject !== "string" || subject.trim().length < 3 || subject.length > 200
       || typeof body !== "string" || body.trim().length < 10 || body.length > 20_000
       || containsSensitiveFinancialNumber(subject) || containsSensitiveFinancialNumber(body)) {
@@ -719,7 +735,7 @@ router.post("/admin/email-templates", requireSuperAdmin, async (req: any, res) =
     const [created] = await db.insert(affiliateEmailTemplates).values({
       templateKey, subject: subject.trim(), body, updatedByAdminId: req.clerkUserId,
     }).returning();
-    res.status(201).json(created);
+    res.status(201).json(redactSensitiveFinancialData(created));
   } catch {
     res.status(409).json({ error: "That email template key already exists." });
   }
@@ -732,6 +748,9 @@ router.post("/admin/:id/remind", requireSuperAdmin, async (req: any, res) => {
   const eligibility = await calculateAffiliatePayoutEligibility(affiliateId);
   if (eligibility.eligible) { res.status(409).json({ error: "No incomplete payout setup tasks remain." }); return; }
   const key = typeof req.body?.templateKey === "string" ? req.body.templateKey : "complete_payout_setup";
+  if (!isSafeEmailTemplateKey(key)) {
+    res.status(400).json({ error: "Choose a safe email template key." }); return;
+  }
   const snapshot = eligibility.compliance_status as Record<string, any>;
   if (key === "tax_information_action" && (!["US", "USA", "United States"].includes(String(snapshot.country ?? "")) || !snapshot.state)) {
     res.status(409).json({ error: "Tax setup reminders are not available until U.S. country and state are confirmed." }); return;

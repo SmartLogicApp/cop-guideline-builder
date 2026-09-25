@@ -17,8 +17,10 @@ import { sendViaResend } from "../lib/resend-mailer.js";
 import { getReturnBase } from "../lib/return-base.js";
 import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
 import { auditBlockedPayoutAttempt, calculateAffiliatePayoutEligibility } from "../lib/affiliate-payout-eligibility.js";
-import { containsSensitiveFinancialNumber } from "../lib/affiliate-compliance.js";
-import { redactSensitiveFinancialData } from "../lib/sensitive-financial-text.js";
+import {
+  approvalRateChangeNote, containsSensitiveFinancialNumber, hasSensitiveContact,
+  isSafeAffiliateIdentifier, redactSensitiveFinancialData,
+} from "../lib/affiliate-sensitive-boundary.js";
 import {
   activityStatus,
   activityWindow,
@@ -131,7 +133,8 @@ router.post("/apply", async (req, res) => {
   if (about.length < 10 || about.length > 2000) {
     return res.status(400).json({ error: "Please describe how you plan to refer clients (10–2,000 characters)." });
   }
-  if ([companyName, contactName, about].some(containsSensitiveFinancialNumber)) {
+  if ([companyName, contactName, about].some(containsSensitiveFinancialNumber)
+      || hasSensitiveContact({ email, phone })) {
     return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
   }
 
@@ -414,7 +417,6 @@ router.get("/:id", requireAnyAdmin, async (req, res) => {
 router.post("/", requireSuperAdmin, async (req, res) => {
   // Do not create even a pending legacy enrollment with a default paid rate.
   // Applicants can still use /apply, which stores a pending 0% record.
-  if (activationBlocked(res)) return;
   const {
     referralCode, companyName, contactName, email, phone,
     commissionRatePct, enrollmentSignedAt, enrollmentVersion, agreementVersion,
@@ -428,7 +430,7 @@ router.post("/", requireSuperAdmin, async (req, res) => {
   }
 
   const code = normalizeReferralCode(referralCode);
-  if (!code || !isValidReferralCode(code)) {
+  if (!code || !isValidReferralCode(code) || !isSafeAffiliateIdentifier(code)) {
     return res.status(400).json({
       error: "Referral code must be 2–64 characters, letters, digits and hyphens, starting with a letter or digit.",
       code: "INVALID_REFERRAL_CODE",
@@ -441,9 +443,11 @@ router.post("/", requireSuperAdmin, async (req, res) => {
     return res.status(400).json({ error: "A contact email is required." });
   }
   if ([companyName, contactName, adminNotes, enrollmentVersion, agreementVersion]
-    .some((value) => typeof value === "string" && containsSensitiveFinancialNumber(value))) {
+    .some((value) => typeof value === "string" && containsSensitiveFinancialNumber(value))
+      || hasSensitiveContact({ email, phone })) {
     return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
   }
+  if (activationBlocked(res)) return;
 
   const rate = Number.isFinite(Number(commissionRatePct)) ? Number(commissionRatePct) : 20;
   if (!COMMISSION_RATE_LADDER.includes(rate as any)) {
@@ -507,7 +511,8 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
   const body = req.body ?? {};
 
   if (["companyName", "contactName", "payoutMethod", "payoutReference", "adminNotes"].some((field) =>
-    typeof body[field] === "string" && containsSensitiveFinancialNumber(body[field]))) {
+    typeof body[field] === "string" && containsSensitiveFinancialNumber(body[field]))
+      || hasSensitiveContact(body)) {
     return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
   }
   for (const field of ["companyName", "contactName", "email", "phone", "payoutMethod", "payoutReference", "adminNotes"]) {
@@ -609,11 +614,6 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
  * is never reviewed can never quietly start earning.
  */
 router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
-  if (activationBlocked(res)) return;
-  if (!(await reviewedAffiliateAgreementExists())) {
-    return res.status(409).json({ code: "AGREEMENT_NOT_PUBLISHED",
-      error: "Publish the reviewed agreement before approving applicants." });
-  }
   const requestedCode = normalizeReferralCode(req.body?.referralCode);
   const ratePct = Number.isFinite(Number(req.body?.commissionRatePct))
     ? Number(req.body.commissionRatePct)
@@ -622,11 +622,16 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
   if (!COMMISSION_RATE_LADDER.includes(ratePct as any) || ratePct <= 0) {
     return res.status(400).json({ error: "Approve at 20% or 10% (§14)." });
   }
-  if (!requestedCode || !isValidReferralCode(requestedCode)) {
+  if (!requestedCode || !isValidReferralCode(requestedCode) || !isSafeAffiliateIdentifier(requestedCode)) {
     return res.status(400).json({
       error: "A referral code is required to approve — 2–64 characters, letters, digits and hyphens.",
       code: "INVALID_REFERRAL_CODE",
     });
+  }
+  if (activationBlocked(res)) return;
+  if (!(await reviewedAffiliateAgreementExists())) {
+    return res.status(409).json({ code: "AGREEMENT_NOT_PUBLISHED",
+      error: "Publish the reviewed agreement before approving applicants." });
   }
 
   try {
@@ -667,7 +672,7 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
       fromPct: row.commissionRatePct,
       toPct: ratePct,
       reason: "enrollment",
-      note: `Approved; code assigned: ${requestedCode}`,
+      note: approvalRateChangeNote(),
       changedBy: (req as any).clerkUserId ?? null,
       effectiveAt: now,
     });
@@ -691,7 +696,7 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
       emailError = "Affiliate has no email on file.";
     }
 
-    return res.json({ ...updated, referralLink, emailSent, emailError });
+    return res.json(redactSensitiveFinancialData({ ...updated, referralLink, emailSent, emailError }));
   } catch (error: any) {
     if (error?.code === "23505") {
       return res.status(409).json({

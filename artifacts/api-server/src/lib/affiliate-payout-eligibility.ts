@@ -7,7 +7,7 @@ import {
 import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { reviewedAffiliateAgreementVersion } from "./affiliate-agreement-state.js";
 import { payoutEligibilityReasons } from "./affiliate-compliance-rules.js";
-import { redactSensitiveFinancialData } from "./sensitive-financial-text.js";
+import { redactSensitiveFinancialData } from "./affiliate-sensitive-boundary.js";
 
 export type AffiliatePayoutEligibility = {
   eligible: boolean;

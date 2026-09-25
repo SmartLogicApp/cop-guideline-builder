@@ -4,7 +4,7 @@ import rateLimit from "express-rate-limit";
 import { getAuth } from "@clerk/express";
 import { and, desc, eq, inArray, isNull, lt } from "drizzle-orm";
 import { db, gapHistory } from "@workspace/db";
-import { containsSensitiveFinancialData, redactSensitiveFinancialData } from "../lib/sensitive-financial-text.js";
+import { containsSensitiveFinancialData, redactSensitiveFinancialData } from "../lib/affiliate-sensitive-boundary.js";
 
 const router: IRouter = Router();
 const MAX_HISTORY = 10;
@@ -62,7 +62,7 @@ async function pruneExpiredAnonymousHistory() {
   );
 }
 
-function serializeEntry(row: typeof gapHistory.$inferSelect) {
+export function serializeEntry(row: typeof gapHistory.$inferSelect) {
   return redactSensitiveFinancialData({
     id: row.id,
     institution: row.institution,
@@ -74,7 +74,7 @@ function serializeEntry(row: typeof gapHistory.$inferSelect) {
   });
 }
 
-function parseEntry(body: GapEntryInput) {
+export function parseEntry(body: GapEntryInput) {
   if (
     typeof body.id !== "string" ||
     body.id.length < 1 ||
