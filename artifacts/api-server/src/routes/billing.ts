@@ -301,11 +301,20 @@ router.post("/checkout", requireAuth, async (req, res) => {
       "metadata[identifierType]": account.identifierType,
       "metadata[clerkUserId]": clerkUserId,
     });
-    const customer = await stripe.request<{ id: string }>("/v1/customers", {
-      method: "POST",
-      body: customerParams,
-      idempotencyKey: `cms-customer-${account.id}`,
-    });
+    let customer: { id: string };
+    try {
+      customer = await stripe.request<{ id: string }>("/v1/customers", {
+        method: "POST",
+        body: customerParams,
+        idempotencyKey: `cms-customer-${account.id}`,
+      });
+    } catch (error) {
+      req.log.error({ err: error, accountId: account.id }, "Stripe customer could not be created.");
+      return res.status(503).json({
+        error: "Secure checkout could not be opened. Please try again or contact support.",
+        code: "CHECKOUT_UNAVAILABLE",
+      });
+    }
     await db.update(accounts).set({ stripeCustomerId: customer.id })
       .where(eq(accounts.id, account.id));
     customerId = customer.id;
@@ -510,16 +519,28 @@ router.post("/checkout", requireAuth, async (req, res) => {
       checkoutParams.set("subscription_data[trial_end]", String(trialPlan.trialEnd));
     }
 
-    const session = await stripe.request<{ url: string | null }>("/v1/checkout/sessions", {
-      method: "POST",
-      body: checkoutParams,
-      idempotencyKey: `cms-checkout-${account.id}-${randomUUID()}`,
-    });
+    let session: { url: string | null };
+    try {
+      session = await stripe.request<{ url: string | null }>("/v1/checkout/sessions", {
+        method: "POST",
+        body: checkoutParams,
+        idempotencyKey: `cms-checkout-${account.id}-${randomUUID()}`,
+      });
+    } catch (error) {
+      req.log.error({ err: error, accountId: account.id }, "Stripe Checkout session could not be created.");
+      return { kind: "checkout-unavailable" as const };
+    }
     return { kind: "checkout-url" as const, url: session.url };
   });
 
   if (checkoutResult.kind === "account-missing") {
     return res.status(404).json({ error: "No facility account found" });
+  }
+  if (checkoutResult.kind === "checkout-unavailable") {
+    return res.status(503).json({
+      error: "Secure checkout could not be opened. Please try again or contact support.",
+      code: "CHECKOUT_UNAVAILABLE",
+    });
   }
   if (checkoutResult.kind === "already-subscribed") {
     return res.status(409).json({

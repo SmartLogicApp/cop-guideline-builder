@@ -24,6 +24,7 @@
 - [GitHub API versus Git transport](github-api-git-transport.md) — a healthy GitHub connector can coexist with unusable shell Git credentials; verify pushes separately.
 - [Trial audience boundary](trial-audience-boundary.md) — direct customers require payment upfront; consultant affiliates keep a no-card trial until day 30.
 - [Stripe checkout retry boundaries](stripe-checkout-retry-boundaries.md) — reconcile subscriptions and sessions before retrying, and never extend or shorten an existing trial into a surprise charge.
+- [Stripe Test Managed Payments checkout](stripe-test-managed-payments.md) — Test trials may need a product tax code; portal cancellation can use cancel_at without cancel_at_period_end.
 - [Public document bundling boundary](public-document-bundling.md) — trim and transform draft documents before Vite embeds them; runtime slicing leaks the original raw import.
 - [Affiliate agreement identity revisions](affiliate-agreement-identity-revisions.md) — scope acceptance to the applicant contact revision, while preserving older evidence for audit.
 - [Affiliate payout settlement boundary](affiliate-payout-settlement-boundary.md) — legacy settlement must stay blocked until it shares verified transfer evidence and exact commission claims.

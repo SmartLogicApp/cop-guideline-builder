@@ -89,6 +89,8 @@ test("billing supports safe success, cancellation, duplicate subscription, and p
   assert.match(billing, /checkout=canceled/);
   assert.match(billing, /ALREADY_SUBSCRIBED/);
   assert.match(billing, /router\.post\("\/portal"/);
+  assert.match(billing, /kind: "checkout-unavailable"/);
+  assert.match(billing, /code: "CHECKOUT_UNAVAILABLE"/);
 });
 
 test("webhooks are raw-body verified and converge supported events to current Stripe state", () => {
@@ -107,6 +109,9 @@ test("webhooks are raw-body verified and converge supported events to current St
   assert.match(webhook, /stripeRequest<SubscriptionLike>\(`\/v1\/subscriptions/);
   assert.match(webhook, /subscriptionCurrentPeriodEnd/);
   assert.match(webhook, /subscriptionCancelAtPeriodEnd/);
+  assert.match(webhook, /subscription\.cancel_at != null/);
+  assert.match(webhook, /subscription\.cancel_at <= periodEnd/);
+  assert.match(webhook, /subscriptionCancelAtPeriodEnd: subscription\.cancel_at_period_end \|\| cancelsByPeriodEnd/);
 });
 
 test("deletion revokes locally without requiring a successful Stripe retrieval", () => {

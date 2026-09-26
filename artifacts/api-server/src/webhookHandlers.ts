@@ -110,6 +110,11 @@ async function syncSubscription(subscription: SubscriptionLike) {
     : subscription.customer.id;
   const accountId = subscription.metadata?.accountId;
   const firstItem = subscription.items.data[0];
+  const periodEnd = firstItem?.current_period_end ?? subscription.current_period_end;
+  // Customer Portal may set cancel_at to the trial/period end without setting
+  // cancel_at_period_end. Both represent a scheduled loss of access.
+  const cancelsByPeriodEnd = subscription.cancel_at != null &&
+    periodEnd != null && subscription.cancel_at <= periodEnd;
 
   await db.update(accounts).set({
     stripeCustomerId: customerId,
@@ -120,9 +125,9 @@ async function syncSubscription(subscription: SubscriptionLike) {
       firstItem?.current_period_start ?? subscription.current_period_start,
     ),
     subscriptionCurrentPeriodEnd: timestamp(
-      firstItem?.current_period_end ?? subscription.current_period_end,
+      periodEnd,
     ),
-    subscriptionCancelAtPeriodEnd: subscription.cancel_at_period_end,
+    subscriptionCancelAtPeriodEnd: subscription.cancel_at_period_end || cancelsByPeriodEnd,
     subscriptionCanceledAt: timestamp(subscription.canceled_at),
     // Mirror Stripe's trial end onto the account so one column answers
     // "when does this trial end" whether the trial was created locally at

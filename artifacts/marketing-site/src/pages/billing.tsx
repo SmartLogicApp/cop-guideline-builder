@@ -60,7 +60,9 @@ function subscriptionLabel(data: SubscriptionData | null) {
     return 'Payment needs attention';
   }
   if (subscription?.status === 'pending_payment') return 'Payment method needed';
-  if (subscription?.status === 'trial' && subscription.daysLeftInTrial > 0) {
+  if (subscription &&
+      ['trial', 'trialing'].includes(subscription.status ?? '') &&
+      subscription.daysLeftInTrial > 0) {
     return `Free trial · ${subscription.daysLeftInTrial} day${subscription.daysLeftInTrial === 1 ? '' : 's'} left`;
   }
   if (subscription?.isActive || data.isActive) return 'Active';
@@ -187,7 +189,12 @@ export default function BillingPage() {
         },
         body: '{}',
       });
-      const body = await response.json() as { url?: string; error?: string; code?: string };
+      // Reverse proxies and upstream failures may return HTML, not the billing
+      // API's JSON envelope. Keep the action usable instead of displaying a
+      // JSON parser exception to the customer.
+      const body = await response.json().catch(() => ({})) as {
+        url?: string; error?: string; code?: string;
+      };
       // Checkout refuses until the current Terms have been accepted. Without
       // this the customer got the refusal as a bare error string and had no
       // way to reach the acceptance page, which nothing else links to either.
@@ -378,7 +385,9 @@ export default function BillingPage() {
                     ) : null}
                     {subscription?.subscription?.currentPeriodEnd && (
                       <p className="mt-3 text-sm font-medium text-slate-700">
-                        {subscription.subscription.cancelAtPeriodEnd ? 'Access ends' : 'Renews'}{' '}
+                        {subscription.subscription.cancelAtPeriodEnd
+                          ? 'Access ends'
+                          : subscriptionStatus === 'trialing' ? 'Trial ends' : 'Renews'}{' '}
                         {new Date(subscription.subscription.currentPeriodEnd).toLocaleDateString()}
                       </p>
                     )}
