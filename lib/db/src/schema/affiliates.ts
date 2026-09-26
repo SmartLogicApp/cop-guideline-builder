@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, doublePrecision, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, boolean, integer, doublePrecision, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { accounts } from "./accounts";
 
 /**
@@ -215,6 +215,41 @@ export const affiliateCommissions = pgTable("affiliate_commissions", {
   index("affiliate_commissions_payable_at_idx").on(table.payableAt),
 ]);
 
+/**
+ * First genuinely paid qualifying invoice for each affiliate/customer pair.
+ * This attribution history exists independently of whether that invoice earned
+ * a commission (for example, a first payment after the 0% restoration window).
+ */
+export const affiliateQualifyingReferrals = pgTable("affiliate_qualifying_referrals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  affiliateId: uuid("affiliate_id").references(() => affiliates.id, { onDelete: "restrict" }).notNull(),
+  accountId: uuid("account_id").references(() => accounts.id, { onDelete: "restrict" }).notNull(),
+  stripeInvoiceId: text("stripe_invoice_id").notNull(),
+  paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("affiliate_qualifying_referrals_pair_key").on(table.affiliateId, table.accountId),
+  uniqueIndex("affiliate_qualifying_referrals_invoice_key").on(table.stripeInvoiceId),
+  index("affiliate_qualifying_referrals_account_idx").on(table.accountId),
+]);
+
+/**
+ * Durable manual-review queue for payments whose paidAt predates the affiliate
+ * rate-effective date, preventing the invoice from silently disappearing.
+ */
+export const affiliateOutOfOrderPaymentReviews = pgTable("affiliate_out_of_order_payment_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  stripeInvoiceId: text("stripe_invoice_id").notNull(),
+  affiliateId: uuid("affiliate_id").references(() => affiliates.id, { onDelete: "restrict" }).notNull(),
+  accountId: uuid("account_id").references(() => accounts.id, { onDelete: "restrict" }).notNull(),
+  paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("affiliate_out_of_order_payment_reviews_invoice_key").on(table.stripeInvoiceId),
+  index("affiliate_out_of_order_payment_reviews_created_idx").on(table.createdAt),
+]);
+
 // ─── Quarterly payouts (§8) ──────────────────────────────────────────────────
 
 export const affiliatePayouts = pgTable("affiliate_payouts", {
@@ -285,6 +320,35 @@ export const affiliateRateChanges = pgTable("affiliate_rate_changes", {
   createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("affiliate_rate_changes_affiliate_idx").on(table.affiliateId),
+]);
+
+/**
+ * Durable claims for affiliate rate deadline notices. A unique affiliate,
+ * notice kind, and deadline tuple prevents the daily cron from sending the
+ * same notice repeatedly. Explicit provider rejections clear the claim for
+ * retry; an unresolved network outcome keeps it claimed to avoid a duplicate.
+ */
+export const affiliateRateNoticeDeliveries = pgTable("affiliate_rate_notice_deliveries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  affiliateId: uuid("affiliate_id").references(() => affiliates.id, { onDelete: "cascade" }).notNull(),
+  noticeType: text("notice_type").notNull(),
+  deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
+  currentRatePct: integer("current_rate_pct").notNull(),
+  nextRatePct: integer("next_rate_pct"),
+  recipientEmail: text("recipient_email").notNull(),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("affiliate_rate_notice_deliveries_key").on(
+    table.affiliateId,
+    table.noticeType,
+    table.deadlineAt,
+  ),
+  index("affiliate_rate_notice_deliveries_due_idx").on(table.sentAt, table.claimedAt),
 ]);
 
 export type Affiliate            = typeof affiliates.$inferSelect;

@@ -67,7 +67,7 @@ export default function AffiliatePortalPage() {
                 <RegionSelector />
               )}
             
-              {agreement && <AgreementItem agreement={agreement} document={portalData?.agreementDocument} sampleAcceptance={portalData?.sampleAgreementAcceptance} icon={getStatusIcon(agreement.status)} />}
+              {agreement && <AgreementItem agreement={agreement} document={portalData?.agreementDocument} sampleAcceptance={portalData?.sampleAgreementAcceptance} businessName={portalData?.affiliate?.companyName} icon={getStatusIcon(agreement.status)} />}
               <div className="border-t border-slate-100" />
               
               {privacy && <ChecklistItem title={`2. ${privacy.title}`} status={privacy.status}
@@ -188,7 +188,7 @@ function TaxInfoItem({ tax, paymentStatus, icon }: { tax: any; paymentStatus?: S
   </div>;
 }
 
-function AgreementItem({ agreement, document, sampleAcceptance, icon }: { agreement: any; document: any; sampleAcceptance: any; icon: React.ReactNode }) {
+function AgreementItem({ agreement, document, sampleAcceptance, businessName, icon }: { agreement: any; document: any; sampleAcceptance: any; businessName?: string; icon: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [agreed, setAgreed] = useState(false);
@@ -223,6 +223,9 @@ function AgreementItem({ agreement, document, sampleAcceptance, icon }: { agreem
       {open && <div id="current-affiliate-agreement" className="space-y-4">
         <div className="max-h-72 overflow-y-auto rounded-lg border bg-slate-50 p-4 text-sm text-slate-700 whitespace-pre-wrap">{document.body}</div>
         <form onSubmit={submit} className="space-y-3">
+          {businessName && <p className="text-sm text-slate-600">
+            Legal/business name recorded with this acceptance: <span className="font-medium">{businessName}</span>
+          </p>}
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" required checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-1" />
              <span>{document.isSample ? 'I have read this sample and consent to recording a test acknowledgement; I understand these are not final legal terms.' : 'I have read and agree to this version of the Affiliate Partner Agreement.'}</span>

@@ -47,6 +47,13 @@ export function useAdminAgreementCurrent() {
   });
 }
 
+export function useAdminAgreementV4Draft() {
+  const fetchAuth = useFetchAuth('/api/affiliates/agreements');
+  return useMutation<{ version: string; body: string; contentSha256: string }, Error, void>({
+    mutationFn: () => fetchAuth('/v4-draft'),
+  });
+}
+
 export function useAdminAgreementPublish() {
   const fetchAuth = useFetchAuth('/api/affiliates/agreements');
   const queryClient = useQueryClient();

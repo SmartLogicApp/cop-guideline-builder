@@ -8,6 +8,12 @@ import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementVersion } fro
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getReturnBase } from "../lib/return-base.js";
 import { isSampleAgreementVersion } from "../lib/affiliate-sample-agreement.js";
+import {
+  AFFILIATE_AGREEMENT_V4_VERSION,
+  isCanonicalAffiliateAgreementPublication,
+  prepareAffiliateAgreementV4,
+} from "../lib/affiliate-agreement-v4.js";
+import affiliateAgreementV4Source from "../legal/affiliate-partner-agreement-v4-source.txt";
 
 const router: IRouter = Router();
 const publicLimit = rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
@@ -15,16 +21,41 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 const tokenHash = (token: unknown) =>
   typeof token === "string" && /^[a-f0-9]{64}$/.test(token) ? sha256(token) : null;
 
+// The source text and the two explicitly approved corrections are available
+// only to a super-admin; returning the prepared draft does not publish it.
+router.get("/v4-draft", requireSuperAdmin, async (_req, res) => {
+  try {
+    const body = prepareAffiliateAgreementV4(affiliateAgreementV4Source);
+    return res.json({
+      version: AFFILIATE_AGREEMENT_V4_VERSION,
+      body,
+      contentSha256: sha256(body),
+    });
+  } catch {
+    return res.status(500).json({ error: "The Version 4.0 source failed its exact-text validation." });
+  }
+});
+
 // Only a super-admin can publish the exact owner-reviewed text. Versions are
 // immutable: a correction requires a new version and fresh acceptance.
 router.post("/publish", requireSuperAdmin, async (req, res) => {
   const version = typeof req.body?.version === "string" ? req.body.version.trim() : "";
-  const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+  const submittedBody = typeof req.body?.body === "string" ? req.body.body : "";
+  const body = submittedBody.trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(version)
       || isSampleAgreementVersion(version)
       || body.length < 100 || body.length > 150_000
       || req.body?.confirmedReviewed !== true) {
     return res.status(400).json({ error: "Provide a version and the full reviewed agreement, then confirm owner review." });
+  }
+  if (version === AFFILIATE_AGREEMENT_V4_VERSION) {
+    try {
+      if (!isCanonicalAffiliateAgreementPublication(version, submittedBody, affiliateAgreementV4Source)) {
+        return res.status(400).json({ error: "Version 4.0 must exactly match the prepared attorney-reviewed text." });
+      }
+    } catch {
+      return res.status(500).json({ error: "The Version 4.0 source failed its exact-text validation." });
+    }
   }
   try {
     const [created] = await db.insert(affiliateAgreements).values({
@@ -201,6 +232,7 @@ router.post("/accept", publicLimit, async (req, res) => {
         agreementVersion: row!.agreementVersion,
         contentSha256: row!.contentSha256,
         signerName,
+        legalBusinessName: row!.companyName,
         signerEmail: row!.recipientEmail,
         identityEpoch: row!.identityEpoch,
         acceptedAt: now,

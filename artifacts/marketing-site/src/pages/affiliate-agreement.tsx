@@ -68,6 +68,9 @@ export default function AffiliateAgreementPage() {
         : agreement
           ? <form onSubmit={accept} className="mt-6 space-y-6">
               <p className="text-sm">For {agreement.companyName} · Agreement version {agreement.version}</p>
+              <p className="text-sm text-slate-600">
+                The applicant's business name shown above will be recorded with this acceptance.
+              </p>
               <div tabIndex={0} aria-label="Full affiliate agreement" className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded-xl border bg-slate-50 p-5 text-sm leading-7">
                 {agreement.body}
               </div>

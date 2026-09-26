@@ -30,3 +30,4 @@
 - [Test affiliate identity handoff](test-affiliate-identity-handoff.md) — moving a synthetic affiliate to owner control must revoke synthetic consents and align the existing Stripe Test account contact.
 - [Stripe affiliate tax boundary](stripe-affiliate-tax-boundary.md) — tax IDs belong only in Stripe; Test-mode completion uses provided flags plus cleared tax requirements, not a signed W-9 claim.
 - [Noninteractive schema push](noninteractive-schema-push.md) — Drizzle may exit 0 after a non-TTY truncation prompt without applying changes; post-merge setup must fail closed.
+- [Affiliate agreement transition](affiliate-agreement-transition.md) — publication alone does not authorize new commissions or v4 rate automation for older-term partners; judge acceptance at payment time.

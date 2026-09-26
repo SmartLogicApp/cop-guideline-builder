@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import { createHash } from "node:crypto";
 import { db } from "@workspace/db";
 import {
   accounts,
@@ -9,8 +10,9 @@ import {
   affiliateAgreementAcceptances,
   affiliateAgreements,
   affiliateComplianceAuditLog,
+  affiliateRateNoticeDeliveries,
 } from "@workspace/db";
-import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { affiliateActivationEnabled, isBlockedAffiliateActivation } from "../lib/affiliate-activation.js";
 import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementExists, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
@@ -37,6 +39,19 @@ import {
   quarterOf,
   roundUsd,
 } from "../lib/affiliate-commission.js";
+import {
+  affiliateRateNoticeEmail,
+  affiliateRateNoticeCandidates,
+  applyPendingAffiliateRateReductions,
+  dueAffiliateRateNotices,
+  isAffiliateRateNoticeDue,
+  type AffiliateRateNoticeCandidate,
+} from "../lib/affiliate-rate-automation.js";
+import {
+  AFFILIATE_AGREEMENT_V4_VERSION,
+  prepareAffiliateAgreementV4,
+} from "../lib/affiliate-agreement-v4.js";
+import affiliateAgreementV4Source from "../legal/affiliate-partner-agreement-v4-source.txt";
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -241,6 +256,7 @@ router.get("/", requireAnyAdmin, async (req, res) => {
         version: affiliateAgreementAcceptances.agreementVersion,
         acceptedAt: affiliateAgreementAcceptances.acceptedAt,
         signerName: affiliateAgreementAcceptances.signerName,
+        legalBusinessName: affiliateAgreementAcceptances.legalBusinessName,
       }).from(affiliateAgreementAcceptances)
         .innerJoin(affiliateAgreements, and(
           eq(affiliateAgreementAcceptances.agreementVersion, affiliateAgreements.version),
@@ -802,30 +818,61 @@ router.post("/:id/commissions", requireSuperAdmin, async (req, res) => {
   }
 
   try {
-    const [row] = await db.select().from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
-    if (!row) return res.status(404).json({ error: "Affiliate not found" });
-    if (row.status === "pending") {
-      return res.status(409).json({ error: "Pending applications cannot accrue commissions." });
+    const activation = await getAffiliateV4Activation();
+    if (!activation.active) {
+      req.log.warn({ reason: activation.reason }, "Manual commission accrual blocked because affiliate v4 is not activated.");
+      return res.status(409).json({
+        code: "AFFILIATE_V4_NOT_ACTIVATED",
+        error: "Manual commission accrual requires the canonical v4 agreement to be published and activated.",
+        reason: activation.reason,
+      });
     }
 
     const accruedAt = req.body?.accruedAt ? new Date(req.body.accruedAt) : new Date();
-    const ratePct = Number.isFinite(Number(req.body?.ratePct))
-      ? Number(req.body.ratePct)
-      : row.commissionRatePct;
+    const outcome = await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(affiliates)
+        .where(eq(affiliates.id, String(req.params.id)))
+        .for("update")
+        .limit(1);
+      if (!row) return { kind: "not-found" as const };
+      if (row.status === "pending") return { kind: "pending" as const };
+      if (!await hasCurrentAffiliateV4Acceptance(
+        row.id,
+        row.email,
+        row.agreementIdentityEpoch,
+        activation.contentSha256,
+      )) {
+        return { kind: "acceptance-required" as const };
+      }
 
-    const [created] = await db.insert(affiliateCommissions).values({
-      affiliateId: row.id,
-      accountId,
-      qualifyingRevenueUsd: roundUsd(qualifyingRevenueUsd),
-      ratePct,
-      commissionUsd: computeCommissionUsd(qualifyingRevenueUsd, ratePct),
-      status: "pending",
-      accruedAt,
-      payableAt: holdbackEndsAt(accruedAt),
-      source: `manual:${(req as any).clerkUserId ?? "admin"}`,
-    }).returning();
+      const ratePct = Number.isFinite(Number(req.body?.ratePct))
+        ? Number(req.body.ratePct)
+        : row.commissionRatePct;
+      const [created] = await tx.insert(affiliateCommissions).values({
+        affiliateId: row.id,
+        accountId,
+        qualifyingRevenueUsd: roundUsd(qualifyingRevenueUsd),
+        ratePct,
+        commissionUsd: computeCommissionUsd(qualifyingRevenueUsd, ratePct),
+        status: "pending",
+        accruedAt,
+        payableAt: holdbackEndsAt(accruedAt),
+        source: `manual:${(req as any).clerkUserId ?? "admin"}`,
+      }).returning();
+      return { kind: "created" as const, created };
+    });
 
-    return res.status(201).json(created);
+    if (outcome.kind === "not-found") return res.status(404).json({ error: "Affiliate not found" });
+    if (outcome.kind === "pending") {
+      return res.status(409).json({ error: "Pending applications cannot accrue commissions." });
+    }
+    if (outcome.kind === "acceptance-required") {
+      return res.status(409).json({
+        code: "AFFILIATE_V4_ACCEPTANCE_REQUIRED",
+        error: "This affiliate must accept the current canonical v4 agreement before manual commission accrual.",
+      });
+    }
+    return res.status(201).json(outcome.created);
   } catch (error: any) {
     return res.status(500).json({ error: error?.message ?? "Unable to record commission" });
   }
@@ -897,6 +944,493 @@ router.post("/cron/maturity-sweep", requireCronOrSuperAdmin, async (_req, res) =
     return res.status(500).json({ error: error?.message ?? "Maturity sweep failed" });
   }
 });
+
+// ─── POST /api/affiliates/cron/rate-reductions — inactivity + notices ────────
+
+type AffiliateV4Activation =
+  | { active: true; contentSha256: string }
+  | { active: false; reason: string };
+
+async function getAffiliateV4Activation(): Promise<AffiliateV4Activation> {
+  if (process.env.AFFILIATE_REVIEWED_TERMS_VERSION?.trim() !== AFFILIATE_AGREEMENT_V4_VERSION) {
+    return { active: false, reason: "reviewed-version-not-v4" };
+  }
+
+  let canonicalBody: string;
+  try {
+    canonicalBody = prepareAffiliateAgreementV4(affiliateAgreementV4Source);
+  } catch {
+    return { active: false, reason: "canonical-v4-source-invalid" };
+  }
+  const contentSha256 = createHash("sha256").update(canonicalBody).digest("hex");
+  const [published] = await db.select({
+    body: affiliateAgreements.body,
+    contentSha256: affiliateAgreements.contentSha256,
+  }).from(affiliateAgreements)
+    .where(eq(affiliateAgreements.version, AFFILIATE_AGREEMENT_V4_VERSION))
+    .limit(1);
+
+  if (!published) return { active: false, reason: "canonical-v4-not-published" };
+  if (published.body !== canonicalBody || published.contentSha256 !== contentSha256) {
+    return { active: false, reason: "published-v4-not-canonical" };
+  }
+  return { active: true, contentSha256 };
+}
+
+async function hasCurrentAffiliateV4Acceptance(
+  affiliateId: string,
+  email: string,
+  identityEpoch: number,
+  contentSha256: string,
+): Promise<boolean> {
+  const [acceptance] = await db.select({ id: affiliateAgreementAcceptances.id })
+    .from(affiliateAgreementAcceptances)
+    .where(and(
+      eq(affiliateAgreementAcceptances.affiliateId, affiliateId),
+      eq(affiliateAgreementAcceptances.agreementVersion, AFFILIATE_AGREEMENT_V4_VERSION),
+      eq(affiliateAgreementAcceptances.contentSha256, contentSha256),
+      eq(affiliateAgreementAcceptances.signerEmail, sql`lower(${email})`),
+      eq(affiliateAgreementAcceptances.identityEpoch, identityEpoch),
+    ))
+    .limit(1);
+  return Boolean(acceptance);
+}
+
+/**
+ * Applies due inactivity reductions and sends the 15-calendar-day notices for
+ * activity-period, grace-period, and zero-rate restoration deadlines.
+ *
+ * Run once daily with Authorization: Bearer CRON_SECRET (or SESSION_SECRET
+ * fallback). Notices are first attempted only on the UTC calendar day exactly
+ * 15 days before the deadline; definite provider rejections may retry later
+ * while the deadline remains ahead. Set AFFILIATE_RATE_AUTOMATION_SCHEDULER_CONFIGURED=true
+ * only after an external daily invocation is actually configured.
+ */
+router.post("/cron/rate-reductions", requireCronOrSuperAdmin, async (req, res) => {
+  const now = new Date();
+  let affiliatesReduced = 0;
+  let reductionsApplied = 0;
+  let affiliatesSkippedNoCurrentV4Acceptance = 0;
+  let reductionsSkippedNoCurrentV4Acceptance = 0;
+  const schedulerConfigured = process.env.AFFILIATE_RATE_AUTOMATION_SCHEDULER_CONFIGURED === "true";
+  if (!schedulerConfigured) {
+    req.log.warn(
+      { route: "/api/affiliates/cron/rate-reductions" },
+      "Affiliate rate automation has no configured daily scheduler; configure an authenticated daily caller.",
+    );
+  }
+
+  try {
+    const candidates = await db.select({
+      id: affiliates.id,
+      email: affiliates.email,
+      commissionRatePct: affiliates.commissionRatePct,
+      rateEffectiveAt: affiliates.rateEffectiveAt,
+      lastQualifyingReferralAt: affiliates.lastQualifyingReferralAt,
+      agreementIdentityEpoch: affiliates.agreementIdentityEpoch,
+    })
+      .from(affiliates)
+      .where(eq(affiliates.status, "active"));
+
+    const activation = await getAffiliateV4Activation();
+    if (!activation.active) {
+      const reductionsSkippedForV4NotActivated = candidates.reduce((total, affiliate) => (
+        total + (affiliate.rateEffectiveAt
+          ? pendingRateReductions({
+            currentRatePct: affiliate.commissionRatePct,
+            lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
+            rateEffectiveAt: affiliate.rateEffectiveAt,
+          }, now).length
+          : 0)
+      ), 0);
+      const noticesSkippedForV4NotActivated = candidates.reduce((total, affiliate) => (
+        total + (affiliate.rateEffectiveAt
+          ? dueAffiliateRateNotices({
+            currentRatePct: affiliate.commissionRatePct,
+            lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
+            rateEffectiveAt: affiliate.rateEffectiveAt,
+          }, now).length
+          : 0)
+      ), 0);
+      const retryCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const retryableNotices = await db.select({
+        affiliateId: affiliateRateNoticeDeliveries.affiliateId,
+      }).from(affiliateRateNoticeDeliveries).where(and(
+        isNull(affiliateRateNoticeDeliveries.sentAt),
+        isNull(affiliateRateNoticeDeliveries.claimedAt),
+        isNotNull(affiliateRateNoticeDeliveries.lastError),
+        lt(affiliateRateNoticeDeliveries.lastAttemptAt, retryCutoff),
+        gt(affiliateRateNoticeDeliveries.deadlineAt, now),
+      )).limit(500);
+      const activeAffiliateIds = new Set(candidates.map(({ id }) => id));
+      const retryNoticesSkippedForV4NotActivated = retryableNotices
+        .filter(({ affiliateId }) => activeAffiliateIds.has(affiliateId)).length;
+      const totalNoticesSkippedForV4NotActivated =
+        noticesSkippedForV4NotActivated + retryNoticesSkippedForV4NotActivated;
+      req.log.warn({
+        reason: activation.reason,
+        activeAffiliatesSkipped: candidates.length,
+        reductionsSkipped: reductionsSkippedForV4NotActivated,
+        noticesSkipped: totalNoticesSkippedForV4NotActivated,
+      }, "Affiliate v4 is not activated; no inactivity changes or v4 notices were processed.");
+      return res.json({
+        ok: true,
+        schedulerConfigured,
+        v4AutomationActive: false,
+        v4ActivationReason: activation.reason,
+        affiliatesReduced: 0,
+        reductionsApplied: 0,
+        affiliatesSkippedForV4NotActivated: candidates.length,
+        reductionsSkippedForV4NotActivated,
+        noticesMatched: 0,
+        noticesSent: 0,
+        noticesSkippedForV4NotActivated: totalNoticesSkippedForV4NotActivated,
+        noticesRetriedLater: 0,
+        noticesWithUncertainDelivery: 0,
+        noticesAlreadyClaimed: 0,
+        affiliatesSkippedNoCurrentV4Acceptance: 0,
+        reductionsSkippedNoCurrentV4Acceptance: 0,
+        noticesSkippedNoCurrentV4Acceptance: 0,
+        noticesSkippedStaleRetry: 0,
+      });
+    }
+
+    for (const { id } of candidates) {
+      const outcome = await db.transaction(async (tx) => {
+        const [affiliate] = await tx.select().from(affiliates)
+          .where(eq(affiliates.id, id))
+          .for("update")
+          .limit(1);
+        if (!affiliate || affiliate.status !== "active" || !affiliate.rateEffectiveAt) {
+          return { reductions: [], skippedForAcceptance: false, skippedReductionCount: 0 };
+        }
+        const pending = pendingRateReductions({
+          currentRatePct: affiliate.commissionRatePct,
+          lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
+          rateEffectiveAt: affiliate.rateEffectiveAt,
+        }, now);
+        if (!await hasCurrentAffiliateV4Acceptance(
+          affiliate.id,
+          affiliate.email,
+          affiliate.agreementIdentityEpoch,
+          activation.contentSha256,
+        )) {
+          return {
+            reductions: [],
+            skippedForAcceptance: true,
+            skippedReductionCount: pending.length,
+          };
+        }
+
+        const reductions = await applyPendingAffiliateRateReductions({
+          currentRatePct: affiliate.commissionRatePct,
+          lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
+          rateEffectiveAt: affiliate.rateEffectiveAt,
+        }, now, async (reduction) => {
+          await tx.update(affiliates)
+            .set({
+              commissionRatePct: reduction.toPct,
+              rateEffectiveAt: reduction.effectiveAt,
+              updatedAt: now,
+            })
+            .where(eq(affiliates.id, affiliate.id));
+          await tx.insert(affiliateRateChanges).values({
+            affiliateId: affiliate.id,
+            fromPct: reduction.fromPct,
+            toPct: reduction.toPct,
+            reason: "inactivity",
+            note: "Scheduled activity-period inactivity reduction.",
+            changedBy: "system:inactivity-sweep",
+            effectiveAt: reduction.effectiveAt,
+            createdAt: now,
+          });
+        });
+        return { reductions, skippedForAcceptance: false, skippedReductionCount: 0 };
+      });
+
+      if (outcome.skippedForAcceptance) affiliatesSkippedNoCurrentV4Acceptance += 1;
+      reductionsSkippedNoCurrentV4Acceptance += outcome.skippedReductionCount;
+      if (outcome.reductions.length > 0) affiliatesReduced += 1;
+      reductionsApplied += outcome.reductions.length;
+    }
+
+    const noticeResult = await sendDueAffiliateRateNotices(now, req, activation.contentSha256);
+    return res.status(noticeResult.failed > 0 || noticeResult.uncertain > 0 ? 207 : 200).json({
+      ok: noticeResult.failed === 0 && noticeResult.uncertain === 0,
+      schedulerConfigured,
+      v4AutomationActive: true,
+      affiliatesReduced,
+      reductionsApplied,
+      noticesMatched: noticeResult.matched,
+      noticesSent: noticeResult.sent,
+      noticesRetriedLater: noticeResult.failed,
+      noticesWithUncertainDelivery: noticeResult.uncertain,
+      noticesAlreadyClaimed: noticeResult.skipped,
+      affiliatesSkippedForV4NotActivated: 0,
+      reductionsSkippedForV4NotActivated: 0,
+      noticesSkippedForV4NotActivated: 0,
+      affiliatesSkippedNoCurrentV4Acceptance,
+      reductionsSkippedNoCurrentV4Acceptance,
+      noticesSkippedNoCurrentV4Acceptance: noticeResult.skippedNoCurrentV4Acceptance,
+      noticesSkippedStaleRetry: noticeResult.skippedStaleRetry,
+    });
+  } catch (error: any) {
+    req.log.error({ err: error }, "Affiliate rate-reduction cron failed");
+    return res.status(500).json({ error: "Affiliate rate-reduction cron failed." });
+  }
+});
+
+async function claimAffiliateRateNotice(
+  affiliateId: string,
+  recipientEmail: string,
+  candidate: AffiliateRateNoticeCandidate,
+  now: Date,
+): Promise<{ id: string; claimedAt: Date } | null> {
+  return db.transaction(async (tx) => {
+    const [created] = await tx.insert(affiliateRateNoticeDeliveries).values({
+      affiliateId,
+      noticeType: candidate.type,
+      deadlineAt: candidate.deadlineAt,
+      currentRatePct: candidate.currentRatePct,
+      nextRatePct: candidate.nextRatePct,
+      recipientEmail,
+      claimedAt: now,
+      lastAttemptAt: now,
+      attemptCount: 1,
+    }).onConflictDoNothing().returning({
+      id: affiliateRateNoticeDeliveries.id,
+    });
+    if (created) return { id: created.id, claimedAt: now };
+
+    const [existing] = await tx.select().from(affiliateRateNoticeDeliveries)
+      .where(and(
+        eq(affiliateRateNoticeDeliveries.affiliateId, affiliateId),
+        eq(affiliateRateNoticeDeliveries.noticeType, candidate.type),
+        eq(affiliateRateNoticeDeliveries.deadlineAt, candidate.deadlineAt),
+      ))
+      .for("update")
+      .limit(1);
+    if (!existing || existing.sentAt || existing.claimedAt) return null;
+
+    const [claimed] = await tx.update(affiliateRateNoticeDeliveries)
+      .set({
+        recipientEmail,
+        claimedAt: now,
+        lastAttemptAt: now,
+        attemptCount: existing.attemptCount + 1,
+        lastError: null,
+      })
+      .where(and(
+        eq(affiliateRateNoticeDeliveries.id, existing.id),
+        isNull(affiliateRateNoticeDeliveries.sentAt),
+        isNull(affiliateRateNoticeDeliveries.claimedAt),
+      ))
+      .returning({ id: affiliateRateNoticeDeliveries.id });
+    return claimed ? { id: claimed.id, claimedAt: now } : null;
+  });
+}
+
+async function sendDueAffiliateRateNotices(
+  now: Date,
+  req: Request,
+  contentSha256: string,
+): Promise<{
+  matched: number;
+  sent: number;
+  failed: number;
+  uncertain: number;
+  skipped: number;
+  skippedNoCurrentV4Acceptance: number;
+  skippedStaleRetry: number;
+}> {
+  const candidates = await db.select({
+    id: affiliates.id,
+    commissionRatePct: affiliates.commissionRatePct,
+    rateEffectiveAt: affiliates.rateEffectiveAt,
+    lastQualifyingReferralAt: affiliates.lastQualifyingReferralAt,
+  }).from(affiliates).where(eq(affiliates.status, "active"));
+
+  const result = {
+    matched: 0,
+    sent: 0,
+    failed: 0,
+    uncertain: 0,
+    skipped: 0,
+    skippedNoCurrentV4Acceptance: 0,
+    skippedStaleRetry: 0,
+  };
+  for (const affiliate of candidates) {
+    if (!affiliate.rateEffectiveAt) continue;
+    const due = dueAffiliateRateNotices({
+      currentRatePct: affiliate.commissionRatePct,
+      rateEffectiveAt: affiliate.rateEffectiveAt,
+      lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
+    }, now);
+    for (const candidate of due) {
+      result.matched += 1;
+      await deliverAffiliateRateNotice(
+        affiliate.id, candidate, now, req, contentSha256, false, null, result,
+      );
+    }
+  }
+
+  // A definite provider rejection clears its claim. Retry those records on a
+  // later daily run while the deadline is still in the future. A 24-hour
+  // backoff avoids retrying a rejected message repeatedly in one day's runs.
+  const retryCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const retryable = await db.select().from(affiliateRateNoticeDeliveries).where(and(
+    isNull(affiliateRateNoticeDeliveries.sentAt),
+    isNull(affiliateRateNoticeDeliveries.claimedAt),
+    isNotNull(affiliateRateNoticeDeliveries.lastError),
+    lt(affiliateRateNoticeDeliveries.lastAttemptAt, retryCutoff),
+    gt(affiliateRateNoticeDeliveries.deadlineAt, now),
+  )).limit(500);
+  for (const notice of retryable) {
+    result.matched += 1;
+    await deliverAffiliateRateNotice(notice.affiliateId, {
+      type: notice.noticeType as AffiliateRateNoticeCandidate["type"],
+      deadlineAt: notice.deadlineAt,
+      currentRatePct: notice.currentRatePct,
+      nextRatePct: notice.nextRatePct,
+    }, now, req, contentSha256, true, notice.id, result);
+  }
+
+  return result;
+}
+
+async function deliverAffiliateRateNotice(
+  affiliateId: string,
+  expectedCandidate: AffiliateRateNoticeCandidate,
+  now: Date,
+  req: Request,
+  contentSha256: string,
+  isRetry: boolean,
+  retryDeliveryId: string | null,
+  result: {
+    matched: number;
+    sent: number;
+    failed: number;
+    uncertain: number;
+    skipped: number;
+    skippedNoCurrentV4Acceptance: number;
+    skippedStaleRetry: number;
+  },
+): Promise<void> {
+  const [affiliate] = await db.select().from(affiliates).where(and(
+    eq(affiliates.id, affiliateId),
+    eq(affiliates.status, "active"),
+  )).limit(1);
+  if (!affiliate || !affiliate.email.trim()) {
+    if (isRetry && retryDeliveryId) {
+      await suppressAffiliateRateNoticeRetry(retryDeliveryId, now, "Affiliate is no longer active or has no email.");
+      result.skippedStaleRetry += 1;
+    } else {
+      result.skipped += 1;
+    }
+    return;
+  }
+
+  const currentCandidates = affiliate.rateEffectiveAt
+    ? affiliateRateNoticeCandidates({
+      currentRatePct: affiliate.commissionRatePct,
+      lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
+      rateEffectiveAt: affiliate.rateEffectiveAt,
+    })
+    : [];
+  const currentCandidate = currentCandidates.find((candidate) => (
+    candidate.type === expectedCandidate.type
+      && candidate.deadlineAt.getTime() === expectedCandidate.deadlineAt.getTime()
+      && candidate.currentRatePct === expectedCandidate.currentRatePct
+      && candidate.nextRatePct === expectedCandidate.nextRatePct
+      && (isRetry ? candidate.deadlineAt > now : isAffiliateRateNoticeDue(candidate.deadlineAt, now))
+  ));
+  if (!currentCandidate) {
+    if (isRetry && retryDeliveryId) {
+      await suppressAffiliateRateNoticeRetry(retryDeliveryId, now, "Notice no longer matches the affiliate's current rate clock.");
+      result.skippedStaleRetry += 1;
+    } else {
+      result.skipped += 1;
+    }
+    return;
+  }
+
+  if (!await hasCurrentAffiliateV4Acceptance(
+    affiliate.id,
+    affiliate.email,
+    affiliate.agreementIdentityEpoch,
+    contentSha256,
+  )) {
+    if (isRetry && retryDeliveryId) {
+      await suppressAffiliateRateNoticeRetry(retryDeliveryId, now, "Current v4 acceptance is missing or no longer matches the affiliate identity.");
+      result.skippedStaleRetry += 1;
+    }
+    result.skippedNoCurrentV4Acceptance += 1;
+    return;
+  }
+
+  const recipientEmail = affiliate.email;
+  const candidate = currentCandidate;
+  const claim = await claimAffiliateRateNotice(affiliateId, recipientEmail, candidate, now);
+  if (!claim) {
+    result.skipped += 1;
+    return;
+  }
+
+  const message = affiliateRateNoticeEmail(candidate);
+  const delivery = await sendViaResend({
+    to: recipientEmail,
+    subject: message.subject,
+    text: message.text,
+    html: message.html,
+  });
+  if (delivery.sent) {
+    await db.update(affiliateRateNoticeDeliveries)
+      .set({ sentAt: new Date(), lastError: null })
+      .where(and(
+        eq(affiliateRateNoticeDeliveries.id, claim.id),
+        eq(affiliateRateNoticeDeliveries.claimedAt, claim.claimedAt),
+        isNull(affiliateRateNoticeDeliveries.sentAt),
+      ));
+    result.sent += 1;
+    return;
+  }
+
+  const error = delivery.error.slice(0, 1000);
+  const definiteRejection = delivery.status !== undefined && delivery.status < 500;
+  await db.update(affiliateRateNoticeDeliveries)
+    .set({
+      ...(definiteRejection ? { claimedAt: null } : {}),
+      lastError: error,
+    })
+    .where(and(
+      eq(affiliateRateNoticeDeliveries.id, claim.id),
+      eq(affiliateRateNoticeDeliveries.claimedAt, claim.claimedAt),
+      isNull(affiliateRateNoticeDeliveries.sentAt),
+    ));
+  if (definiteRejection) {
+    result.failed += 1;
+    req.log.warn({ noticeType: candidate.type, status: delivery.status }, "Affiliate rate notice was rejected and can be retried.");
+  } else {
+    // An absent status or HTTP 5xx leaves delivery uncertain. Preserve the
+    // claim rather than risk a duplicate if Resend accepted before failing.
+    result.uncertain += 1;
+    req.log.error({ noticeType: candidate.type, status: delivery.status }, "Affiliate rate notice delivery is uncertain; its claim remains locked.");
+  }
+}
+
+async function suppressAffiliateRateNoticeRetry(
+  deliveryId: string,
+  now: Date,
+  reason: string,
+): Promise<void> {
+  await db.update(affiliateRateNoticeDeliveries)
+    .set({ claimedAt: now, lastError: `Suppressed: ${reason}` })
+    .where(and(
+      eq(affiliateRateNoticeDeliveries.id, deliveryId),
+      isNull(affiliateRateNoticeDeliveries.sentAt),
+      isNull(affiliateRateNoticeDeliveries.claimedAt),
+    ));
+}
 
 // ─── GET /api/affiliates/payouts/preview?quarter=YYYY-Qn (§8) ────────────────
 

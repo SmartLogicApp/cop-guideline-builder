@@ -260,6 +260,7 @@ router.post("/portal/agreement-accept", requireAffiliate, async (req: any, res) 
       agreementVersion: agreement.version,
       contentSha256: agreement.contentSha256,
       signerName,
+      legalBusinessName: affiliate.companyName,
       signerEmail: affiliate.email.toLowerCase(),
       identityEpoch: affiliate.agreementIdentityEpoch,
       acceptedAt: now,

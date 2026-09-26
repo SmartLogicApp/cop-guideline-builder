@@ -1,0 +1,1019 @@
+CMS COMPLIANCE GUARDIAN, LLC
+
+AFFILIATE PARTNER AGREEMENT
+
+CMS Compliance Guardian Suite Platform | CoP Guideline Builder
+
+Version 4.0
+
+Effective Date: The date of the Affiliate's electronic acceptance of this Agreement
+
+This Affiliate Partner Agreement (the “Agreement”) is a binding agreement between CMS Compliance Guardian, LLC, a Florida limited liability company (“CMS Compliance Guardian,” “Company,” “we,” “us,” or “our”), and the individual or entity enrolling in the CMS Compliance Guardian Affiliate Program (“Affiliate,” “you,” or “your”).
+
+The Affiliate Program permits approved consultants, auditors, healthcare consultants, compliance professionals, accreditation consultants, regulatory professionals, and other qualified referral partners to refer eligible customers to CMS Compliance Guardian and, subject to this Agreement, earn commissions on qualifying subscriptions attributable to those referrals.
+
+By electronically accepting this Agreement, completing the Affiliate enrollment process, or participating in the Affiliate Program, you acknowledge that you have read, understood, and agreed to be bound by this Agreement.
+
+
+
+1. AFFILIATE PROGRAM
+
+CMS Compliance Guardian operates an affiliate referral program through which approved Affiliates may introduce eligible healthcare organizations and other qualified customers to the CMS Compliance Guardian Suite Platform and related services.
+
+The Affiliate Program is intended primarily for professionals and organizations that work with healthcare facilities and organizations, including compliance consultants, healthcare consultants, auditors, accreditation consultants, regulatory professionals, and similar professional referral partners.
+
+Participation in the Affiliate Program does not create an employment, agency, partnership, joint venture, franchise, fiduciary, or other representative relationship between Affiliate and CMS Compliance Guardian.
+
+Affiliate is an independent contractor and is solely responsible for the manner in which Affiliate conducts its business and performs its consulting or professional activities.
+
+
+
+2. ELIGIBILITY AND APPROVAL
+
+Participation in the Affiliate Program is subject to CMS Compliance Guardian's approval.
+
+To participate, Affiliate must:
+
+1.	Be at least eighteen (18) years old and legally capable of entering into a binding agreement;
+
+2.	Provide accurate, complete, and current enrollment information;
+
+3.	Accept this Agreement electronically;
+
+4.	Acknowledge the CMS Compliance Guardian Privacy Policy;
+
+5.	Provide required tax information, including a completed IRS Form W-9 or other applicable tax documentation;
+
+6.	Complete Stripe Connect onboarding and maintain an eligible payout account;
+
+7.	Acknowledge applicable Federal Trade Commission (“FTC”) affiliate disclosure requirements;
+
+8.	Acknowledge and comply with CMS Compliance Guardian's marketing and brand guidelines; and
+
+9.	Receive approval from an authorized CMS Compliance Guardian administrator.
+
+CMS Compliance Guardian may approve or reject an Affiliate application in its reasonable discretion.
+
+Completion of an enrollment application does not itself guarantee approval, participation, referrals, commissions, or future eligibility.
+
+CMS Compliance Guardian may establish additional reasonable enrollment, verification, security, tax, payment, compliance, or program requirements from time to time.
+
+
+
+3. TAX AND IDENTITY INFORMATION
+
+Affiliate understands and agrees that CMS Compliance Guardian may require tax and identity information necessary to establish Affiliate's eligibility for participation and payment of commissions.
+
+This information may include a legal name, business name, address, Social Security number (“SSN”), Employer Identification Number (“EIN”), taxpayer identification number, entity information, beneficial-owner information, identity-verification information, and other information reasonably required for tax reporting, payment processing, identity verification, fraud prevention, sanctions screening, or legal and regulatory compliance.
+
+Tax and identity information used for payout processing may be collected, verified, stored, and processed through Stripe Connect or other payment, tax, identity-verification, fraud-prevention, or compliance service providers designated by CMS Compliance Guardian.
+
+Where reasonably available, CMS Compliance Guardian may direct Affiliate to provide sensitive tax or identity information directly to the applicable payment or verification provider rather than to CMS Compliance Guardian.
+
+Affiliate is responsible for providing accurate tax and identity information and promptly updating such information when necessary.
+
+Affiliate is solely responsible for all federal, state, local, and other tax obligations arising from commissions received through the Affiliate Program.
+
+CMS Compliance Guardian does not provide tax, legal, accounting, investment, or financial advice.
+
+
+
+4. STRIPE CONNECT AND PAYOUTS
+
+Affiliate must complete all required Stripe Connect onboarding and maintain an active and eligible payout account before commissions may be paid.
+
+Affiliate authorizes CMS Compliance Guardian to use Stripe Connect or another designated payment provider to facilitate commission payments.
+
+Affiliate acknowledges that Stripe and other payment providers may independently perform identity verification, tax verification, sanctions screening, fraud screening, banking verification, account review, payment processing, and other compliance functions.
+
+CMS Compliance Guardian does not control the independent requirements, decisions, policies, availability, or actions of Stripe, financial institutions, payment networks, identity-verification providers, tax authorities, or other third-party payment providers.
+
+If Stripe or another payment provider determines that Affiliate is unable to receive a payout, CMS Compliance Guardian may delay, suspend, or withhold the applicable payout until the issue is resolved.
+
+Affiliate agrees to cooperate with reasonable requests necessary to establish or maintain an eligible payout account.
+
+
+
+The Commission Eligibility and Commission Rate Schedule set forth below is incorporated into and forms an integral part of this Agreement. If a provision in this Agreement specifically addresses commission eligibility, commission rates, attribution, activity requirements, or commission payments, the detailed provisions in Sections 5 through 17 control with respect to those subjects.
+
+5. COMMISSION ELIGIBILITY AND COMMISSION RATE SCHEDULE
+
+Subject to this Agreement, an approved and eligible Affiliate may earn commissions on qualifying subscription revenue actually paid to CMS Compliance Guardian by a Qualifying Customer properly attributed to Affiliate.
+
+A commission is earned only on amounts actually received and retained by CMS Compliance Guardian from the applicable Qualifying Customer. No commission is earned on unpaid invoices, failed payments, refunds, credits, chargebacks, payment reversals, taxes collected from customers, payment-processing fees, or amounts otherwise not retained by CMS Compliance Guardian.
+
+The Affiliate's commission rate is determined under the Commission Rate Schedule in this Section.
+
+The Affiliate's initial commission rate will be either:
+
+1. Twenty percent (20%); or
+
+2. Ten percent (10%),
+
+as determined by an authorized CMS Compliance Guardian administrator and recorded in the Company's Affiliate Program system when the Affiliate is approved and enrolled.
+
+The available commission rates under this Agreement are limited to:
+
+•  Twenty percent (20%)
+
+•  Ten percent (10%)
+
+•  Zero percent (0%)
+
+No other commission rate applies unless separately established by CMS Compliance Guardian in writing or through its authorized Affiliate administration system.
+
+At the standard monthly subscription price of $299.00, a twenty-percent (20%) commission produces a commission of $59.80 on qualifying monthly subscription revenue before applicable adjustments, refunds, chargebacks, credits, taxes, reversals, or other exclusions.
+
+The applicable commission percentage is applied to qualifying subscription revenue actually received and retained by CMS Compliance Guardian.
+
+Affiliate does not earn commissions on:
+
+1.	unpaid accounts;
+
+2.	abandoned checkouts;
+
+3.	free accounts;
+
+4.	trial accounts unless and until they become qualifying paid subscriptions;
+
+5.	fraudulent transactions;
+
+6.	test accounts;
+
+7.	duplicate accounts;
+
+8.	refunded amounts;
+
+9.	chargebacks;
+
+10.	payment reversals;
+
+11.	taxes collected from customers;
+
+12.	amounts not actually received and retained by CMS Compliance Guardian;
+
+13.	amounts attributable to unauthorized or prohibited use;
+
+14.	subscriptions that do not satisfy applicable attribution requirements;
+
+15.	transactions resulting from prohibited manipulation or artificial activity; or
+
+16.	other amounts expressly excluded under this Agreement.
+
+CMS Compliance Guardian may correct, reverse, offset, or withhold a commission when the underlying customer payment is refunded, reversed, charged back, determined to be fraudulent, incorrectly attributed, or otherwise ceases to qualify.
+
+
+
+6. QUALIFYING CUSTOMERS AND QUALIFYING REFERRALS
+
+For purposes of this Agreement, a "Qualifying Customer" means a customer or customer account that:
+
+1.	becomes a paying customer of CMS Compliance Guardian through an authorized referral method associated with Affiliate;
+
+2.	is properly attributed to Affiliate in CMS Compliance Guardian's systems;
+
+3.	generates an amount on which a commission is actually payable to Affiliate; and
+
+4.	satisfies all other applicable requirements of this Agreement.
+
+A "Qualifying Referral" means a referral that results in a Qualifying Customer and constitutes the first time that particular customer or customer account has generated a commission for that Affiliate.
+
+A customer does not become a new Qualifying Referral merely because the customer:
+
+•  cancels;
+
+•  changes subscription status;
+
+•  changes payment information;
+
+•  creates a substantially duplicate account;
+
+•  uses a different referral link;
+
+•  changes contact information; or
+
+•  later resubscribes under circumstances that, in substance, represent the same customer relationship.
+
+CMS Compliance Guardian may reasonably determine whether a referral constitutes a Qualifying Referral based on its customer, billing, subscription, referral, attribution, and account records.
+
+A Qualifying Referral must represent a genuine new customer relationship and may not be manufactured solely to satisfy Affiliate's activity requirement or obtain or preserve a higher commission rate.
+
+
+
+7. COMMISSION RATE ACTIVITY REQUIREMENT
+
+To maintain an ongoing commission rate, Affiliate must generate at least one new Qualifying Referral during each applicable activity period.
+
+For purposes of this Agreement, Affiliate's current activity period is anchored to the later of:
+
+•  the date of Affiliate's most recent new Qualifying Referral; or
+
+•  the effective date of Affiliate's then-current commission rate.
+
+Each activity period consists of twelve (12) months.
+
+Following expiration of the applicable twelve-month activity period, Affiliate receives an additional sixty (60) calendar-day grace period during which Affiliate may generate a new Qualifying Referral without a reduction in the then-current commission rate.
+
+A new Qualifying Referral during the applicable activity period or sixty-day grace period satisfies the activity requirement and resets the applicable activity-period clock as provided in this Agreement.
+
+A customer returning after cancellation or inactivity does not constitute a new Qualifying Referral merely because the customer resumes paying for the Service.
+
+
+
+8. REDUCTION FROM TWENTY PERCENT TO TEN PERCENT
+
+If Affiliate is receiving a twenty-percent (20%) commission rate and does not generate a new Qualifying Referral during the applicable twelve-month activity period or during the subsequent sixty-day grace period, Affiliate's commission rate will decrease prospectively from:
+
+20% → 10%
+
+The reduction becomes effective upon expiration of the applicable sixty-day grace period.
+
+Upon the effective date of the ten-percent (10%) commission rate, a new twelve-month activity period begins for purposes of determining whether Affiliate maintains or changes its ten-percent (10%) rate.
+
+The reduction from twenty percent (20%) to ten percent (10%) does not, by itself, eliminate commissions on properly attributed existing customers.
+
+Existing customer commissions remain subject to all other requirements, exclusions, customer attribution rules, payment requirements, and eligibility requirements of this Agreement.
+
+
+
+9. REDUCTION FROM TEN PERCENT TO ZERO PERCENT
+
+If Affiliate is receiving a ten-percent (10%) commission rate and does not generate a new Qualifying Referral during the applicable twelve-month activity period or during the subsequent sixty-day grace period, Affiliate's commission rate will decrease prospectively from:
+
+10% → 0%
+
+The reduction becomes effective upon expiration of the applicable sixty-day grace period.
+
+Upon reaching a zero-percent (0%) commission rate, Affiliate will not earn commissions on new subscription payments unless and until Affiliate's commission rate is restored under this Agreement or CMS Compliance Guardian separately approves a different commission rate in writing.
+
+The reduction to zero percent does not retroactively eliminate commissions that were properly earned and payable before the effective date of the zero-percent rate.
+
+
+
+10. RESTORATION TO TWENTY PERCENT
+
+If Affiliate's commission rate is ten percent (10%), a new Qualifying Referral will immediately restore Affiliate's commission rate to twenty percent (20%), provided Affiliate otherwise remains eligible under this Agreement.
+
+Upon restoration to twenty percent (20%), a new twelve-month activity period begins measured from the date of the new Qualifying Referral, followed by the applicable sixty-day grace period.
+
+If Affiliate's commission rate is zero percent (0%), a new Qualifying Referral generated within sixty (60) calendar days after the effective date of the zero-percent rate will restore Affiliate's commission rate to twenty percent (20%).
+
+Upon restoration from zero percent to twenty percent, a new twelve-month activity period begins measured from the date of the Qualifying Referral.
+
+The automatic restoration opportunity from zero percent to twenty percent expires at the end of the sixty-day restoration period.
+
+After expiration of that sixty-day period, restoration from a zero-percent rate is not automatic and requires separate approval by CMS Compliance Guardian.
+
+CMS Compliance Guardian may approve, deny, or condition any such restoration in its reasonable discretion.
+
+
+
+11. COMMISSION RATE NOTICES
+
+CMS Compliance Guardian intends to provide reasonable advance notice of an upcoming commission-rate change through the email address associated with Affiliate's account, the Affiliate dashboard, or another reasonable electronic communication method.
+
+The Company may provide notice:
+
+•  before the applicable twelve-month activity period expires;
+
+•  before the applicable sixty-day grace period expires; and
+
+•  before the sixty-day automatic restoration period following a reduction to zero percent expires.
+
+Affiliate is responsible for maintaining accurate contact information and monitoring its Affiliate account and applicable communications.
+
+Failure to receive, access, or review a notice does not prevent a commission-rate change that otherwise occurs in accordance with this Agreement.
+
+
+
+12. CUSTOMER CHOICE AND AFFILIATE ATTRIBUTION
+
+Customers remain free to select, change, or discontinue working with any consultant, compliance professional, Affiliate, or other service provider.
+
+CMS Compliance Guardian does not require a customer to remain associated with a particular Affiliate.
+
+Customer attribution does not create an ownership interest in the customer.
+
+If a Qualifying Customer changes from one Affiliate to another Affiliate through the Company's authorized attribution or enrollment process, CMS Compliance Guardian may assign future commission eligibility to the new Affiliate in accordance with its records and applicable Affiliate Program rules.
+
+An Affiliate is not entitled to commissions on the same customer subscription for periods during which another Affiliate is properly entitled to receive those commissions.
+
+CMS Compliance Guardian will not knowingly pay duplicate commissions to multiple Affiliates on the same customer subscription for the same period.
+
+A customer may be required to cancel, discontinue, or otherwise terminate its existing Affiliate attribution and separately enroll or re-enroll through another Affiliate's authorized referral process in order to establish a new Affiliate attribution, as determined by the Company's then-current systems and procedures.
+
+A customer's legitimate decision to select a different Affiliate does not, by itself, constitute manipulation of the Affiliate Program.
+
+
+
+13. CUSTOMER DEPARTURE, RETURN, AND REACTIVATION
+
+If an attributed customer terminates or stops paying for its subscription:
+
+1.	historical attribution remains recorded;
+
+2.	no commission accrues during any period in which the customer is not paying the Company; and
+
+3.	properly earned commissions otherwise payable before the customer's inactivity remain subject to this Agreement.
+
+If the customer returns within sixty (60) calendar days after cancellation or the applicable inactive date, the original Affiliate may resume receiving commissions on the customer's actual paid subscription if:
+
+1.	the customer remains properly attributed to the original Affiliate;
+
+2.	the original Affiliate remains eligible under this Agreement; and
+
+3.	the customer has not been properly reassigned to another Affiliate.
+
+No commission is payable for any period during which the customer is not actually paying CMS Compliance Guardian.
+
+A returning customer does not constitute a new Qualifying Referral for purposes of satisfying Affiliate's activity requirement when that customer previously generated a commission for that Affiliate.
+
+If the customer leaves CMS Compliance Guardian and is subsequently brought back through a new Qualifying Referral from a different Affiliate, the new Affiliate may receive commissions going forward after the new attribution becomes effective.
+
+The former Affiliate will not continue receiving commissions for the same customer subscription period after the new Affiliate's attribution becomes effective.
+
+Historical attribution will remain recorded for audit, accounting, dispute-resolution, fraud-prevention, and recordkeeping purposes.
+
+
+
+14. NO ARTIFICIAL CUSTOMER ACTIVITY OR ATTRIBUTION MANIPULATION
+
+Affiliate must not directly or indirectly encourage, instruct, induce, arrange, or coordinate a customer cancellation, re-enrollment, reactivation, account closure, subscription change, or similar transaction primarily for the purpose of:
+
+•  satisfying Affiliate's activity requirement;
+
+•  preserving a commission rate;
+
+•  extending a commission period;
+
+•  manipulating customer attribution;
+
+•  creating an artificial Qualifying Referral;
+
+•  obtaining or restoring a higher commission rate;
+
+•  avoiding a commission-rate reduction;
+
+•  creating duplicate commissions; or
+
+•  otherwise circumventing or manipulating the Affiliate Program.
+
+Affiliate must not ask, pressure, compensate, induce, or otherwise encourage a customer to cancel and re-enroll merely to preserve Affiliate's eligibility, create a new Qualifying Referral, change attribution improperly, or preserve commissions.
+
+CMS Compliance Guardian may disregard or reject an attempted referral, re-enrollment, account creation, cancellation, or resubscription arrangement that it reasonably determines is designed primarily to manipulate attribution, reset an activity period, create duplicate commissions, or circumvent the Commission Rate Schedule.
+
+The Company may consider substantially similar customer identities, account information, billing information, contact information, business relationships, subscription history, and other relevant records when determining whether activity represents a genuine new customer relationship.
+
+A legitimate customer decision to cancel, return, change consultants, or select another Affiliate is not prohibited.
+
+
+
+15. NO DOUBLE COMMISSION; ATTRIBUTION CONTROLS
+
+Only one Affiliate may receive commission credit for a particular customer subscription for any particular period unless CMS Compliance Guardian expressly authorizes otherwise in writing.
+
+Affiliate may not split, transfer, assign, duplicate, or otherwise manipulate customer attribution for the purpose of creating multiple commission claims.
+
+CMS Compliance Guardian's customer, billing, referral, attribution, subscription, and payment records will control the determination of which Affiliate is eligible for commissions, subject to correction of demonstrated system or recordkeeping errors.
+
+If more than one Affiliate claims the same customer, CMS Compliance Guardian may determine attribution using referral records, qualifying referral events, customer enrollment records, subscription records, timestamps, referral identifiers, account records, and other relevant information available to the Company.
+
+CMS Compliance Guardian may make reasonable attribution adjustments when necessary to correct:
+
+•  duplicate attribution;
+
+•  fraud;
+
+•  abuse;
+
+•  manipulation;
+
+•  technical errors;
+
+•  administrative errors;
+
+•  unauthorized referral activity; or
+
+•  other circumstances that would otherwise result in an improper commission payment.
+
+
+
+16. COMMISSION PAYMENT, PAYOUT THRESHOLD, AND ANNUAL PREPAID SUBSCRIPTIONS
+
+Commissions are payable only after the applicable customer payment has been successfully processed and retained by CMS Compliance Guardian and all applicable Affiliate eligibility requirements have been satisfied.
+
+Affiliate must accumulate at least $100.00 in payable commissions before becoming eligible for a payout, unless CMS Compliance Guardian expressly establishes a different minimum in writing.
+
+Amounts below the applicable payout threshold will accumulate until the threshold is reached, subject to Affiliate remaining eligible under this Agreement.
+
+Pending, disputed, reversed, refunded, charged-back, or otherwise non-payable amounts do not count toward the payout threshold.
+
+CMS Compliance Guardian may delay, withhold, or adjust payment of commissions subject to a refund period, chargeback, payment dispute, fraud review, attribution dispute, compliance review, tax verification, or other reasonable verification process.
+
+Annual Prepaid Subscriptions
+
+If a Qualifying Customer purchases an annual subscription and pays the full annual subscription amount in advance, Affiliate's total commission attributable to that annual subscription will be calculated using the applicable commission rate and divided into four (4) quarterly commission amounts for payment purposes.
+
+The quarterly commission amounts will be administered through the Company's payment system and remain subject to Affiliate's continuing eligibility, proper customer attribution, the Company's retention of the underlying customer payment, and all other requirements of this Agreement.
+
+If an annual subscription is refunded, canceled, charged back, reversed, or otherwise results in CMS Compliance Guardian not retaining the applicable customer payment, the Company may adjust unpaid or future commission amounts accordingly and may recover or offset previously paid commissions to the extent permitted by applicable law and this Agreement.
+
+
+
+17. COMMISSION CONDITIONS, RECORDS, AND ADMINISTRATIVE ADJUSTMENTS
+
+No commission payment will be issued unless all applicable Affiliate onboarding and eligibility requirements have been completed and remain satisfied.
+
+These requirements include, as applicable:
+
+•  acceptance of the then-current Affiliate Partner Agreement;
+
+•  acknowledgment of the CMS Compliance Guardian Privacy Policy;
+
+•  submission and verification of required tax information, including a completed IRS Form W-9 or applicable successor documentation;
+
+•  completion of Stripe Connect or another Company-approved payment-account onboarding process;
+
+•  completion of required Affiliate disclosure acknowledgments, including applicable FTC requirements;
+
+•  acceptance of applicable marketing, advertising, and brand guidelines;
+
+•  approval of the Affiliate account by an authorized CMS Compliance Guardian administrator;
+
+•  proper customer attribution;
+
+•  an active qualifying customer subscription;
+
+•  actual receipt and retention by CMS Compliance Guardian of the underlying qualifying subscription payment; and
+
+•  satisfaction of the applicable minimum payout threshold.
+
+Tax and identity information may be collected, verified, stored, and processed through Stripe Connect or another designated payment provider. To the extent Stripe Connect is used for this purpose, Stripe may independently process required identity, tax, banking, and payment information in accordance with its applicable terms and privacy practices.
+
+Commission Records
+
+CMS Compliance Guardian will maintain records reasonably sufficient to administer customer attribution, Qualifying Referrals, commission rates, activity periods, grace periods, rate changes, restoration events, commission adjustments, and commission payments.
+
+The Company's internal customer, subscription, billing, referral, attribution, and payment records may be used to determine commission eligibility and amounts.
+
+Administrative Rate Adjustments
+
+CMS Compliance Guardian may make prospective administrative adjustments to an Affiliate's commission rate or commission records when reasonably necessary to:
+
+•  correct a clerical, technical, or administrative error;
+
+•  implement an approved exception;
+
+•  correct an attribution error;
+
+•  address fraud, abuse, or manipulation;
+
+•  resolve a documented customer-attribution dispute; or
+
+•  implement an authorized change to Affiliate's program status.
+
+The Company will maintain appropriate administrative records of material commission-rate adjustments, including the effective date and reason for the adjustment.
+
+No Vested Right to a Particular Future Rate
+
+Except for commissions that have already been properly earned and are payable under this Agreement, Affiliate does not acquire a vested right to receive any particular commission rate indefinitely.
+
+The Company may prospectively modify the Affiliate Program, including commission rates, eligibility requirements, attribution procedures, payment procedures, and other program terms, subject to applicable law and the provisions governing modification of this Agreement.
+
+Any such modification will not retroactively eliminate commissions properly earned before the applicable effective date, except where an adjustment is permitted under this Agreement because of refunds, chargebacks, payment reversals, duplicate payments, fraud, attribution errors, clerical or technical errors, or similar circumstances.
+
+Continuing Eligibility
+
+A commission rate does not independently establish a right to continued participation in the Affiliate Program.
+
+All commissions remain subject to Affiliate's continued compliance with this Agreement, applicable law, the Company's marketing and brand requirements, and all other applicable Affiliate Program requirements.
+
+18. MARKETING AND REPRESENTATIONS
+
+Affiliate may promote the Service only in a truthful, lawful, professional, and non-misleading manner.
+
+Affiliate must:
+
+•  accurately describe the Service;
+
+•  accurately identify Affiliate's relationship with CMS Compliance Guardian;
+
+•  make all required affiliate and material-connection disclosures;
+
+•  comply with applicable FTC requirements;
+
+•  comply with applicable federal and state advertising and consumer-protection laws;
+
+•  follow CMS Compliance Guardian's marketing and brand guidelines; and
+
+•  avoid making guarantees concerning survey outcomes, regulatory compliance, accreditation, reimbursement, certification, licensure, patient outcomes, or other results.
+
+Affiliate may not represent that Affiliate is an employee, officer, agent, legal representative, or authorized spokesperson of CMS Compliance Guardian unless expressly authorized in writing.
+
+Affiliate may not make promises, warranties, guarantees, legal representations, regulatory representations, or other statements on behalf of CMS Compliance Guardian that CMS Compliance Guardian has not authorized.
+
+
+
+19. FTC AND AFFILIATE DISCLOSURES
+
+Affiliate must clearly and conspicuously disclose the Affiliate relationship whenever required by applicable law, regulation, platform rule, or FTC guidance.
+
+Affiliate must not conceal, obscure, or misrepresent the existence of the Affiliate relationship.
+
+Where required, Affiliate must disclose that Affiliate may receive compensation or a commission when a qualifying customer purchases or subscribes to the Service through Affiliate's referral.
+
+Affiliate is responsible for ensuring that its promotional practices comply with applicable advertising, endorsement, disclosure, and truth-in-advertising requirements.
+
+Affiliate must not make deceptive, misleading, unsubstantiated, or materially incomplete claims concerning CMS Compliance Guardian, the Service, the Affiliate Program, CMS requirements, regulatory compliance, survey readiness, accreditation, certification, reimbursement, or expected results.
+
+
+
+20. BRAND AND INTELLECTUAL PROPERTY
+
+CMS Compliance Guardian grants Affiliate a limited, revocable, nonexclusive, nontransferable right during Affiliate's approved participation in the Affiliate Program to use approved CMS Compliance Guardian names, logos, trademarks, and marketing materials solely for authorized promotion of the Service.
+
+Affiliate may not modify, distort, register, copy, imitate, or use CMS Compliance Guardian intellectual property in a manner that creates confusion regarding ownership, affiliation, endorsement, sponsorship, or authorization.
+
+Affiliate may not register domain names, social-media handles, business names, advertisements, or other identifiers incorporating CMS Compliance Guardian trademarks without prior written authorization.
+
+CMS Compliance Guardian may revoke marketing or trademark permissions at any time.
+
+All rights not expressly granted remain with CMS Compliance Guardian.
+
+
+
+21. PROHIBITED CONDUCT
+
+Affiliate must not:
+
+•  engage in fraud or deceptive marketing;
+
+•  create false referrals;
+
+•  create duplicate or fictitious customer accounts;
+
+•  use stolen or unauthorized payment information;
+
+•  manipulate attribution;
+
+•  engage in self-referrals designed to generate commissions improperly;
+
+•  artificially generate clicks, leads, registrations, or subscriptions;
+
+•  interfere with another Affiliate's legitimate referral;
+
+•  impersonate CMS Compliance Guardian;
+
+•  make unauthorized legal, regulatory, medical, clinical, compliance, or professional representations;
+
+•  encourage customers to violate their agreements with CMS Compliance Guardian;
+
+•  use spam, malware, deceptive redirects, or unlawful automated communications;
+
+•  use unauthorized paid search, advertising, domain, or keyword practices involving CMS Compliance Guardian trademarks;
+
+•  engage in practices intended to circumvent attribution controls;
+
+•  violate applicable law or regulation; or
+
+•  engage in conduct reasonably likely to harm CMS Compliance Guardian's reputation, systems, customers, or business relationships.
+
+
+
+22. CUSTOMER RELATIONSHIPS
+
+Affiliate acknowledges that customers referred through the Affiliate Program are customers of CMS Compliance Guardian with respect to the Service.
+
+Affiliate does not acquire ownership of a customer by making a referral.
+
+Nothing in this Agreement prevents a customer from selecting another consultant, Affiliate, professional adviser, or service provider.
+
+Affiliate may maintain an independent consulting relationship with a customer, but Affiliate must not represent that the customer is obligated to remain with Affiliate as a condition of using the CMS Compliance Guardian Service.
+
+Affiliate must not interfere with a customer's lawful right to select, change, or discontinue a consultant or Affiliate.
+
+
+
+23. CONFIDENTIALITY
+
+Affiliate may receive nonpublic information concerning CMS Compliance Guardian, the Service, pricing, technology, customers, business operations, marketing programs, referral information, commissions, program operations, and other confidential information.
+
+Affiliate agrees to use reasonable care to protect confidential information and to use it only as necessary to participate in the Affiliate Program or as otherwise authorized by CMS Compliance Guardian.
+
+Confidential information does not include information that:
+
+1.	becomes publicly available through no breach of this Agreement;
+
+2.	was lawfully known before disclosure without a confidentiality obligation;
+
+3.	is lawfully received from another source without restriction; or
+
+4.	is independently developed without use of the confidential information.
+
+Affiliate may disclose confidential information when legally required, provided that, where legally permitted, Affiliate gives CMS Compliance Guardian prompt notice and reasonably cooperates with efforts to protect the information.
+
+These obligations survive termination for three (3) years and indefinitely with respect to trade secrets to the extent permitted by law.
+
+
+
+24. PRIVACY AND DATA PROTECTION
+
+Affiliate must comply with the CMS Compliance Guardian Privacy Policy and all applicable privacy and data-protection laws.
+
+The CMS Compliance Guardian Privacy Policy is incorporated into this Agreement by reference and is available through the Company's website at:
+
+https://cmscomplianceguardian.com/privacy/
+
+Affiliate must not provide CMS Compliance Guardian with Protected Health Information (“PHI”), patient-identifiable information, medical records, or other prohibited health information through the Affiliate Program unless expressly authorized by a separate written agreement and applicable law.
+
+Affiliate is responsible for ensuring that any personal information Affiliate provides to CMS Compliance Guardian has been collected, used, and disclosed lawfully.
+
+Affiliate must use reasonable administrative, technical, and organizational safeguards when handling personal information in connection with the Affiliate Program.
+
+
+
+25. NO PROFESSIONAL ADVICE BY CMS COMPLIANCE GUARDIAN
+
+Affiliate acknowledges that CMS Compliance Guardian provides an AI-assisted compliance research, organization, and drafting platform.
+
+The Service and its Output do not constitute legal, medical, clinical, accounting, regulatory, accreditation, or other professional advice.
+
+Affiliate is responsible for its own professional representations to customers.
+
+Affiliate must not represent that CMS Compliance Guardian guarantees any particular survey, accreditation, certification, licensure, reimbursement, compliance, enforcement, patient-care, or business outcome.
+
+Affiliate is responsible for advising its customers to independently evaluate and verify information generated by the Service before relying upon or implementing such information.
+
+
+
+26. INDEPENDENT CONTRACTOR
+
+Affiliate is an independent contractor.
+
+Nothing in this Agreement creates an employment relationship, partnership, joint venture, agency, fiduciary relationship, franchise, or other legal relationship between Affiliate and CMS Compliance Guardian.
+
+Affiliate has no authority to bind CMS Compliance Guardian, execute contracts on its behalf, incur obligations on its behalf, make warranties on its behalf, or represent that Affiliate has authority to act as CMS Compliance Guardian's legal representative.
+
+Affiliate is responsible for its own business expenses, taxes, insurance, licenses, permits, professional obligations, and legal compliance.
+
+
+
+27. TERM AND TERMINATION
+
+This Agreement begins when Affiliate accepts it electronically and continues until terminated.
+
+Affiliate may discontinue participation in the Affiliate Program at any time.
+
+CMS Compliance Guardian may suspend or terminate Affiliate participation if:
+
+•  Affiliate breaches this Agreement;
+
+•  Affiliate engages in fraud, manipulation, or deceptive conduct;
+
+•  Affiliate violates applicable law;
+
+•  Affiliate provides inaccurate or misleading information;
+
+•  Affiliate misuses CMS Compliance Guardian intellectual property;
+
+•  Affiliate's conduct creates a material legal, security, financial, operational, or reputational risk;
+
+•  Affiliate fails to maintain required tax or payment information;
+
+•  Affiliate fails to maintain required program eligibility;
+
+•  Affiliate engages in artificial customer activity or attribution manipulation; or
+
+•  CMS Compliance Guardian otherwise determines that termination is reasonably necessary to protect the Affiliate Program, customers, Company, or third parties.
+
+Except where immediate suspension or termination is reasonably necessary because of fraud, material misconduct, security concerns, legal requirements, customer harm, payment risk, or other circumstances requiring immediate action, CMS Compliance Guardian may provide fifteen (15) days' notice before termination.
+
+Termination does not eliminate commissions that were properly earned and payable before termination, subject to applicable adjustments, refunds, chargebacks, disputes, attribution requirements, and other provisions of this Agreement.
+
+Termination may affect future eligibility for commissions as expressly provided in this Agreement.
+
+
+
+28. EFFECT OF TERMINATION
+
+Upon termination:
+
+1.	Affiliate's right to use CMS Compliance Guardian trademarks and marketing materials ends;
+
+2.	Affiliate must stop representing itself as an active CMS Compliance Guardian Affiliate Partner;
+
+3.	Affiliate may not generate new referrals under the terminated Affiliate account;
+
+4.	commissions properly earned and payable before termination remain subject to this Agreement;
+
+5.	pending commissions may remain subject to verification, refunds, chargebacks, customer payment status, attribution, tax verification, and other applicable conditions; and
+
+6.	provisions that by their nature should survive termination remain effective.
+
+Unless otherwise required by law or expressly agreed in writing, termination does not revive or restore a previously lost commission base.
+
+
+
+29. NO GUARANTEE OF COMMISSIONS
+
+CMS Compliance Guardian does not guarantee that Affiliate will earn any particular amount of commissions.
+
+Commission amounts depend upon qualifying customer referrals, customer subscription activity, customer payment, Affiliate eligibility, attribution, customer retention, applicable program rules, and other factors established by this Agreement.
+
+Affiliate is responsible for its own business decisions and should not rely upon projected commissions as guaranteed income.
+
+Nothing in this Agreement constitutes a promise of minimum income, minimum referrals, minimum customers, or guaranteed compensation.
+
+
+
+30. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, CMS COMPLIANCE GUARDIAN AND ITS MEMBERS, MANAGERS, OFFICERS, EMPLOYEES, CONTRACTORS, AFFILIATES, LICENSORS, AND SERVICE PROVIDERS WILL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR LOST PROFITS, LOST REVENUE, LOST BUSINESS OPPORTUNITIES, LOSS OF GOODWILL, OR OTHER INDIRECT LOSSES ARISING FROM OR RELATED TO THE AFFILIATE PROGRAM OR THIS AGREEMENT.
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, CMS COMPLIANCE GUARDIAN'S TOTAL AGGREGATE LIABILITY ARISING OUT OF OR RELATING TO THIS AGREEMENT OR THE AFFILIATE PROGRAM WILL NOT EXCEED THE COMMISSIONS ACTUALLY PAID OR PAYABLE TO AFFILIATE DURING THE TWELVE (12) MONTHS PRECEDING THE EVENT GIVING RISE TO THE CLAIM, OR ONE HUNDRED DOLLARS ($100.00) IF NO COMMISSIONS WERE PAID OR PAYABLE.
+
+CMS COMPLIANCE GUARDIAN WILL NOT BE LIABLE FOR THE ACTIONS, OMISSIONS, DOWNTIME, PAYMENT DELAYS, VERIFICATION DECISIONS, account restrictions, or other conduct of Stripe or any other third-party provider.
+
+Nothing in this Agreement excludes or limits liability that cannot lawfully be excluded or limited.
+
+
+
+31. INDEMNIFICATION
+
+Affiliate will defend, indemnify, and hold harmless CMS Compliance Guardian, its members, managers, officers, employees, contractors, affiliates, licensors, and service providers from and against claims, actions, investigations, losses, liabilities, damages, penalties, costs, and reasonable attorneys' fees arising from or related to:
+
+1.	Affiliate's breach of this Agreement;
+
+2.	Affiliate's marketing or promotional activities;
+
+3.	Affiliate's violation of applicable law;
+
+4.	Affiliate's representations to customers or third parties;
+
+5.	Affiliate's infringement or misuse of third-party rights;
+
+6.	Affiliate's fraud, intentional misconduct, or negligent misconduct;
+
+7.	Affiliate's misuse of CMS Compliance Guardian intellectual property;
+
+8.	Affiliate's unauthorized handling or disclosure of personal information or protected information;
+
+9.	Affiliate's submission of prohibited information to CMS Compliance Guardian; or
+
+10.	Affiliate's acts or omissions that cause a third party to reasonably believe Affiliate is authorized to bind or represent CMS Compliance Guardian.
+
+CMS Compliance Guardian will provide reasonable notice of a claim for which it seeks indemnification. CMS Compliance Guardian may participate in the defense of any indemnified claim and may require Affiliate to reasonably cooperate.
+
+Affiliate may not settle any indemnified claim in a manner that imposes liability, admission, obligation, restriction, or other adverse consequence upon CMS Compliance Guardian without CMS Compliance Guardian's prior written consent.
+
+
+
+32. MODIFICATION OF THE AFFILIATE PROGRAM
+
+CMS Compliance Guardian may modify the Affiliate Program, including commission rates, eligibility requirements, attribution rules, payout requirements, marketing requirements, technical requirements, or other program terms.
+
+Material changes will be communicated through the Affiliate dashboard, email, an updated Agreement, or another reasonable method.
+
+Changes will generally apply prospectively and will not retroactively eliminate commissions that were already earned and payable before the effective date of the change, except where necessary to correct fraud, error, chargebacks, refunds, payment reversals, attribution errors, or other improper payments.
+
+CMS Compliance Guardian may also modify or discontinue portions of the Affiliate Program prospectively when reasonably necessary because of legal requirements, regulatory requirements, payment-provider requirements, security concerns, operational considerations, changes in the Service, business circumstances, or other legitimate business reasons.
+
+Continued participation after the effective date of a revised Agreement constitutes acceptance to the extent permitted by law.
+
+
+
+33. ELECTRONIC ACCEPTANCE
+
+Affiliate agrees that electronic acceptance of this Agreement is legally binding and constitutes Affiliate's electronic signature.
+
+The Affiliate's acceptance record may include:
+
+•  Affiliate's name;
+
+•  legal or business name;
+
+•  email address;
+
+•  account identifier;
+
+•  date and time of acceptance;
+
+•  IP address or other technical acceptance information;
+
+•  Agreement version;
+
+•  applicable program version;
+
+•  acknowledgment records; and
+
+•  other information reasonably necessary to establish the Affiliate's acceptance and participation.
+
+Affiliate agrees to receive program notices, agreements, disclosures, payment notices, and other communications electronically.
+
+Electronic acceptance will have the same legal effect as a handwritten signature to the maximum extent permitted by applicable law.
+
+
+
+34. GOVERNING LAW
+
+This Agreement and any dispute arising out of or relating to this Agreement or the Affiliate Program are governed by the laws of the State of Florida, without regard to conflict-of-law principles that would require application of another jurisdiction's law, except to the extent applicable law requires otherwise.
+
+
+
+35. DISPUTE RESOLUTION; ARBITRATION; CLASS ACTION WAIVER
+
+35.1 Informal Resolution
+
+Before initiating arbitration or litigation concerning a dispute arising out of or relating to this Agreement, the parties will first attempt in good faith to resolve the dispute informally.
+
+A party asserting a dispute should provide written notice describing the dispute and the relief requested.
+
+The parties will have thirty (30) days after receipt of notice to attempt to resolve the dispute, unless the parties agree otherwise.
+
+Nothing in this Section prevents either party from seeking immediate temporary, preliminary, or emergency equitable relief when reasonably necessary to protect confidential information, intellectual property, systems, data, payment rights, or other legally protected interests.
+
+35.2 Binding Individual Arbitration
+
+Except for matters expressly excluded below, any dispute, claim, or controversy arising out of or relating to this Agreement, the Affiliate Program, a commission, customer attribution, or the relationship between Affiliate and CMS Compliance Guardian will be resolved by final and binding arbitration on an individual basis.
+
+The arbitration will be administered by the American Arbitration Association (“AAA”) under its applicable commercial arbitration rules, except to the extent applicable law requires different procedures.
+
+The Federal Arbitration Act governs the interpretation and enforcement of this arbitration provision to the maximum extent applicable.
+
+The arbitration will be conducted before one arbitrator.
+
+The seat or legal place of arbitration will be Miami-Dade County, Florida, although the arbitration may be conducted remotely by videoconference or other electronic means.
+
+The arbitrator may award any remedy that would be available to the parties under applicable law on an individual basis.
+
+Judgment upon the arbitration award may be entered in any court of competent jurisdiction.
+
+35.3 Class Action Waiver
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, AFFILIATE AND CMS COMPLIANCE GUARDIAN AGREE THAT EACH PARTY MAY BRING CLAIMS AGAINST THE OTHER ONLY IN AN INDIVIDUAL CAPACITY AND NOT AS A PLAINTIFF, CLASS MEMBER, REPRESENTATIVE, PRIVATE ATTORNEY GENERAL, OR PARTICIPANT IN ANY CLASS, COLLECTIVE, CONSOLIDATED, OR REPRESENTATIVE ACTION.
+
+The arbitrator may not consolidate claims involving more than one Affiliate or other claimant or preside over any representative proceeding except to the extent applicable law requires otherwise.
+
+If the class-action waiver is found unenforceable as to a particular claim or request for relief, that claim or request will be severed and may proceed in a court of competent jurisdiction, while all remaining claims will remain subject to arbitration to the maximum extent permitted by law.
+
+35.4 Exceptions
+
+Notwithstanding the arbitration requirement, either party may:
+
+1.	bring an individual action in a small-claims court having jurisdiction over the dispute;
+
+2.	seek temporary, preliminary, or permanent injunctive or equitable relief concerning intellectual property, confidential information, systems, data, or other legally protected rights;
+
+3.	bring an action to collect an undisputed or otherwise legally collectible amount; or
+
+4.	file a complaint with a governmental agency or regulatory authority.
+
+35.5 Venue for Matters Not Subject to Arbitration
+
+For any matter that is not subject to arbitration, the parties consent to exclusive jurisdiction and venue in the state and federal courts located in Miami-Dade County, Florida, except to the extent applicable law requires another forum.
+
+Affiliate consents to personal jurisdiction in those courts to the maximum extent permitted by law.
+
+35.6 Jury Trial Waiver
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, FOR ANY DISPUTE THAT PROCEEDS IN COURT RATHER THAN ARBITRATION, CMS COMPLIANCE GUARDIAN AND AFFILIATE EACH KNOWINGLY AND VOLUNTARILY WAIVE ANY RIGHT TO TRIAL BY JURY.
+
+
+
+36. GENERAL PROVISIONS
+
+36.1 Entire Agreement
+
+This Agreement, together with the CMS Compliance Guardian Privacy Policy, applicable Affiliate Program rules, applicable marketing and brand guidelines, and other documents expressly incorporated by reference, constitutes the entire agreement between Affiliate and CMS Compliance Guardian concerning participation in the Affiliate Program and supersedes prior or contemporaneous communications concerning the subject matter addressed herein.
+
+36.2 Assignment
+
+Affiliate may not assign, transfer, delegate, or otherwise convey this Agreement or any rights or obligations under it without CMS Compliance Guardian's prior written consent.
+
+Any attempted assignment in violation of this provision is void to the maximum extent permitted by law.
+
+CMS Compliance Guardian may assign this Agreement without Affiliate's consent in connection with a merger, acquisition, reorganization, financing, sale of assets, transfer of the Affiliate Program, or substantially all of the Company's business.
+
+36.3 Severability
+
+If any provision of this Agreement is held invalid, illegal, or unenforceable, that provision will be enforced to the maximum extent permitted by law, and the remaining provisions will remain in full force and effect.
+
+36.4 No Waiver
+
+Failure or delay by either party to enforce any provision does not waive the right to enforce that provision later.
+
+36.5 Force Majeure
+
+CMS Compliance Guardian will not be liable for delay or failure to perform caused by events beyond its reasonable control, including natural disasters, hurricanes, acts of government, war, terrorism, epidemics, labor disputes, internet or telecommunications failures, failures of third-party hosting or AI-model providers, cyberattacks, utility interruptions, payment-network failures, banking failures, or other events beyond the Company's reasonable control.
+
+36.6 Notices
+
+CMS Compliance Guardian may provide notices to Affiliate through the Affiliate dashboard, by email to the address associated with the Affiliate account, or by another reasonable electronic method.
+
+Legal notices to CMS Compliance Guardian must be sent to:
+
+CMS Compliance Guardian, LLC
+
+550 Biltmore Way, Suite 200
+
+Miami, Florida 33134
+
+Attn: Legal
+
+CMSComplianceGuardian@outlook.com
+
+A support request does not constitute formal legal notice unless CMS Compliance Guardian expressly confirms otherwise.
+
+36.7 Electronic Communications
+
+Affiliate consents to receive communications, disclosures, notices, agreements, payment information, tax information, and records electronically.
+
+36.8 No Third-Party Beneficiaries
+
+Except for the persons and entities expressly entitled to indemnification or protection under this Agreement, there are no third-party beneficiaries of this Agreement.
+
+36.9 Interpretation
+
+Headings are for convenience only.
+
+“Including” means “including without limitation.”
+
+No provision will be construed against either party solely because that party or its representatives prepared or drafted the provision.
+
+The English-language version of this Agreement controls.
+
+
+
+37. CONTACT INFORMATION
+
+CMS Compliance Guardian, LLC
+
+550 Biltmore Way, Suite 200
+
+Miami, Florida 33134
+
+Affiliate Program:
+
+HelpCMSComplianceGuardian@outlook.com
+
+Legal Notices:
+
+CMSComplianceGuardian@outlook.com
+
+Privacy:
+
+CMSComplianceGuardian@outlook.com
+
+Website:
+
+cmscomplianceguardian.com
+
+
+
+AFFILIATE ACKNOWLEDGMENT AND ACCEPTANCE
+
+By electronically accepting this Agreement, Affiliate expressly acknowledges and agrees to each of the following:
+
+•  Affiliate Partner Agreement. I acknowledge that I have read, understand, and agree to be legally bound by this Affiliate Partner Agreement, including its commission, attribution, eligibility, termination, limitation-of-liability, indemnification, arbitration, and other provisions.
+
+•  Privacy Notice. I acknowledge that I have reviewed and acknowledge the CMS Compliance Guardian Privacy Policy and understand that my personal information may be collected, used, stored, and processed as described therein.
+
+•  Tax Information. I acknowledge that I am required to provide accurate and complete tax information necessary to participate in the Affiliate Program and receive commissions, including any applicable IRS Form W-9 or other tax documentation requested by CMS Compliance Guardian or its payment provider.
+
+•  Tax and Identity Processing. I understand that tax and identity information, including information such as my legal name, taxpayer identification number, Social Security number, Employer Identification Number, business information, and related verification information, may be collected and processed through Stripe Connect or another designated payment provider for tax reporting, identity verification, payment processing, fraud prevention, sanctions screening, and regulatory compliance.
+
+•  Stripe Connect Payment Setup. I acknowledge that I must complete and maintain the required Stripe Connect onboarding and payment-account requirements before commissions may be paid to me. I authorize CMS Compliance Guardian and its designated payment provider to process commission payments in accordance with this Agreement and applicable payment-provider requirements.
+
+•  Third-Party Payment Providers. I understand that CMS Compliance Guardian does not control Stripe's independent verification, onboarding, account-status determinations, banking requirements, tax verification, payment-processing requirements, sanctions screening, or other actions taken by Stripe or another third-party provider.
+
+•  FTC Affiliate Disclosure Requirements. I acknowledge that I am responsible for complying with applicable Federal Trade Commission requirements concerning endorsements, advertising, affiliate relationships, material connections, disclosures, and truth-in-advertising when promoting, recommending, referring, or communicating about CMS Compliance Guardian or the Service.
+
+•  Marketing and Brand Guidelines. I acknowledge that I have reviewed and agree to comply with CMS Compliance Guardian's marketing, advertising, trademark, branding, messaging, and promotional guidelines. I understand that I may not misuse CMS Compliance Guardian's trademarks, logos, materials, or intellectual property or make unauthorized representations on behalf of CMS Compliance Guardian.
+
+•  Commission Structure. I acknowledge that eligible commissions are generally calculated at twenty percent (20%) of qualifying subscription revenue actually paid by an attributed customer, subject to all requirements, exclusions, adjustments, and eligibility conditions contained in this Agreement.
+
+•  Annual New-Customer Requirement and Grace Period. I acknowledge that maintaining commissions on an existing commission base requires me to generate at least one qualifying New Customer during each applicable twelve (12) month activity period and that, if I do not do so, I receive a sixty (60) day grace period as described in this Agreement.
+
+•  Customer Choice and No Double Attribution. I acknowledge that customers have the right to select, change, or discontinue their consultant or Affiliate Partner and that CMS Compliance Guardian will not intentionally pay two Affiliates commissions for the same qualifying customer subscription period.
+
+•  Customer Reactivation and Attribution. I acknowledge that customer cancellations, returns, re-enrollments, consultant changes, Affiliate changes, and reactivations are governed by the customer attribution provisions of this Agreement and that a returning customer is not a New Customer for purposes of satisfying the annual activity requirement.
+
+•  No Artificial Customer Activity. I acknowledge that I may not encourage, arrange, coordinate, or induce customer cancellations, re-enrollments, reactivations, or other transactions primarily to preserve commissions, satisfy the annual activity requirement, manipulate attribution, or otherwise manipulate the Affiliate Program.
+
+•  Authority and Accuracy. I represent that the information I have provided during Affiliate enrollment is true, accurate, complete, and current and that I have the legal authority to enter into this Agreement and participate in the Affiliate Program.
+
+•  Independent Affiliate Relationship. I acknowledge that I am an independent Affiliate Partner and not an employee, agent, partner, joint venturer, franchisee, legal representative, or authorized spokesperson of CMS Compliance Guardian unless separately authorized in a written agreement signed by an authorized representative of CMS Compliance Guardian.
+
+•  No Guaranteed Commissions. I acknowledge that participation in the Affiliate Program does not guarantee that I will receive any particular amount of commissions. Commissions are earned and payable only when the applicable customer attribution, eligibility, payment, tax, compliance, and other requirements established by this Agreement have been satisfied.
+
+•  Customer Relationships. I acknowledge that customers referred through the Affiliate Program remain customers of CMS Compliance Guardian with respect to the Service and that I do not acquire ownership of a customer by making a referral.
+
+•  Electronic Signature. I acknowledge that my electronic acceptance of this Agreement constitutes my electronic signature and legally binding acceptance of this Agreement to the maximum extent permitted by applicable law.
+
+Electronic acceptance constitutes Affiliate's signature and acceptance of this Agreement.
+
+Agreement Version: Affiliate Partner Agreement — Version 4.0
+
+Effective Date: The date of the Affiliate's electronic acceptance of this Agreement.
+
+Copyright © 2026 CMS Compliance Guardian, LLC. All rights reserved.

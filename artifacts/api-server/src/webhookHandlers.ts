@@ -6,6 +6,7 @@ import {
   getStripeWebhookSecret,
   stripeRequest,
 } from "./stripeClient";
+import { logger } from "./lib/logger.js";
 import {
   accrueCommissionForPayment,
   reverseCommissionForInvoice,
@@ -77,6 +78,11 @@ async function accrueCommissionFromInvoice(invoice: Stripe.Invoice): Promise<voi
   // to me?" is answerable from the logs rather than from reasoning about it.
   if (outcome.accrued) {
     console.log(`[affiliate] accrued $${outcome.commissionUsd} at ${outcome.ratePct}% on invoice ${invoice.id}`);
+  } else if (outcome.reason === "out-of-order-payment") {
+    logger.warn(
+      { invoiceId: invoice.id },
+      "Out-of-order affiliate invoice needs manual reconciliation; no automatic recovery is configured.",
+    );
   } else if (outcome.reason !== "no-referral-code") {
     console.log(`[affiliate] no accrual on invoice ${invoice.id}: ${outcome.reason}`);
   }
@@ -157,16 +163,10 @@ export class WebhookHandlers {
         break;
       }
       case "invoice.payment_succeeded": {
-        // Affiliate commission accrual. Wrapped so a failure here can never
-        // fail the webhook: the customer's payment has already succeeded, and
-        // returning an error would make Stripe retry an event that was handled
-        // correctly. A missed accrual is recoverable by hand from the invoice;
-        // a retry storm against the subscription sync is not.
-        try {
-          await accrueCommissionFromInvoice(event.data.object as Stripe.Invoice);
-        } catch (error) {
-          console.error("[affiliate] accrual failed for invoice", (event.data.object as any)?.id, error);
-        }
+        // This event has no other side effects in this handler. Accrual failures
+        // must reach the webhook route so Stripe retries; the invoice ID's
+        // unique ledger constraint makes a replay idempotent.
+        await accrueCommissionFromInvoice(event.data.object as Stripe.Invoice);
         break;
       }
       case "charge.refunded":

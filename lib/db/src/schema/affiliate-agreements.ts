@@ -34,6 +34,10 @@ export const affiliateAgreementAcceptances = pgTable("affiliate_agreement_accept
   agreementVersion: text("agreement_version").notNull().references(() => affiliateAgreements.version),
   contentSha256: text("content_sha256").notNull(),
   signerName: text("signer_name").notNull(),
+  // Immutable copy of affiliates.companyName at the instant this signature
+  // was recorded. Historical rows stay nullable because the prior value
+  // cannot safely be reconstructed from the mutable affiliate profile.
+  legalBusinessName: text("legal_business_name"),
   signerEmail: text("signer_email").notNull(),
   identityEpoch: integer("identity_epoch").notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull().defaultNow(),
