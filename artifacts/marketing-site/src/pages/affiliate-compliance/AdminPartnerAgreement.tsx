@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { useAdminAgreementCurrent, useAdminAgreementPublish, useAdminAgreementV4Draft } from './hooks';
@@ -15,14 +15,16 @@ export default function AdminPartnerAgreement() {
   const [result, setResult] = useState('');
   const [loadedV4Hash, setLoadedV4Hash] = useState('');
   const [canonicalV4Loaded, setCanonicalV4Loaded] = useState(false);
+  const autoLoadRequested = useRef(false);
   const form = useForm<AgreementPublishFields>({
     resolver: zodResolver(agreementPublishSchema),
     defaultValues: { version: '', body: '', confirmedReviewed: false },
   });
   const reviewed = form.watch('confirmedReviewed');
 
-  async function loadVersion4() {
+  const loadVersion4 = useCallback(async () => {
     setResult('');
+    form.clearErrors('root');
     try {
       const prepared = await v4Draft.mutateAsync();
       form.setValue('version', prepared.version, { shouldValidate: true, shouldDirty: true });
@@ -33,7 +35,15 @@ export default function AdminPartnerAgreement() {
     } catch (error) {
       form.setError('root', { message: error instanceof Error ? error.message : 'Unable to load the prepared Version 4.0 text.' });
     }
-  }
+  }, [form.clearErrors, form.setError, form.setValue, v4Draft.mutateAsync]);
+
+  // Prepare the immutable source-derived text only after the server has
+  // confirmed super-admin access. Nothing is published or acknowledged here.
+  useEffect(() => {
+    if (!current.isSuccess || autoLoadRequested.current) return;
+    autoLoadRequested.current = true;
+    void loadVersion4();
+  }, [current.isSuccess, loadVersion4]);
 
   async function onSubmit(fields: AgreementPublishFields) {
     // Keep this check even if the form is submitted programmatically.
@@ -69,6 +79,9 @@ export default function AdminPartnerAgreement() {
         Publishing this exact text creates an immutable, binding, publicly-effective agreement version.
         It cannot be edited or withdrawn here; a correction requires a new version and new acceptances.
         Do not publish until the account owner has approved the final text.
+      </p>
+      <p className="mt-3 text-sm text-slate-600">
+        Prepared Version 4.0 loads automatically for your review. Loading it does not publish the agreement.
       </p>
 
       <Form {...form}>
