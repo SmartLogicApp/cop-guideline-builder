@@ -9,6 +9,7 @@
     "test:browser": "playwright test",
     "pretest:marketing-browser-boundary": "playwright install chromium",
     "test:marketing-browser-boundary": "playwright test tests/browser/public-bundle-boundary.spec.ts --project=marketing-auth-chromium --project=marketing-auth-prefixed-chromium",
+    "test:partner-agreement-staging": "node --test artifacts/api-server/src/routes/affiliate-agreement-staging.test.ts && playwright test tests/browser/partner-agreement-staging.spec.ts --project=marketing-auth-chromium",
     "validate:marketing-release": "pnpm run test:marketing-build-credential-contract && pnpm run test:marketing-browser-boundary",
     "typecheck:libs": "tsc --build",
     "typecheck": "sh -c 'pnpm run check:browser-tsconfig-contract; browser_contract_status=$?; pnpm run check:artifact-discovery-contract; discovery_contract_status=$?; pnpm run typecheck:libs; libs_status=$?; pnpm -r --no-bail --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck; leaves_status=$?; if [ \"$browser_contract_status\" -ne 0 ] || [ \"$discovery_contract_status\" -ne 0 ] || [ \"$libs_status\" -ne 0 ] || [ \"$leaves_status\" -ne 0 ]; then exit 1; fi'",
