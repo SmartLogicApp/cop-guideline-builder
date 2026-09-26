@@ -1,14 +1,31 @@
 import type Stripe from "stripe";
 
+export interface ExpressRecipientVerification {
+  valid: boolean;
+  transferCapabilityActive: boolean;
+}
+
 /**
- * Accounts v2 recipient/Express accounts have type "none" when represented
- * through Accounts v1, including the snapshot in account.updated events.
- * Verify the authoritative v2 configuration before trusting that shape.
- * The caller must use the Test-only Stripe client and reject live events.
+ * Accounts v2 recipient/Express accounts can appear as type "none" through
+ * Accounts v1. Confirm mode, Express dashboard, and the authoritative v2
+ * recipient transfer capability before using the account for payouts.
  */
-export async function isTestExpressRecipient(stripe: Stripe, account: Stripe.Account): Promise<boolean> {
-  if (account.type === "express") return true;
-  if (account.type !== "none") return false;
+export async function verifyExpressRecipient(
+  stripe: Stripe,
+  account: Stripe.Account,
+  expectedLivemode: boolean,
+): Promise<ExpressRecipientVerification> {
+  if (account.type !== "express" && account.type !== "none") {
+    return { valid: false, transferCapabilityActive: false };
+  }
   const v2 = await stripe.v2.core.accounts.retrieve(account.id, { include: ["configuration.recipient"] });
-  return !v2.livemode && v2.dashboard === "express" && Boolean(v2.configuration?.recipient);
+  const recipient = v2.configuration?.recipient;
+  const transferCapability = recipient?.capabilities?.stripe_balance?.stripe_transfers;
+  const transferCapabilityActive = transferCapability?.status === "active"
+    && Array.isArray(transferCapability.status_details)
+    && transferCapability.status_details.length === 0;
+  return {
+    valid: v2.livemode === expectedLivemode && v2.dashboard === "express" && recipient?.applied === true,
+    transferCapabilityActive,
+  };
 }

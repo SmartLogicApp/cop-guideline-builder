@@ -89,17 +89,48 @@ export function getStripeSignatureVerifier(): Stripe {
   });
 }
 
+export function getStripeConnectLivemode(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+export function isAffiliateConnectLiveEnabled(): boolean {
+  return process.env.AFFILIATE_CONNECT_LIVE_ENABLED?.trim().toLowerCase() === "true";
+}
+
+export function isAffiliateLivePayoutsEnabled(): boolean {
+  return process.env.AFFILIATE_LIVE_PAYOUTS_ENABLED?.trim().toLowerCase() === "true";
+}
+
+export function getStripeConnectSecretKey(): string {
+  const live = getStripeConnectLivemode();
+  const key = (live ? process.env.STRIPE_LIVE_SECRET_KEY : process.env.STRIPE_TEST_SECRET_KEY)?.trim();
+  if (!key || (live ? !key.startsWith("sk_live_") : !key.startsWith("sk_test_"))) {
+    throw new Error(live
+      ? "Stripe Connect live mode is not configured with STRIPE_LIVE_SECRET_KEY."
+      : "Stripe Connect test mode is not configured with STRIPE_TEST_SECRET_KEY.");
+  }
+  return key;
+}
+
 /**
- * Connect compliance is intentionally test-only. Unlike getStripeSecretKey(),
- * this helper can never select a live key, even when the API is in production.
+ * Connect uses a dedicated key choice and never falls back between modes.
+ * The live feature flag controls onboarding; existing live accounts can still
+ * be synchronized while onboarding is paused.
  */
-export function getStripeConnectTestClient(): Stripe {
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("Affiliate Connect is restricted to Stripe test mode.");
+export function getStripeConnectClient(): Stripe {
+  return new Stripe(getStripeConnectSecretKey(), { apiVersion: "2026-07-29.dahlia" });
+}
+
+export function assertAffiliatePayoutSendingEnabled(): void {
+  if (getStripeConnectLivemode()) {
+    if (!isAffiliateConnectLiveEnabled()) {
+      throw new Error("Live affiliate Connect is disabled.");
+    }
+    if (!isAffiliateLivePayoutsEnabled()) {
+      throw new Error("Live affiliate payouts are disabled.");
+    }
+    return;
   }
-  const key = process.env.STRIPE_TEST_SECRET_KEY?.trim();
-  if (!key || !key.startsWith("sk_test_")) {
-    throw new Error("Stripe Connect test mode is not configured.");
-  }
-  return new Stripe(key, { apiVersion: "2026-07-29.dahlia" });
+  const key = process.env.STRIPE_TEST_SECRET_KEY?.trim() ?? "";
+  if (!key.startsWith("sk_test_")) throw new Error("Test-mode affiliate payouts are not configured.");
 }

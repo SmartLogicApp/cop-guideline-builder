@@ -5,6 +5,10 @@ import test from "node:test";
 import { payoutEligibilityReasons } from "./affiliate-compliance-rules.ts";
 import { stripeTaxStatus } from "./affiliate-connect-tax.ts";
 import { verifyAffiliateConnectWebhook } from "./affiliate-compliance-webhook-signature.ts";
+import {
+  assertAffiliatePayoutSendingEnabled, getStripeConnectLivemode, getStripeConnectSecretKey,
+  isAffiliateConnectLiveEnabled, isAffiliateLivePayoutsEnabled,
+} from "../stripeClient.ts";
 
 const libDir = new URL("./", import.meta.url);
 const read = (path: string) => readFile(new URL(path, libDir), "utf8");
@@ -188,7 +192,7 @@ test("I.10b tax sync and webhook persist only status flags and reject manual tax
   assert.match(routes, /taxStatus:\s*status\.country\s*===\s*"US"/);
   assert.match(routes, /if \(previous\?\.accountId && !previous\.taxCheckedAt\)[\s\S]*?synchronizeStripeAccount\(affiliateId\)/);
   assert.match(webhook, /event\.livemode/);
-  assert.match(routes, /getStripeConnectTestClient\(\)/);
+  assert.match(routes, /getStripeConnectClient\(\)/);
   assert.doesNotMatch(routes, /"verify_tax"|"tax_submitted"|"tax_manual_review"/);
   assert.doesNotMatch(tax, /account\.(?:individual|company)\?\.(?:id_number|tax_id)\b/);
   assert.doesNotMatch(webhook, /(?:individual|company)\?\.(?:id_number|tax_id)\b/);
@@ -245,7 +249,7 @@ test("I.12 Connect webhook signature is verified and terminal transfer replays a
     assert.match(app, /verifyAffiliateConnectWebhook\(req\.body as Buffer,\s*signedValue\)/);
     const handler = await read("../lib/affiliate-compliance-webhook.ts");
     assert.match(handler, /stripe\.transfers\.retrieve\(eventTransfer\.id\)/);
-    assert.match(handler, /transfer\.id !== eventTransfer\.id \|\| transfer\.livemode/);
+    assert.match(handler, /transfer\.id !== eventTransfer\.id \|\| transfer\.livemode !== getStripeConnectLivemode\(\)/);
     assert.match(handler, /where\(eq\(affiliatePayoutWorkflow\.stripeTransferId,\s*transfer\.id\)\)\.for\("update"\)/);
     assert.match(handler, /payout\.id !== workflowId \|\| payout\.affiliateId !== metadataAffiliateId/);
     assert.match(handler, /transfer\.amount !== Math\.round\(Number\(payout\.netPayoutAmount\) \* 100\)/);
@@ -266,6 +270,87 @@ test("I.12 Connect webhook signature is verified and terminal transfer replays a
     else process.env.NODE_ENV = previousNodeEnv;
     if (previousSecret === undefined) delete process.env.STRIPE_CONNECT_TEST_WEBHOOK_SECRET;
     else process.env.STRIPE_CONNECT_TEST_WEBHOOK_SECRET = previousSecret;
+  }
+});
+
+test("Connect production mode selects only live secrets and requires separate onboarding and payout flags", () => {
+  const oldEnv = {
+    nodeEnv: process.env.NODE_ENV,
+    testKey: process.env.STRIPE_TEST_SECRET_KEY,
+    liveKey: process.env.STRIPE_LIVE_SECRET_KEY,
+    connectEnabled: process.env.AFFILIATE_CONNECT_LIVE_ENABLED,
+    payoutsEnabled: process.env.AFFILIATE_LIVE_PAYOUTS_ENABLED,
+  };
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.STRIPE_TEST_SECRET_KEY = "sk_test_never_fallback";
+    delete process.env.STRIPE_LIVE_SECRET_KEY;
+    assert.throws(() => getStripeConnectSecretKey(), /STRIPE_LIVE_SECRET_KEY/);
+    process.env.STRIPE_LIVE_SECRET_KEY = "sk_live_mode_matrix";
+    assert.equal(getStripeConnectSecretKey(), "sk_live_mode_matrix");
+    process.env.AFFILIATE_CONNECT_LIVE_ENABLED = "false";
+    process.env.AFFILIATE_LIVE_PAYOUTS_ENABLED = "false";
+    assert.equal(getStripeConnectLivemode(), true);
+    assert.equal(isAffiliateConnectLiveEnabled(), false);
+    assert.equal(isAffiliateLivePayoutsEnabled(), false);
+    assert.throws(() => assertAffiliatePayoutSendingEnabled(), /Live affiliate Connect is disabled/);
+    process.env.AFFILIATE_CONNECT_LIVE_ENABLED = "true";
+    assert.throws(() => assertAffiliatePayoutSendingEnabled(), /Live affiliate payouts are disabled/);
+    process.env.AFFILIATE_LIVE_PAYOUTS_ENABLED = "true";
+    assert.doesNotThrow(() => assertAffiliatePayoutSendingEnabled());
+
+    process.env.NODE_ENV = "test";
+    assert.equal(getStripeConnectLivemode(), false);
+    assert.equal(getStripeConnectSecretKey(), "sk_test_never_fallback");
+    assert.doesNotThrow(() => assertAffiliatePayoutSendingEnabled());
+    process.env.STRIPE_TEST_SECRET_KEY = "";
+    assert.throws(() => assertAffiliatePayoutSendingEnabled(), /not configured/);
+  } finally {
+    if (oldEnv.nodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = oldEnv.nodeEnv;
+    if (oldEnv.testKey === undefined) delete process.env.STRIPE_TEST_SECRET_KEY;
+    else process.env.STRIPE_TEST_SECRET_KEY = oldEnv.testKey;
+    if (oldEnv.liveKey === undefined) delete process.env.STRIPE_LIVE_SECRET_KEY;
+    else process.env.STRIPE_LIVE_SECRET_KEY = oldEnv.liveKey;
+    if (oldEnv.connectEnabled === undefined) delete process.env.AFFILIATE_CONNECT_LIVE_ENABLED;
+    else process.env.AFFILIATE_CONNECT_LIVE_ENABLED = oldEnv.connectEnabled;
+    if (oldEnv.payoutsEnabled === undefined) delete process.env.AFFILIATE_LIVE_PAYOUTS_ENABLED;
+    else process.env.AFFILIATE_LIVE_PAYOUTS_ENABLED = oldEnv.payoutsEnabled;
+  }
+});
+
+test("production Connect webhook signature verification requires its dedicated live secret", () => {
+  const oldEnv = {
+    nodeEnv: process.env.NODE_ENV,
+    testSecret: process.env.STRIPE_CONNECT_TEST_WEBHOOK_SECRET,
+    liveSecret: process.env.STRIPE_CONNECT_LIVE_WEBHOOK_SECRET,
+  };
+  try {
+    process.env.NODE_ENV = "production";
+    process.env.STRIPE_CONNECT_TEST_WEBHOOK_SECRET = "whsec_test_must_not_fallback";
+    process.env.STRIPE_CONNECT_LIVE_WEBHOOK_SECRET = "whsec_live_connect_contract";
+    const body = Buffer.from(JSON.stringify({
+      id: "evt_live_connect_contract",
+      object: "event",
+      type: "transfer.created",
+      data: { object: { id: "tr_live_contract" } },
+    }));
+    const timestamp = Math.floor(Date.now() / 1000);
+    const digest = createHmac("sha256", "whsec_live_connect_contract")
+      .update(`${timestamp}.${body.toString("utf8")}`).digest("hex");
+    assert.equal(
+      verifyAffiliateConnectWebhook(body, `t=${timestamp},v1=${digest}`).id,
+      "evt_live_connect_contract",
+    );
+    delete process.env.STRIPE_CONNECT_LIVE_WEBHOOK_SECRET;
+    assert.throws(() => verifyAffiliateConnectWebhook(body, `t=${timestamp},v1=${digest}`), /live webhook secret/);
+  } finally {
+    if (oldEnv.nodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = oldEnv.nodeEnv;
+    if (oldEnv.testSecret === undefined) delete process.env.STRIPE_CONNECT_TEST_WEBHOOK_SECRET;
+    else process.env.STRIPE_CONNECT_TEST_WEBHOOK_SECRET = oldEnv.testSecret;
+    if (oldEnv.liveSecret === undefined) delete process.env.STRIPE_CONNECT_LIVE_WEBHOOK_SECRET;
+    else process.env.STRIPE_CONNECT_LIVE_WEBHOOK_SECRET = oldEnv.liveSecret;
   }
 });
 

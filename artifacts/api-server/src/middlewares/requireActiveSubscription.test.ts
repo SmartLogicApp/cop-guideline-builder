@@ -28,6 +28,13 @@ test("missing accounts and inactive subscription states do not have access", () 
   assert.equal(hasActiveSubscription({ subscriptionStatus: "trial", trialEndsAt: null }, now), false);
 });
 
+test("direct customers awaiting Stripe checkout do not have access", () => {
+  assert.equal(hasActiveSubscription({
+    subscriptionStatus: "pending_payment",
+    trialEndsAt: null,
+  }, now), false);
+});
+
 test("active platform admins bypass an expired subscription", () => {
   assert.equal(hasEffectiveAccess({
     isAdminUser: true,

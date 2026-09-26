@@ -1,6 +1,6 @@
 import type Stripe from "stripe";
 import { db, accounts } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import {
   getStripeSignatureVerifier,
   getStripeWebhookSecret,
@@ -20,6 +20,22 @@ type SubscriptionLike = Stripe.Subscription & {
     current_period_end?: number;
   }>;
 };
+
+type InvoiceWithSubscription = Stripe.Invoice & {
+  subscription?: string | Stripe.Subscription | null;
+  parent?: {
+    subscription_details?: {
+      subscription?: string | Stripe.Subscription | null;
+    };
+  };
+};
+
+export function getInvoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+  const subscription = (invoice as InvoiceWithSubscription).subscription ??
+    (invoice as InvoiceWithSubscription).parent?.subscription_details?.subscription;
+  if (!subscription) return null;
+  return typeof subscription === "string" ? subscription : subscription.id;
+}
 
 function timestamp(seconds: number | null | undefined) {
   return seconds ? new Date(seconds * 1000) : null;
@@ -129,6 +145,56 @@ async function retrieveSubscription(
   return await stripeRequest<SubscriptionLike>(`/v1/subscriptions/${encodeURIComponent(id)}`);
 }
 
+/**
+ * A deleted event itself is authoritative: retrieving that subscription can
+ * fail after deletion, and must not be a prerequisite to revoking local access.
+ * Match the account's current subscription before writing so an older delete
+ * event cannot overwrite a newer subscription already synced for that account.
+ */
+async function markSubscriptionDeleted(subscription: SubscriptionLike): Promise<void> {
+  const customerId = typeof subscription.customer === "string"
+    ? subscription.customer
+    : subscription.customer.id;
+  const accountId = subscription.metadata?.accountId;
+  if (!customerId && !accountId) return;
+
+  const [account] = await db.select({
+    id: accounts.id,
+    stripeCustomerId: accounts.stripeCustomerId,
+    stripeSubscriptionId: accounts.stripeSubscriptionId,
+  }).from(accounts).where(accountId
+    ? eq(accounts.id, accountId)
+    : eq(accounts.stripeCustomerId, customerId)).limit(1);
+  if (!account) return;
+  if (account.stripeCustomerId && account.stripeCustomerId !== customerId) return;
+  if (
+    account.stripeSubscriptionId &&
+    account.stripeSubscriptionId !== subscription.id
+  ) return;
+
+  await db.update(accounts).set({
+    stripeCustomerId: customerId,
+    stripeSubscriptionId: subscription.id,
+    subscriptionStatus: "canceled",
+    subscriptionCurrentPeriodStart: timestamp(
+      subscription.items.data[0]?.current_period_start ?? subscription.current_period_start,
+    ),
+    subscriptionCurrentPeriodEnd: timestamp(
+      subscription.items.data[0]?.current_period_end ?? subscription.current_period_end,
+    ),
+    subscriptionCancelAtPeriodEnd: false,
+    subscriptionCanceledAt: timestamp(subscription.canceled_at) ?? new Date(),
+    trialEndsAt: null,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(accounts.id, account.id),
+    or(
+      eq(accounts.stripeSubscriptionId, subscription.id),
+      isNull(accounts.stripeSubscriptionId),
+    ),
+  ));
+}
+
 export async function syncStripeSubscriptionById(subscriptionId: string) {
   const subscription = await retrieveSubscription(subscriptionId);
   if (!subscription) throw new Error("Stripe subscription was not found.");
@@ -155,18 +221,23 @@ export class WebhookHandlers {
         break;
       }
       case "customer.subscription.created":
-      case "customer.subscription.updated":
-      case "customer.subscription.deleted": {
+      case "customer.subscription.updated": {
         // Retrieve current state so duplicate or out-of-order events converge.
         const subscription = await retrieveSubscription(event.data.object as Stripe.Subscription);
         if (subscription) await syncSubscription(subscription);
         break;
       }
+      case "customer.subscription.deleted": {
+        await markSubscriptionDeleted(event.data.object as SubscriptionLike);
+        break;
+      }
       case "invoice.payment_succeeded": {
-        // This event has no other side effects in this handler. Accrual failures
-        // must reach the webhook route so Stripe retries; the invoice ID's
-        // unique ledger constraint makes a replay idempotent.
-        await accrueCommissionFromInvoice(event.data.object as Stripe.Invoice);
+        const invoice = event.data.object as Stripe.Invoice;
+        const subscriptionId = getInvoiceSubscriptionId(invoice);
+        if (subscriptionId) await syncStripeSubscriptionById(subscriptionId);
+        // Accrual failures must reach the webhook route so Stripe retries; the
+        // invoice ID's unique ledger constraint makes a replay idempotent.
+        await accrueCommissionFromInvoice(invoice);
         break;
       }
       case "charge.refunded":

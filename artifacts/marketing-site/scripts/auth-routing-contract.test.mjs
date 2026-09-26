@@ -77,6 +77,37 @@ test('billing is authenticated and gates Stripe actions on server availability',
   );
   assert.match(billingSource, /data-payment-acceptance=/);
   assert.match(billingSource, /Payment acceptance not enabled/);
+  assert.match(billingSource, /subscription\?\.status === ['"]pending_payment['"]/);
+  assert.match(billingSource, /Start 30-day free trial/);
+  assert.match(billingSource, /const hasActiveStripeSubscription = \[['"]active['"], ['"]trialing['"]\]/);
+  assert.match(
+    billingSource,
+    /const hasRecoverableStripeSubscription = \[['"]past_due['"], ['"]unpaid['"], ['"]incomplete['"], ['"]paused['"]\]/,
+  );
+  const recoverableStatuses = billingSource.match(
+    /const hasRecoverableStripeSubscription = \[([^\]]+)\]/,
+  )?.[1];
+  assert.ok(recoverableStatuses);
+  assert.doesNotMatch(recoverableStatuses, /canceled|incomplete_expired|pending_payment/);
+  assert.match(billingSource, /hasManageableStripeSubscription/);
+  assert.match(billingSource, /LOCAL_TRIAL_STILL_ACTIVE/);
+  assert.match(billingSource, /Checkout will be available after your no-card trial ends/);
+  assert.match(billingSource, /Your consultant trial remains active until/);
+  assert.match(billingSource, /Contact support/);
+  const planActionsStart = billingSource.indexOf('{hasManageableStripeSubscription ? (');
+  const planActionsEnd = billingSource.indexOf(
+    'Secure checkout and subscription management are provided by Stripe.',
+    planActionsStart,
+  );
+  assert.ok(planActionsStart >= 0 && planActionsEnd > planActionsStart);
+  const planActions = billingSource.slice(planActionsStart, planActionsEnd);
+  const checkoutBranchStart = planActions.lastIndexOf(') : (');
+  assert.match(
+    planActions.slice(checkoutBranchStart),
+    /openStripe\(['"]checkout['"]\)/,
+    'Expected checkout to remain available when no active/trialing Stripe subscription exists',
+  );
+  assert.match(planActions, /openStripe\(['"]portal['"]\)/);
   assert.match(billingSource, /endpoint: ['"]checkout['"] \| ['"]portal['"]/);
   assert.match(billingSource, /`\/api\/billing\/\$\{endpoint\}`/);
   assert.match(billingSource, /paymentAcceptanceEnabled \?/);
@@ -92,6 +123,10 @@ test('registration is routed, authenticated, and reachable from the workspace', 
   // dead end. These four assertions are the wiring that keeps it reachable.
   const routeBoundary = componentBody(appSource, 'RouteBoundary');
   const register = componentBody(authenticatedAppSource, 'Register');
+  const registerPageSource = readFileSync(
+    new URL('../src/pages/register.tsx', import.meta.url),
+    'utf8',
+  );
 
   // A route registered in AuthenticatedApp but missing from the RouteBoundary
   // allowlist renders the PUBLIC router instead, and 404s for a signed-in user.
@@ -107,6 +142,10 @@ test('registration is routed, authenticated, and reachable from the workspace', 
   );
   assert.match(register, /<Show when="signed-in">\s*<RegisterPage \/>/);
   assert.match(register, /<Show when="signed-out"><RedirectToSignIn \/><\/Show>/);
+  assert.match(registerPageSource, /identifierType === ['"]consultant['"]/);
+  assert.match(registerPageSource, /Approved, active affiliates can create a consultant account/);
+  assert.match(registerPageSource, /\/accept-terms\?registration=direct/);
+  assert.match(registerPageSource, /Your subscription will be charged on\s+day 31/);
 
   // A signed-in user with no account row must be sent to registration, not to
   // the trial-ended screen. Getting this wrong tells a customer on their first
@@ -137,6 +176,9 @@ test('terms acceptance is reachable from registration and from the checkout refu
     /href=\{`\$\{basePath\}\/register`\}/,
     'Expected the unregistered state on /accept-terms to link to /register',
   );
+  assert.match(acceptTermsSource, /registration['"]\) === ['"]direct['"]/);
+  assert.match(acceptTermsSource, /Go to billing to start your trial/);
+  assert.match(acceptTermsSource, /href=\{`\$\{basePath\}\/billing`\}/);
   assert.match(
     billingSource,
     /TERMS_ACCEPTANCE_REQUIRED/,

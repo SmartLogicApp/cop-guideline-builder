@@ -56,6 +56,10 @@ function subscriptionLabel(data: SubscriptionData | null) {
 
   if (source === 'admin') return 'Administrative access';
   if (source === 'complimentary') return 'Complimentary access';
+  if (['past_due', 'unpaid', 'incomplete', 'paused'].includes(subscription?.status ?? '')) {
+    return 'Payment needs attention';
+  }
+  if (subscription?.status === 'pending_payment') return 'Payment method needed';
   if (subscription?.status === 'trial' && subscription.daysLeftInTrial > 0) {
     return `Free trial · ${subscription.daysLeftInTrial} day${subscription.daysLeftInTrial === 1 ? '' : 's'} left`;
   }
@@ -71,6 +75,28 @@ export default function BillingPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<'checkout' | 'portal' | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const subscriptionStatus = subscription?.subscription?.status ?? '';
+  const hasActiveStripeSubscription = ['active', 'trialing'].includes(
+    subscriptionStatus,
+  );
+  const hasRecoverableStripeSubscription = ['past_due', 'unpaid', 'incomplete', 'paused'].includes(
+    subscriptionStatus,
+  );
+  const hasManageableStripeSubscription =
+    hasActiveStripeSubscription || hasRecoverableStripeSubscription;
+  const trialEndTime = subscriptionStatus === 'trial' && subscription?.subscription?.trialEndsAt
+    ? Date.parse(subscription.subscription.trialEndsAt)
+    : null;
+  const hasActiveLocalTrial =
+    trialEndTime !== null && Number.isFinite(trialEndTime) && trialEndTime > now;
+  const localTrialEndLabel = trialEndTime !== null && Number.isFinite(trialEndTime)
+    ? new Date(trialEndTime).toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : null;
   const paymentAcceptanceEnabled = subscription?.paymentAcceptanceEnabled === true;
   const checkoutState = new URLSearchParams(window.location.search).get('checkout');
 
@@ -133,6 +159,20 @@ export default function BillingPage() {
     void hydrate();
   }, [getToken, loadBilling]);
 
+  useEffect(() => {
+    if (trialEndTime === null || !Number.isFinite(trialEndTime) || trialEndTime <= Date.now()) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => {
+        setNow(Date.now());
+        void loadBilling();
+      },
+      trialEndTime - Date.now() + 1,
+    );
+    return () => window.clearTimeout(timer);
+  }, [trialEndTime, loadBilling]);
+
   const openStripe = useCallback(async (endpoint: 'checkout' | 'portal') => {
     setActionLoading(endpoint);
     setActionError(null);
@@ -155,6 +195,22 @@ export default function BillingPage() {
         window.location.assign(`${basePath}/accept-terms`);
         return;
       }
+      if (body.code === 'LOCAL_TRIAL_STILL_ACTIVE') {
+        const trialEndsAt = subscription?.subscription?.trialEndsAt;
+        const trialEndTimestamp = trialEndsAt ? Date.parse(trialEndsAt) : Number.NaN;
+        const formattedEnd = Number.isFinite(trialEndTimestamp)
+          ? new Date(trialEndTimestamp).toLocaleDateString('en-US', {
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric',
+            })
+          : null;
+        setActionError(formattedEnd
+          ? `Your no-card trial is still active until ${formattedEnd}. You can start checkout after it ends.`
+          : 'Your no-card trial is still active. You can start checkout after it ends.');
+        setActionLoading(null);
+        return;
+      }
       if (!response.ok || !body.url) {
         throw new Error(body.error || 'Billing could not be opened. Please try again.');
       }
@@ -165,7 +221,7 @@ export default function BillingPage() {
         : 'Billing could not be opened. Please try again.');
       setActionLoading(null);
     }
-  }, [getToken]);
+  }, [getToken, subscription]);
 
   return (
     <main className="min-h-[100dvh] bg-slate-50 px-4 py-8 sm:px-6 sm:py-12">
@@ -191,8 +247,14 @@ export default function BillingPage() {
             </p>
           </div>
           {!isLoading && !error && (
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800">
-              <CheckCircle2 className="size-4" aria-hidden="true" />
+            <div className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold ${
+              hasRecoverableStripeSubscription
+                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            }`}>
+              {hasRecoverableStripeSubscription
+                ? <AlertCircle className="size-4" aria-hidden="true" />
+                : <CheckCircle2 className="size-4" aria-hidden="true" />}
               {subscriptionLabel(subscription)}
             </div>
           )}
@@ -294,9 +356,26 @@ export default function BillingPage() {
                       </div>
                     </div>
                     <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-                      Full compliance workspace access for your registered facility, including guideline,
-                      policy, inspection-readiness, and policy-gap generation tools.
+                      {hasRecoverableStripeSubscription
+                        ? 'There is a payment issue with your subscription. Use Manage billing to update your payment method and restore billing.'
+                        : subscriptionStatus === 'pending_payment'
+                          ? 'Add a payment method through secure checkout to start your 30-day free trial. Your subscription will be charged on day 31 unless you cancel before then.'
+                          : hasActiveLocalTrial
+                            ? `Your consultant trial remains active until ${localTrialEndLabel ?? 'its end date'}. Checkout will be available after it expires; no charge starts during the remaining free trial.`
+                            : 'Full compliance workspace access for your registered facility, including guideline, policy, inspection-readiness, and policy-gap generation tools.'}
                     </p>
+                    {hasRecoverableStripeSubscription ? (
+                      <p className="mt-3 text-sm text-slate-700">
+                        Need help resolving the payment issue?{' '}
+                        <a
+                          href={`mailto:${supportEmail}?subject=CMS%20Compliance%20Suite%20payment%20support`}
+                          className="font-semibold text-teal-800 underline underline-offset-2 hover:text-teal-950"
+                        >
+                          Contact support
+                        </a>
+                        .
+                      </p>
+                    ) : null}
                     {subscription?.subscription?.currentPeriodEnd && (
                       <p className="mt-3 text-sm font-medium text-slate-700">
                         {subscription.subscription.cancelAtPeriodEnd ? 'Access ends' : 'Renews'}{' '}
@@ -309,24 +388,53 @@ export default function BillingPage() {
                       ${subscription?.plan?.amountUsd ?? 299}
                       <span className="text-sm font-medium text-slate-500">/month</span>
                     </p>
-                    {subscription?.canManageBilling ? (
-                      <button
-                        type="button"
-                        onClick={() => void openStripe('portal')}
-                        disabled={actionLoading !== null}
-                        className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {actionLoading === 'portal' ? 'Opening…' : 'Manage billing'}
-                      </button>
+                    {hasManageableStripeSubscription ? (
+                      subscription?.canManageBilling ? (
+                        <button
+                          type="button"
+                          onClick={() => void openStripe('portal')}
+                          disabled={actionLoading !== null}
+                          className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {actionLoading === 'portal' ? 'Opening…' : 'Manage billing'}
+                        </button>
+                      ) : (
+                        <p className="mt-4 text-sm leading-5 text-amber-800" role="status">
+                          We could not find the Stripe customer record for this subscription.
+                          Please contact support.
+                        </p>
+                      )
+                    ) : hasActiveLocalTrial ? (
+                      <p className="mt-4 text-sm leading-5 text-slate-700" role="status">
+                        Checkout will be available after your no-card trial ends
+                        {localTrialEndLabel ? ` on ${localTrialEndLabel}` : ''}. No checkout or
+                        subscription charge starts during the remaining free trial.
+                      </p>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => void openStripe('checkout')}
-                        disabled={actionLoading !== null}
-                        className="mt-4 w-full rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {actionLoading === 'checkout' ? 'Opening secure checkout…' : 'Subscribe'}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void openStripe('checkout')}
+                          disabled={actionLoading !== null}
+                          className="mt-4 w-full rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {actionLoading === 'checkout'
+                            ? 'Opening secure checkout…'
+                            : subscriptionStatus === 'pending_payment'
+                              ? 'Start 30-day free trial'
+                              : 'Subscribe'}
+                        </button>
+                        {subscription?.canManageBilling ? (
+                          <button
+                            type="button"
+                            onClick={() => void openStripe('portal')}
+                            disabled={actionLoading !== null}
+                            className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-100 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            {actionLoading === 'portal' ? 'Opening…' : 'Manage billing'}
+                          </button>
+                        ) : null}
+                      </>
                     )}
                     <p className="mt-3 text-xs leading-5 text-slate-500">
                       Secure checkout and subscription management are provided by Stripe.

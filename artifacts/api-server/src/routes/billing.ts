@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { accounts, accountUsers, tokenUsage } from "@workspace/db";
@@ -5,13 +6,121 @@ import { eq, and, gte } from "drizzle-orm";
 import { requireAuth } from "./accounts";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription";
 import { isTrialStatus } from "../middlewares/subscriptionAccess";
-import { getTrialPeriodDays, isPaymentAcceptanceEnabled } from "../lib/payment-config";
+import {
+  isPaymentAcceptanceEnabled,
+  isProductionTrialPeriodExactly30,
+  isRecoverableStripeSubscriptionStatus,
+  resolveCheckoutTrialPlan,
+} from "../lib/payment-config";
 import { getReturnBase } from "../lib/return-base.js";
 import { CURRENT_TERMS_VERSION, needsAcceptance } from "../lib/terms-versions";
 import { getConfiguredStripePriceId, isStripeConfigured, stripeRequest } from "../stripeClient";
 import { syncStripeSubscriptionById } from "../webhookHandlers";
 
 const router: IRouter = Router();
+const EXPECTED_MONTHLY_PRICE_CENTS = 29_900;
+const MAX_STRIPE_SUBSCRIPTION_HISTORY_PAGES = 100;
+
+type CheckoutPrice = {
+  livemode?: boolean;
+  active?: boolean;
+  currency?: string;
+  unit_amount?: number | null;
+  type?: string;
+  recurring?: {
+    interval?: string;
+    interval_count?: number;
+    usage_type?: string;
+  } | null;
+  product?: string | { active?: boolean } | null;
+};
+
+/**
+ * The configured Stripe Price is the actual amount the customer will pay.
+ * Keep this exact contract aligned with the Facility plan advertised by the
+ * billing endpoint; a non-empty ID alone is not enough to protect production
+ * from accidentally using a test, one-time, or differently priced object.
+ */
+export function isExpectedCheckoutPrice(price: CheckoutPrice, liveMode: boolean): boolean {
+  const productIsActive = typeof price.product === "object" && price.product !== null &&
+    price.product.active === true;
+  return price.livemode === liveMode &&
+    price.active === true &&
+    price.currency === "usd" &&
+    price.unit_amount === EXPECTED_MONTHLY_PRICE_CENTS &&
+    price.type === "recurring" &&
+    price.recurring?.interval === "month" &&
+    price.recurring.interval_count === 1 &&
+    price.recurring.usage_type === "licensed" &&
+    productIsActive;
+}
+
+async function loadStripeSubscriptionHistory(
+  stripe: { request<T>(path: string): Promise<T> },
+  customerId: string,
+): Promise<string[]> {
+  const statuses: string[] = [];
+  const seenIds = new Set<string>();
+  let startingAfter: string | null = null;
+
+  for (let pageNumber = 0; pageNumber < MAX_STRIPE_SUBSCRIPTION_HISTORY_PAGES; pageNumber += 1) {
+    const params = new URLSearchParams({
+      customer: customerId,
+      status: "all",
+      limit: "100",
+    });
+    if (startingAfter) params.set("starting_after", startingAfter);
+    const page = await stripe.request<{
+      data: { id: string; status: string }[];
+      has_more: boolean;
+    }>(`/v1/subscriptions?${params.toString()}`);
+
+    if (
+      !page ||
+      !Array.isArray(page.data) ||
+      typeof page.has_more !== "boolean" ||
+      page.data.some((subscription) =>
+        !subscription ||
+        typeof subscription.id !== "string" ||
+        !subscription.id ||
+        typeof subscription.status !== "string" ||
+        !subscription.status
+      )
+    ) {
+      throw new Error("Stripe returned an incomplete subscription history page.");
+    }
+
+    for (const subscription of page.data) {
+      if (seenIds.has(subscription.id)) {
+        throw new Error("Stripe subscription history pagination repeated an object.");
+      }
+      seenIds.add(subscription.id);
+      statuses.push(subscription.status);
+    }
+
+    if (!page.has_more) return statuses;
+    const nextCursor = page.data.at(-1)?.id;
+    if (!nextCursor || nextCursor === startingAfter) {
+      throw new Error("Stripe subscription history pagination did not advance.");
+    }
+    startingAfter = nextCursor;
+  }
+
+  throw new Error("Stripe subscription history exceeded the pagination safety limit.");
+}
+
+function checkoutTrialPolicy(trialPlan: ReturnType<typeof resolveCheckoutTrialPlan>): string {
+  switch (trialPlan.kind) {
+    case "first-direct":
+      return `first-direct-${trialPlan.trialPeriodDays}`;
+    case "existing-local":
+      return `existing-local-${trialPlan.trialEnd}`;
+    case "local-trial-active":
+      return `local-trial-active-${trialPlan.trialEnd}`;
+    case "none":
+      return "no-trial";
+  }
+}
 
 /**
  * Stripe, or null when it is not configured.
@@ -140,6 +249,38 @@ router.post("/checkout", requireAuth, async (req, res) => {
       code: "PRICE_NOT_CONFIGURED",
     });
   }
+  let configuredPrice: CheckoutPrice;
+  try {
+    configuredPrice = await stripe.request<CheckoutPrice>(
+      `/v1/prices/${encodeURIComponent(priceId)}?expand[]=product`,
+    );
+  } catch (error) {
+    req.log.error({ err: error }, "Configured Stripe subscription price could not be retrieved.");
+    return res.status(503).json({
+      error: "The configured subscription plan could not be verified with Stripe.",
+      code: "PRICE_CONFIGURATION_INVALID",
+    });
+  }
+  if (!isExpectedCheckoutPrice(configuredPrice, process.env.NODE_ENV === "production")) {
+    req.log.error(
+      {
+        priceId,
+        expectedMode: process.env.NODE_ENV === "production" ? "live" : "test",
+        active: configuredPrice.active,
+        currency: configuredPrice.currency,
+        unitAmount: configuredPrice.unit_amount,
+        type: configuredPrice.type,
+        recurringInterval: configuredPrice.recurring?.interval,
+        recurringIntervalCount: configuredPrice.recurring?.interval_count,
+        recurringUsageType: configuredPrice.recurring?.usage_type,
+      },
+      "Configured Stripe subscription price does not match the published Facility plan.",
+    );
+    return res.status(503).json({
+      error: "The configured subscription plan does not match the Facility plan. Contact support.",
+      code: "PRICE_CONFIGURATION_INVALID",
+    });
+  }
   const base = getReturnBase(req);
   const clerkUserId = (req as any).clerkUserId as string;
   const email = accountUser.email ?? (req as any).clerkEmail ?? undefined;
@@ -170,42 +311,248 @@ router.post("/checkout", requireAuth, async (req, res) => {
     customerId = customer.id;
   }
 
-  // Stripe runs the trial clock. The app mirrors trial_end back onto the
-  // account when the subscription syncs, so there is one source of truth.
-  // payment_method_collection is explicit: the card is taken up front, and
-  // the subscription charges automatically when the trial ends.
-  const trialPeriodDays = getTrialPeriodDays();
-  const checkoutParams = new URLSearchParams({
-    customer: customerId,
-    "line_items[0][price]": priceId,
-    "line_items[0][quantity]": "1",
-    mode: "subscription",
-    payment_method_collection: "always",
-    ...(trialPeriodDays > 0
-      ? { "subscription_data[trial_period_days]": String(trialPeriodDays) }
-      : {}),
-    success_url: `${base}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${base}/billing?checkout=canceled`,
-    client_reference_id: account.id,
-    "metadata[accountId]": account.id,
-    "metadata[ccn]": account.ccn,
-    "metadata[identifierType]": account.identifierType,
-    "metadata[clerkUserId]": clerkUserId,
-    "subscription_data[metadata][accountId]": account.id,
-    "subscription_data[metadata][ccn]": account.ccn,
-    "subscription_data[metadata][identifierType]": account.identifierType,
-    "subscription_data[metadata][clerkUserId]": clerkUserId,
-  });
-  const session = await stripe.request<{ url: string | null }>("/v1/checkout/sessions", {
-    method: "POST",
-    body: checkoutParams,
-    idempotencyKey: `cms-checkout-${account.id}-${priceId}-t${trialPeriodDays}`,
+  // Serialize session lookup/creation for this account across API instances.
+  // Reuse a still-open session so concurrent requests cannot produce separate
+  // subscriptions; a fresh random idempotency key below applies to each new
+  // attempt and cannot replay an abandoned session after Stripe's 24-hour key
+  // retention window.
+  const checkoutResult = await db.transaction(async (tx) => {
+    const [currentAccount] = await tx.select({
+      id: accounts.id,
+      ccn: accounts.ccn,
+      identifierType: accounts.identifierType,
+      stripeCustomerId: accounts.stripeCustomerId,
+      stripeSubscriptionId: accounts.stripeSubscriptionId,
+      subscriptionStatus: accounts.subscriptionStatus,
+      trialEndsAt: accounts.trialEndsAt,
+    }).from(accounts).where(eq(accounts.id, account.id)).for("update").limit(1);
+    if (!currentAccount) return { kind: "account-missing" as const };
+
+    const lockedCustomerId = currentAccount.stripeCustomerId ?? customerId;
+    let subscriptionStatuses: string[];
+    try {
+      subscriptionStatuses = await loadStripeSubscriptionHistory(stripe, lockedCustomerId);
+    } catch (error) {
+      req.log.error(
+        { err: error, accountId: account.id },
+        "Complete Stripe subscription history could not be verified.",
+      );
+      return { kind: "subscription-history-unavailable" as const };
+    }
+
+    if (
+      (currentAccount.stripeSubscriptionId &&
+        isRecoverableStripeSubscriptionStatus(currentAccount.subscriptionStatus ?? "")) ||
+      subscriptionStatuses.some(isRecoverableStripeSubscriptionStatus)
+    ) {
+      return { kind: "already-subscribed" as const };
+    }
+
+    const hasStripeSubscriptionHistory = Boolean(currentAccount.stripeSubscriptionId) ||
+      subscriptionStatuses.length > 0;
+    let trialPlan = resolveCheckoutTrialPlan({
+      subscriptionStatus: currentAccount.subscriptionStatus,
+      trialEndsAt: currentAccount.trialEndsAt,
+      hasStripeSubscriptionHistory,
+    });
+    if (trialPlan.kind === "local-trial-active") {
+      return { kind: "local-trial-active" as const, trialEnd: trialPlan.trialEnd };
+    }
+    if (
+      process.env.NODE_ENV === "production" &&
+      trialPlan.kind === "first-direct" &&
+      (
+        trialPlan.trialPeriodDays !== 30 ||
+        !isProductionTrialPeriodExactly30()
+      )
+    ) {
+      req.log.error(
+        { accountId: account.id, configuredTrialDays: process.env.STRIPE_TRIAL_PERIOD_DAYS },
+        "Production direct-checkout trial must be configured for exactly 30 days.",
+      );
+      return { kind: "trial-configuration-invalid" as const };
+    }
+
+    const trialPolicy = checkoutTrialPolicy(trialPlan);
+    let existingSessions: {
+      data: {
+        id: string;
+        url: string | null;
+        mode: string | null;
+        status: string | null;
+        client_reference_id: string | null;
+        metadata: Record<string, string> | null;
+      }[];
+    };
+    try {
+      existingSessions = await stripe.request(
+        `/v1/checkout/sessions?customer=${encodeURIComponent(lockedCustomerId)}&status=open&limit=100`,
+      );
+    } catch (error) {
+      req.log.error({ err: error, accountId: account.id }, "Open Stripe Checkout sessions could not be verified.");
+      return { kind: "checkout-sessions-unavailable" as const };
+    }
+
+    let reusableSession: (typeof existingSessions.data)[number] | null = null;
+    try {
+      for (const existingSession of existingSessions.data) {
+        if (
+          existingSession.client_reference_id !== account.id ||
+          existingSession.mode !== "subscription"
+        ) continue;
+
+        const matchesCurrentPolicy =
+          existingSession.metadata?.checkoutPolicy === "facility-trial-v2" &&
+          existingSession.metadata?.trialPolicy === trialPolicy &&
+          existingSession.metadata?.priceId === priceId;
+        if (!reusableSession && matchesCurrentPolicy && existingSession.url) {
+          reusableSession = existingSession;
+          continue;
+        }
+
+        // Sessions created under an old trial policy must not remain usable
+        // after this route has determined the customer's current entitlement.
+        await stripe.request(
+          `/v1/checkout/sessions/${encodeURIComponent(existingSession.id)}/expire`,
+          { method: "POST" },
+        );
+      }
+    } catch (error) {
+      req.log.error({ err: error, accountId: account.id }, "An obsolete Checkout session could not be expired.");
+      return { kind: "checkout-sessions-unavailable" as const };
+    }
+    trialPlan = resolveCheckoutTrialPlan({
+      subscriptionStatus: currentAccount.subscriptionStatus,
+      trialEndsAt: currentAccount.trialEndsAt,
+      hasStripeSubscriptionHistory,
+    });
+    if (trialPlan.kind === "local-trial-active") {
+      if (reusableSession) {
+        try {
+          await stripe.request(
+            `/v1/checkout/sessions/${encodeURIComponent(reusableSession.id)}/expire`,
+            { method: "POST" },
+          );
+        } catch (error) {
+          req.log.error({ err: error, accountId: account.id }, "A soon-to-expire trial Checkout session could not be expired.");
+          return { kind: "checkout-sessions-unavailable" as const };
+        }
+      }
+      return { kind: "local-trial-active" as const, trialEnd: trialPlan.trialEnd };
+    }
+    if (
+      process.env.NODE_ENV === "production" &&
+      trialPlan.kind === "first-direct" &&
+      (
+        trialPlan.trialPeriodDays !== 30 ||
+        !isProductionTrialPeriodExactly30()
+      )
+    ) {
+      req.log.error(
+        { accountId: account.id, configuredTrialDays: process.env.STRIPE_TRIAL_PERIOD_DAYS },
+        "Production direct-checkout trial must be configured for exactly 30 days.",
+      );
+      return { kind: "trial-configuration-invalid" as const };
+    }
+
+    const finalTrialPolicy = checkoutTrialPolicy(trialPlan);
+    if (
+      reusableSession &&
+      (
+        reusableSession.metadata?.trialPolicy !== finalTrialPolicy ||
+        reusableSession.metadata?.priceId !== priceId
+      )
+    ) {
+      try {
+        await stripe.request(
+          `/v1/checkout/sessions/${encodeURIComponent(reusableSession.id)}/expire`,
+          { method: "POST" },
+        );
+        reusableSession = null;
+      } catch (error) {
+        req.log.error({ err: error, accountId: account.id }, "A stale Checkout session could not be expired.");
+        return { kind: "checkout-sessions-unavailable" as const };
+      }
+    }
+    if (reusableSession) {
+      return { kind: "checkout-url" as const, url: reusableSession.url };
+    }
+
+    const checkoutParams = new URLSearchParams({
+      customer: lockedCustomerId,
+      "line_items[0][price]": priceId,
+      "line_items[0][quantity]": "1",
+      mode: "subscription",
+      // The card is collected up front and the subscription charges
+      // automatically when its Stripe-owned trial ends.
+      payment_method_collection: "always",
+      success_url: `${base}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${base}/billing?checkout=canceled`,
+      client_reference_id: account.id,
+      "metadata[accountId]": account.id,
+      "metadata[ccn]": currentAccount.ccn,
+      "metadata[identifierType]": currentAccount.identifierType,
+      "metadata[clerkUserId]": clerkUserId,
+      "metadata[checkoutPolicy]": "facility-trial-v2",
+      "metadata[trialPolicy]": finalTrialPolicy,
+      "metadata[priceId]": priceId,
+      "subscription_data[metadata][accountId]": account.id,
+      "subscription_data[metadata][ccn]": currentAccount.ccn,
+      "subscription_data[metadata][identifierType]": currentAccount.identifierType,
+      "subscription_data[metadata][clerkUserId]": clerkUserId,
+    });
+    if (trialPlan.kind === "first-direct" && trialPlan.trialPeriodDays > 0) {
+      checkoutParams.set(
+        "subscription_data[trial_period_days]",
+        String(trialPlan.trialPeriodDays),
+      );
+    } else if (trialPlan.kind === "existing-local") {
+      checkoutParams.set("subscription_data[trial_end]", String(trialPlan.trialEnd));
+    }
+
+    const session = await stripe.request<{ url: string | null }>("/v1/checkout/sessions", {
+      method: "POST",
+      body: checkoutParams,
+      idempotencyKey: `cms-checkout-${account.id}-${randomUUID()}`,
+    });
+    return { kind: "checkout-url" as const, url: session.url };
   });
 
-  if (!session.url) {
+  if (checkoutResult.kind === "account-missing") {
+    return res.status(404).json({ error: "No facility account found" });
+  }
+  if (checkoutResult.kind === "already-subscribed") {
+    return res.status(409).json({
+      error: "This facility has an existing Stripe subscription that must be resolved before checkout.",
+      code: "ALREADY_SUBSCRIBED",
+    });
+  }
+  if (checkoutResult.kind === "trial-configuration-invalid") {
+    return res.status(503).json({
+      error: "The production subscription trial must be configured for exactly 30 days.",
+      code: "TRIAL_CONFIGURATION_INVALID",
+    });
+  }
+  if (checkoutResult.kind === "local-trial-active") {
+    return res.status(409).json({
+      error: "Your existing trial is still active and ends too soon for a Stripe trial. Please return after it ends.",
+      code: "LOCAL_TRIAL_STILL_ACTIVE",
+      trialEndsAt: new Date(checkoutResult.trialEnd * 1000).toISOString(),
+    });
+  }
+  if (
+    checkoutResult.kind === "subscription-history-unavailable" ||
+    checkoutResult.kind === "checkout-sessions-unavailable"
+  ) {
+    return res.status(503).json({
+      error: "The existing Stripe subscription state could not be verified. Please try again.",
+      code: "SUBSCRIPTION_STATE_UNAVAILABLE",
+    });
+  }
+  if (!checkoutResult.url) {
     return res.status(502).json({ error: "Stripe did not return a checkout URL." });
   }
-  return res.status(201).json({ url: session.url });
+  return res.status(201).json({ url: checkoutResult.url });
 });
 
 // POST /api/billing/checkout/confirm — authenticated fallback after Stripe return

@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
-import { accounts, accountUsers, termsAcceptances } from "@workspace/db";
+import { accounts, accountUsers, affiliates, termsAcceptances } from "@workspace/db";
 import { eq, and, or, ne, isNull } from "drizzle-orm";
 import { normalizeReferralCode } from "../lib/affiliate-commission.js";
 import {
@@ -359,9 +359,10 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
 // POST /api/accounts/register — register an account and link the current user.
 //
 // The identifier may be a CCN (certified facilities), an NPI (practices and
-// individual providers), a CLIA number (labs), or — for a consultant who has
-// none of those — one this endpoint issues. Whichever it is, the account gets
-// exactly one, and it is unique, so one organisation means one subscription.
+// individual providers), a CLIA number (labs), or — for an approved active
+// affiliate consultant who has none of those — one this endpoint issues.
+// Whichever it is, the account gets exactly one, and it is unique, so one
+// organisation means one subscription.
 //
 // This endpoint CREATES accounts. It does not join existing ones: see the
 // comment at the identifier lookup below for why that distinction is a
@@ -393,6 +394,21 @@ router.post("/register", requireAuth, async (req, res) => {
     });
   }
   const idType: IdentifierType = identifierType ?? DEFAULT_IDENTIFIER_TYPE;
+
+  if (idType === "consultant") {
+    const [activeAffiliate] = await db.select({ id: affiliates.id }).from(affiliates)
+      .where(and(
+        eq(affiliates.clerkUserId, userId),
+        eq(affiliates.status, "active"),
+      ))
+      .limit(1);
+    if (!activeAffiliate) {
+      return res.status(403).json({
+        error: "Consultant registration is reserved for approved, active affiliates.",
+        code: "CONSULTANT_REGISTRATION_REQUIRES_ACTIVE_AFFILIATE",
+      });
+    }
+  }
 
   if (!facilityName?.trim()) {
     return res.status(400).json({ error: "facilityName is required" });
@@ -449,8 +465,9 @@ router.post("/register", requireAuth, async (req, res) => {
     });
   }
 
-  const trialEnds = new Date();
-  trialEnds.setDate(trialEnds.getDate() + 30);
+  const isConsultant = idType === "consultant";
+  const trialEnds = isConsultant ? new Date() : null;
+  if (trialEnds) trialEnds.setDate(trialEnds.getDate() + 30);
 
   const values = {
     facilityName:       facilityName.trim(),
@@ -459,7 +476,9 @@ router.post("/register", requireAuth, async (req, res) => {
     city:               city ?? null,
     identifierType:     idType,
     referralCode:       normalReferral,
-    subscriptionStatus: "trial",
+    // Consultants retain the existing no-card local trial. Direct customers
+    // must start their trial through Stripe checkout with a payment method.
+    subscriptionStatus: isConsultant ? "trial" : "pending_payment",
     trialEndsAt:        trialEnds,
   };
 

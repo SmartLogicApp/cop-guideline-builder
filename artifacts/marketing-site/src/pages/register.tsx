@@ -63,7 +63,7 @@ const IDENTIFIER_CHOICES: ReadonlyArray<{
   {
     value: 'consultant',
     label: 'None of these — I am a consultant or advisory firm',
-    hint: 'We will issue you an account identifier. You do not need to enter one.',
+    hint: 'For approved, active affiliates only. We will issue you an account identifier.',
     placeholder: '',
   },
 ];
@@ -162,7 +162,9 @@ export default function RegisterPage() {
       }
       // Registration is what the acceptance is recorded against, so the Terms
       // come next. Without this the acceptance page is unreachable.
-      setLocation('/accept-terms');
+      setLocation(identifierType === 'consultant'
+        ? '/accept-terms'
+        : '/accept-terms?registration=direct');
     } catch {
       setError('We could not reach the server. Please check your connection and try again.');
     } finally {
@@ -200,8 +202,19 @@ export default function RegisterPage() {
           <div className="text-sm leading-6 text-teal-950">
             <p className="font-semibold">Register your organization</p>
             <p className="mt-1">
-              This creates your account and starts a 30-day trial. You will be asked to accept
-              the Terms of Service next.
+              {identifierType === 'consultant' ? (
+                <>
+                  Approved, active affiliates can create a consultant account with a 30-day trial
+                  and no payment method. Consultant registration is verified by our server. You
+                  will be asked to accept the Terms of Service next.
+                </>
+              ) : (
+                <>
+                  After accepting the Terms of Service, add a payment method through secure
+                  checkout to start your 30-day free trial. Your subscription will be charged on
+                  day 31 unless you cancel before then.
+                </>
+              )}
             </p>
           </div>
         </div>

@@ -4,8 +4,8 @@ import {
 } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import Stripe from "stripe";
-import { getStripeConnectTestClient } from "../stripeClient.js";
-import { isTestExpressRecipient } from "./affiliate-connect-account.js";
+import { getStripeConnectClient, getStripeConnectLivemode } from "../stripeClient.js";
+import { verifyExpressRecipient } from "./affiliate-connect-account.js";
 import { stripeTaxStatus } from "./affiliate-connect-tax.js";
 
 function destinationId(destination: Stripe.Transfer["destination"]): string | null {
@@ -16,7 +16,7 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
   if (event.type === "account.updated") {
     const account = event.data.object as Stripe.Account;
     const affiliateId = account.metadata?.affiliateId;
-    if (!affiliateId || event.livemode) return;
+    if (!affiliateId || event.livemode !== getStripeConnectLivemode()) return;
     const [linkedStatus] = await db.select({
       affiliateId: affiliateComplianceStatus.affiliateId,
       stripeConnectedAccountId: affiliateComplianceStatus.stripeConnectedAccountId,
@@ -25,11 +25,13 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
     // an account; the previously persisted account ID is authoritative.
     if (!linkedStatus || linkedStatus.affiliateId !== affiliateId
         || linkedStatus.stripeConnectedAccountId !== account.id) return;
-    if (!(await isTestExpressRecipient(getStripeConnectTestClient(), account))) return;
+    const stripe = getStripeConnectClient();
+    const verifiedAccount = await verifyExpressRecipient(stripe, account, getStripeConnectLivemode());
+    if (!verifiedAccount.valid) return;
     const due = [...(account.requirements?.currently_due ?? []), ...(account.requirements?.past_due ?? [])]
       .filter((item): item is string => typeof item === "string").slice(0, 50);
     const detailsSubmitted = Boolean(account.details_submitted);
-    const payoutsEnabled = Boolean(account.payouts_enabled);
+    const payoutsEnabled = Boolean(account.payouts_enabled) && verifiedAccount.transferCapabilityActive;
     const now = new Date();
     const complete = detailsSubmitted && payoutsEnabled && due.length === 0;
     const taxStatus = stripeTaxStatus(account);
@@ -69,12 +71,13 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
     return;
   }
   if (event.type !== "transfer.created" && event.type !== "transfer.reversed") return;
+  if (event.livemode !== getStripeConnectLivemode()) return;
   const eventTransfer = event.data.object as Stripe.Transfer;
   // Retrieve Stripe's current object rather than treating the event's
   // metadata as authority. The event ID must still match that canonical object.
-  const stripe = getStripeConnectTestClient();
+  const stripe = getStripeConnectClient();
   const transfer = await stripe.transfers.retrieve(eventTransfer.id);
-  if (transfer.id !== eventTransfer.id || transfer.livemode) return;
+  if (transfer.id !== eventTransfer.id || transfer.livemode !== getStripeConnectLivemode()) return;
   const workflowId = transfer.metadata?.affiliatePayoutWorkflowId;
   const metadataAffiliateId = transfer.metadata?.affiliateId;
   if (!workflowId || !metadataAffiliateId) return;

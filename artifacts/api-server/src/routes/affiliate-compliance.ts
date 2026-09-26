@@ -11,7 +11,7 @@ import {
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
-import { isTestExpressRecipient } from "../lib/affiliate-connect-account.js";
+import { verifyExpressRecipient } from "../lib/affiliate-connect-account.js";
 import { stripeTaxStatus } from "../lib/affiliate-connect-tax.js";
 import { SAMPLE_AGREEMENT_BODY, SAMPLE_AGREEMENT_VERSION, sampleAgreementAvailable } from "../lib/affiliate-sample-agreement.js";
 import { calculateAffiliatePayoutEligibility, auditBlockedPayoutAttempt, PAYOUT_MINIMUM_USD } from "../lib/affiliate-payout-eligibility.js";
@@ -24,7 +24,10 @@ import {
   redactSensitiveFinancialData,
 } from "../lib/affiliate-sensitive-boundary.js";
 import { sendViaResend } from "../lib/resend-mailer.js";
-import { getStripeConnectTestClient } from "../stripeClient.js";
+import {
+  assertAffiliatePayoutSendingEnabled, getStripeConnectClient,
+  getStripeConnectLivemode, isAffiliateConnectLiveEnabled,
+} from "../stripeClient.js";
 import { quarterBounds } from "../lib/affiliate-commission.js";
 import { eligibleQuarterCommission, sumCommissionCents } from "../lib/affiliate-quarterly-payout.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -410,7 +413,10 @@ router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
         || authorization[0].version !== authorizationDoc.version) {
       res.status(409).json({ error: "Accept the current payment authorization before starting payment setup." }); return;
     }
-    const stripe = getStripeConnectTestClient();
+    if (getStripeConnectLivemode() && !isAffiliateConnectLiveEnabled()) {
+      res.status(503).json({ error: "Live secure payment setup is not enabled." }); return;
+    }
+    const stripe = getStripeConnectClient();
     let accountId = status.stripeConnectedAccountId;
     if (!accountId) {
       stage = "account_create";
@@ -431,6 +437,12 @@ router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
         stripeOnboardingStartedAt: new Date(), updatedAt: new Date(),
       }).where(eq(affiliateComplianceStatus.affiliateId, req.affiliateId));
     }
+    const linkedAccount = await stripe.accounts.retrieve(accountId);
+    if (("deleted" in linkedAccount && linkedAccount.deleted)
+        || linkedAccount.metadata?.affiliateId !== req.affiliateId
+        || !(await verifyExpressRecipient(stripe, linkedAccount, getStripeConnectLivemode())).valid) {
+      throw new Error("Stored Stripe account does not match the affiliate or configured mode.");
+    }
     stage = "return_url";
     const origin = secureApplicationOrigin();
     stage = "account_link";
@@ -448,7 +460,7 @@ router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
       stage, stripeCode: typeof error?.code === "string" ? error.code : undefined,
       stripeType: typeof error?.type === "string" ? error.type : undefined,
       httpStatus: typeof error?.statusCode === "number" ? error.statusCode : undefined,
-    }, "Affiliate Connect test setup failed");
+    }, "Affiliate Connect setup failed");
     res.status(503).json({ error: "Secure payment setup is temporarily unavailable." });
   }
 });
@@ -456,13 +468,14 @@ router.post("/portal/connect", requireAffiliate, async (req: any, res) => {
 async function synchronizeStripeAccount(affiliateId: string) {
   const [status] = await db.select().from(affiliateComplianceStatus).where(eq(affiliateComplianceStatus.affiliateId, affiliateId)).limit(1);
   if (!status?.stripeConnectedAccountId) throw new Error("No connected account");
-  const stripe = getStripeConnectTestClient();
+  const stripe = getStripeConnectClient();
   const account = await stripe.accounts.retrieve(status.stripeConnectedAccountId);
   if ("deleted" in account && account.deleted) throw new Error("Connected account unavailable");
-  if (!(await isTestExpressRecipient(stripe, account))) throw new Error("Connected account is not a Test-mode Express recipient");
+  const verifiedAccount = await verifyExpressRecipient(stripe, account, getStripeConnectLivemode());
+  if (!verifiedAccount.valid) throw new Error("Connected account is not a mode-matched Express recipient");
   const due = [...(account.requirements?.currently_due ?? []), ...(account.requirements?.past_due ?? [])].filter((v): v is string => typeof v === "string").slice(0, 50);
   const detailsSubmitted = Boolean(account.details_submitted);
-  const payoutsEnabled = Boolean(account.payouts_enabled);
+  const payoutsEnabled = Boolean(account.payouts_enabled) && verifiedAccount.transferCapabilityActive;
   const now = new Date();
   const onboardingComplete = detailsSubmitted && payoutsEnabled && due.length === 0;
   const taxStatus = stripeTaxStatus(account);
@@ -781,11 +794,6 @@ router.post("/admin/:id/remind", requireSuperAdmin, async (req: any, res) => {
   res.json({ sent: true });
 });
 
-function stripeTestPayoutGuard(): void {
-  const key = process.env.STRIPE_TEST_SECRET_KEY?.trim() ?? "";
-  if (process.env.NODE_ENV === "production" || !key.startsWith("sk_test_")) throw new Error("Test-mode payout sending is disabled.");
-}
-
 // A single draft path serves both manual and quarterly runs. The affiliate lock
 // serializes the two paths with each other and with send/void.
 async function createReviewedDraft(affiliateId: string, start: Date, end: Date, quarterly: boolean) {
@@ -923,9 +931,6 @@ router.get("/admin/payouts/quarterly-preview", requireAnyAdmin, async (req, res)
 });
 
 router.post("/admin/payouts/quarterly-run", requireSuperAdmin, async (req: any, res) => {
-  try { stripeTestPayoutGuard(); } catch {
-    res.status(403).json({ error: "Payout workflows are restricted to Stripe test mode." }); return;
-  }
   const bounds = completedQuarter(req.body?.quarter);
   if (!bounds || req.body?.confirmed !== true) {
     res.status(400).json({ error: "Confirm a completed quarter before preparing payout drafts." }); return;
@@ -954,9 +959,6 @@ router.post("/admin/payouts/quarterly-run", requireSuperAdmin, async (req: any, 
 });
 
 router.post("/admin/payouts/draft", requireSuperAdmin, async (req: any, res) => {
-  try { stripeTestPayoutGuard(); } catch {
-    res.status(403).json({ error: "Payout workflows are restricted to Stripe test mode." }); return;
-  }
   const affiliateId = typeof req.body?.affiliateId === "string" ? req.body.affiliateId : "";
   const start = new Date(req.body?.payoutPeriodStart);
   const end = new Date(req.body?.payoutPeriodEnd);
@@ -974,9 +976,6 @@ router.post("/admin/payouts/draft", requireSuperAdmin, async (req: any, res) => 
 });
 
 router.post("/admin/payouts/:id/approve", requireSuperAdmin, async (req: any, res) => {
-  try { stripeTestPayoutGuard(); } catch {
-    res.status(403).json({ error: "Payout workflows are restricted to Stripe test mode." }); return;
-  }
   const id = currentParam(req.params.id);
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
   if (reason.length < 5 || containsSensitiveFinancialNumber(reason)) { res.status(400).json({ error: "Provide a safe Admin payout approval reason." }); return; }
@@ -1001,9 +1000,6 @@ router.post("/admin/payouts/:id/approve", requireSuperAdmin, async (req: any, re
 });
 
 router.post("/admin/payouts/:id/void", requireSuperAdmin, async (req: any, res) => {
-  try { stripeTestPayoutGuard(); } catch {
-    res.status(403).json({ error: "Payout workflows are restricted to Stripe test mode." }); return;
-  }
   const id = currentParam(req.params.id);
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
   if (reason.length < 5 || containsSensitiveFinancialNumber(reason)) { res.status(400).json({ error: "Provide a safe reason for voiding this payout." }); return; }
@@ -1033,8 +1029,8 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
   if (req.body?.confirmed !== true || confirmationReason.length < 5 || containsSensitiveFinancialNumber(confirmationReason)) {
     res.status(400).json({ error: "Confirm the payout authorization and provide a reason before sending." }); return;
   }
-  try { stripeTestPayoutGuard(); } catch {
-    res.status(403).json({ error: "Payout sending is restricted to Stripe test mode." }); return;
+  try { assertAffiliatePayoutSendingEnabled(); } catch {
+    res.status(403).json({ error: "Affiliate payout sending is not enabled for this Stripe mode." }); return;
   }
   const [payout] = await db.select().from(affiliatePayoutWorkflow).where(eq(affiliatePayoutWorkflow.id, id)).limit(1);
   if (!payout) { res.status(404).json({ error: "Payout not found." }); return; }
@@ -1059,7 +1055,7 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
     res.status(409).json({ error: "Payout is ineligible, already sent, or awaiting transfer reconciliation.", blocking_reasons: blocked }); return;
   }
   try {
-    // Recheck under the affiliate lock just before the external test transfer.
+    // Recheck under the affiliate lock just before the external transfer.
     // On any uncertainty the durable processing state continues reserving claims.
     const result = await db.transaction(async (tx) => {
       await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, payout.affiliateId)).for("update").limit(1);
@@ -1108,7 +1104,21 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
       }
       await tx.update(affiliatePayoutWorkflow).set({ payoutStatus: "payout_processing", failureReason: null, updatedAt: new Date() })
         .where(eq(affiliatePayoutWorkflow.id, payout.id));
-      const stripe = getStripeConnectTestClient();
+      const stripe = getStripeConnectClient();
+      const connectedAccount = await stripe.accounts.retrieve(status.stripeConnectedAccountId);
+      if (("deleted" in connectedAccount && connectedAccount.deleted)
+          || connectedAccount.metadata?.affiliateId !== locked.affiliateId) {
+        blocked.push("Stripe Express account could not be verified for this affiliate.");
+        return null;
+      }
+      const connectedVerification = await verifyExpressRecipient(
+        stripe, connectedAccount, getStripeConnectLivemode(),
+      );
+      if (!connectedVerification.valid || !connectedVerification.transferCapabilityActive
+          || !connectedAccount.payouts_enabled) {
+        blocked.push("Stripe Express transfer capability is not active.");
+        return null;
+      }
       const transfer = await stripe.transfers.create({
         amount: Math.round(Number(locked.netPayoutAmount) * 100), currency: "usd",
         destination: status.stripeConnectedAccountId,
@@ -1138,18 +1148,18 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
       if (blocked.length) await auditBlockedPayoutAttempt(payout.affiliateId, req.clerkUserId, "send", blocked);
       res.status(409).json({ error: "Payout send blocked; review and reconcile this processing attempt before any retry.", blocking_reasons: blocked }); return;
     }
-    await auditCompliance(payout.affiliateId, "admin", req.clerkUserId, "test_mode_transfer_created", confirmationReason, { payoutId: payout.id }, { transferId: result.transferId });
-    res.json({ payout: result.updated, transferId: result.transferId, testMode: true });
+    await auditCompliance(payout.affiliateId, "admin", req.clerkUserId, "stripe_transfer_created", confirmationReason, { payoutId: payout.id }, { transferId: result.transferId, livemode: getStripeConnectLivemode() });
+    res.json({ payout: result.updated, transferId: result.transferId, livemode: getStripeConnectLivemode() });
   } catch {
     // Even a failed response can mean Stripe accepted the transfer. Never
     // release the claims or automatically repeat this send.
     await db.update(affiliatePayoutWorkflow).set({
-      failureReason: "Stripe test transfer outcome is uncertain. Reconcile the transfer before any retry or release.",
+      failureReason: "Stripe transfer outcome is uncertain. Reconcile the transfer before any retry or release.",
       updatedAt: new Date(),
     }).where(and(eq(affiliatePayoutWorkflow.id, payout.id), isNull(affiliatePayoutWorkflow.stripeTransferId)));
-    await auditCompliance(payout.affiliateId, "admin", req.clerkUserId, "test_transfer_attempt_uncertain", confirmationReason,
+    await auditCompliance(payout.affiliateId, "admin", req.clerkUserId, "stripe_transfer_attempt_uncertain", confirmationReason,
       { payoutStatus: payout.payoutStatus }, { outcome: "pending_reconciliation", payoutId: payout.id });
-    res.status(502).json({ error: "Stripe test transfer failed." });
+    res.status(502).json({ error: "Stripe transfer failed." });
   }
 });
 

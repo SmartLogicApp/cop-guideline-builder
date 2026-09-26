@@ -123,3 +123,26 @@ test("affiliate attribution is captured at registration and sanitised", () => {
     "expected normalizeReferralCode to be imported from the shared module",
   );
 });
+
+test("only consultant registrations receive the local no-card trial", () => {
+  const handler = registerHandler();
+  assert.match(handler, /const isConsultant = idType === ["']consultant["']/);
+  assert.match(handler, /subscriptionStatus:\s*isConsultant \? ["']trial["'] : ["']pending_payment["']/);
+  assert.match(handler, /if \(trialEnds\) trialEnds\.setDate\(trialEnds\.getDate\(\) \+ 30\)/);
+  assert.match(handler, /trialEndsAt:\s*trialEnds/);
+});
+
+test("consultant registration requires a server-verified active affiliate", () => {
+  const handler = registerHandler();
+  const gateStart = handler.indexOf('if (idType === "consultant") {');
+  const gateEnd = handler.indexOf('if (!facilityName?.trim())', gateStart);
+  assert.notEqual(gateStart, -1, "expected an explicit consultant authorization gate");
+  assert.ok(gateEnd > gateStart, "expected the gate before account registration validation");
+  const gate = handler.slice(gateStart, gateEnd);
+
+  assert.match(gate, /eq\(affiliates\.clerkUserId, userId\)/);
+  assert.match(gate, /eq\(affiliates\.status, "active"\)/);
+  assert.match(gate, /status\(403\)/);
+  assert.match(gate, /CONSULTANT_REGISTRATION_REQUIRES_ACTIVE_AFFILIATE/);
+  assert.doesNotMatch(gate, /referralCode/);
+});

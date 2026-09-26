@@ -33,6 +33,8 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 export default function AcceptTermsPage() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
+  const directRegistration =
+    new URLSearchParams(window.location.search).get('registration') === 'direct';
   const [status, setStatus] = useState<TermsStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -164,6 +166,12 @@ export default function AcceptTermsPage() {
                   : 'file'}
                 .
               </p>
+              {directRegistration ? (
+                <p className="mt-2">
+                  Continue to billing and select “Start 30-day free trial” to add a payment method.
+                  Your subscription is charged on day 31 unless you cancel before then.
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -171,7 +179,7 @@ export default function AcceptTermsPage() {
           href={`${basePath}/billing`}
           className="mt-6 inline-block rounded-lg bg-teal-800 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-900"
         >
-          Continue to billing
+          {directRegistration ? 'Go to billing to start your trial' : 'Continue to billing'}
         </a>
       </Shell>
     );
@@ -189,6 +197,11 @@ export default function AcceptTermsPage() {
             <p className="mt-1">
               Our billing terms have changed and now describe paid subscriptions. Please read
               them and confirm your acceptance before subscribing.
+              {directRegistration ? (
+                <> After accepting, continue to billing and select “Start 30-day free trial” to add
+                  a payment method. Your subscription is charged on day 31 unless you cancel before
+                  then.</>
+              ) : null}
               {status?.acceptedVersion ? (
                 <> Your facility previously accepted version {status.acceptedVersion}.</>
               ) : null}

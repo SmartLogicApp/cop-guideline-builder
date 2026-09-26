@@ -8,3 +8,9 @@ Do not apply the direct-customer payment-method disclosure or checkout behavior 
 **Why:** The owner explicitly distinguished these offers while correcting inaccurate direct-customer advertising copy. A blanket replacement of no-card wording would make consultant copy inaccurate and could change the wrong signup flow.
 
 **How to apply:** Scope trial-copy searches and changes by audience. Keep affiliate/consultant copy and trial behavior unchanged unless the owner separately requests changes for that audience.
+
+New direct registrations must not receive workspace access before Stripe collects a card. Preserve already-started local trials instead of revoking existing customers' access. A self-selected consultant label or referral code is not proof of affiliate eligibility; new no-card consultant trials require a verified, active affiliate identity.
+
+**Why:** The old shared local trial granted direct customers cardless access, but removing all local trials would also break the consultant offer and cut off existing customers. Self-declared consultant status would let direct customers bypass the corrected requirement.
+
+**How to apply:** Keep registration entitlement checks on the server, grandfather existing trial rows, and distinguish approved consultant affiliates from direct customers before granting a new local trial.
