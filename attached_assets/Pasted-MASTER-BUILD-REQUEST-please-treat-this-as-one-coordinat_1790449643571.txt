@@ -1,0 +1,42 @@
+MASTER BUILD REQUEST — please treat this as one coordinated set of changes, then commit, push to origin/main, and republish (I'll verify the live site myself after).
+
+## 1. Deploy the corrected Version 4.0 Affiliate Partner Agreement as the live agreement
+
+I'm attaching the final, attorney-reviewed Version 4.0 text with two corrections already applied (Suite 209 instead of Suite 200 in Sections 36.6/37; the "IP address" and "applicable program version" bullets removed from Section 33). This should become the agreement text served to affiliates at signup/acceptance, replacing whatever draft is currently live. Please:
+- Find wherever the current agreement content and version string live (I believe this involves affiliate-sample-agreement.ts and/or terms-versions.ts and/or terms-document.tsx — please confirm the actual location(s) rather than assuming).
+- Update the content to the new Version 4.0 text from the attached file.
+- Update the version identifier to "4.0" wherever it's checked (e.g. isSampleAgreementVersion() or similar).
+- Confirm what happens for any affiliate who already accepted an older version — they should be prompted to re-accept the new version before further commissions accrue, if that mechanism already exists; if it doesn't exist, flag that back to me rather than building new re-acceptance logic without confirming scope with me first.
+- Do NOT rewrite or paraphrase any of the legal text yourself — use the text exactly as given in the attached file.
+
+## 2. Build the engineering the contract now legally requires (Sections 5-17 of v4.0)
+
+The commission mechanism in the contract now matches this exactly — confirmed line by line — so this is no longer optional:
+
+a) Scheduled rate-reduction sweep: a job (cron-callable, similar to the existing /cron/maturity-sweep pattern) that actually applies pendingRateReductions() output — updates commissionRatePct and writes an affiliateRateChanges row with reason "inactivity" — for both the 20%->10% and 10%->0% cuts. Currently this is only calculated for admin display and never applied.
+
+b) Automatic restoration to 20%:
+   - If an affiliate's rate is currently 10% and they get a new Qualifying Referral (first-time commission for that referred account), immediately set their rate back to 20%, log affiliateRateChanges reason "restoration", and start a fresh 12-month period from that referral's date.
+   - If an affiliate's rate is currently 0%, a new Qualifying Referral within 60 calendar days of the date the rate hit 0% restores to 20% the same way. After that 60-day window closes, do NOT auto-restore — leave it for manual admin action via the existing /rate endpoint.
+   - This does not exist in code at all today - please build it new, hooked into the same accrual event that already detects first-time referrals (recordQualifyingReferralIfFirst in affiliate-accrual.ts is the natural hook point, but confirm the right place).
+
+c) Advance-notice emails using the existing resend-mailer.ts infrastructure, sent before each deadline:
+   - Before the 12-month activity period ends (at each tier)
+   - Before the 60-day grace period ends (at each tier)
+   - Before the 60-day zero-percent restoration window closes
+   These need a scheduled check (can likely share the same scheduler as the rate-reduction sweep) and new email templates. Keep the tone informational, not written by you as new legal language - plain factual notice of the deadline and what happens if it passes.
+
+d) Legal/business-name field on the acceptance record: add a field to the affiliateAgreementAcceptances table (not the mutable affiliates.companyName field) to capture legal/business name at the moment of signing.
+
+## 3. Stripe / payment verification (please do this yourself in the workspace, I will independently re-verify live afterward)
+
+- Confirm which Stripe keys are actually active in the live deployment (STRIPE_LIVE_SECRET_KEY vs STRIPE_TEST_SECRET_KEY) and that this matches intent for a production affiliate/payment system.
+- Confirm live webhook secrets (STRIPE_LIVE_WEBHOOK_SECRET) are correctly wired to the live webhook endpoint and that webhook signature verification is working (no silent failures).
+- Confirm the affiliate Stripe Connect onboarding flow (affiliate-connect-account.ts) reaches a genuinely payable account state end-to-end in a live/production-safe way you can verify from the workspace, and report specifically what you could and couldn't confirm from here versus what needs a live click-through test (which I will do myself).
+- Do not attempt to complete any live financial transaction, accept any Stripe platform/Connect agreement on my behalf, or enter real account/banking details - flag anything that needs my direct action instead.
+
+Please work through 1, 2, and 3 in that order, and tell me clearly and specifically:
+- Exact commit hash(es)
+- Whether push to origin/main succeeded
+- What you could verify yourself vs. what needs my own live click-through
+- Any scope questions before you build something ambiguous - ask rather than guess on anything affecting real money or the legal acceptance record.
