@@ -56,11 +56,10 @@ const application = {
   about: "I plan to refer organizations that need compliance help.",
 };
 
-test("actual application handler rejects suffixed notes and both adjacent contact fields", async () => {
+test("actual application handler rejects suffixed notes and unsafe email", async () => {
   const apply = handler(affiliateRouter, "post", "/apply");
   await rejects(apply, { ...application, about: "Referral note: 0000-0000-ref" });
   await rejects(apply, { ...application, about: "Referral note: 123456789-ref" });
-  await rejects(apply, { ...application, phone: "000000000" });
   await rejects(apply, { ...application, email: "user-123456789-ref@example.org" });
 });
 
@@ -70,10 +69,8 @@ test("actual admin create and approval handlers reject numeric referral codes", 
   await rejects(create, { ...application, referralCode: "000000000" });
   await rejects(approve, { referralCode: "000000000", commissionRatePct: 20 });
   await rejects(create, { ...application, referralCode: "NORTH-2026", email: "user-123456789-ref@example.org" });
-  await rejects(create, { ...application, referralCode: "NORTH-2026", phone: "000000000" });
   const patch = handler(affiliateRouter, "patch", "/:id");
   await rejects(patch, { email: "user-123456789-ref@example.org" });
-  await rejects(patch, { phone: "000000000" });
 });
 
 test("actual document and template create handlers reject unsafe versions and keys", async () => {

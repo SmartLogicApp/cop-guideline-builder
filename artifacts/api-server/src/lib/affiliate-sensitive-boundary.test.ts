@@ -58,14 +58,14 @@ test("document versions and email-template keys cannot be stored or copied into 
   assert.equal(JSON.stringify(legacy).includes("000000000"), false);
 });
 
-test("public application and admin contact inputs reject financial numbers in phone and email", () => {
+test("public application and admin contact inputs scan email but not the phone field", () => {
   const badPhone = { email: "applicant@example.org", phone: "000000000" };
   const badEmail = { email: "user-123456789-ref@example.org", phone: "(555) 010-1234" };
-  for (const contact of [badPhone, badEmail]) {
-    assert.equal(hasSensitiveContact(contact), true, "public application must reject");
-    assert.equal(hasSensitiveContact(contact), true, "admin create and PATCH must reject");
-  }
+  assert.equal(hasSensitiveContact(badPhone), false, "phone must not be scanned as free text");
+  assert.equal(hasSensitiveContact(badEmail), true, "public application must reject unsafe email");
+  assert.equal(hasSensitiveContact(badEmail), true, "admin create and PATCH must reject unsafe email");
   assert.equal(hasSensitiveContact({ email: "applicant@example.org", phone: "(555) 010-1234" }), false);
+  assert.equal(containsSensitiveFinancialNumber("000000000"), true, "free-text number scanner is unchanged");
   assert.equal(redactSensitiveFinancialData(badEmail).email.includes("123456789"), false);
 });
 

@@ -42,7 +42,7 @@ export function redactSensitiveFinancialData<T>(value: T): T {
 }
 
 export function hasSensitiveContact(contact: { email?: unknown; phone?: unknown }): boolean {
-  return [contact.email, contact.phone].some(
+  return [contact.email].some(
     (value) => typeof value === "string" && containsSensitiveFinancialNumber(value),
   );
 }
