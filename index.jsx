@@ -4444,6 +4444,7 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
   const [statsError, setStatsError] = useState("");
   const [actionError, setActionError] = useState("");
   const [approvingId, setApprovingId] = useState(null);
+  const [ratesById, setRatesById] = useState({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -4544,21 +4545,6 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
   }
 
   async function approve(row) {
-    const suggested = row.companyName.toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
-    const code = window.prompt(
-      `Assign a permanent referral code for ${row.companyName}. Confirm the reviewed agreement before proceeding.`,
-      suggested,
-    );
-    if (!code) return;
-    const rateInput = window.prompt("Enter the approved commission rate (10 or 20 percent):", "20");
-    if (rateInput == null) return;
-    const commissionRatePct = Number(rateInput);
-    if (!["10", "20"].includes(rateInput.trim())) {
-      setActionError("Commission rate must be 10 or 20 percent.");
-      return;
-    }
-
     setApprovingId(row.id);
     setActionError("");
     try {
@@ -4566,15 +4552,62 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ referralCode: code, commissionRatePct }),
+        body: JSON.stringify({ commissionRatePct: ratesById[row.id] ?? 20 }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || "Unable to approve application");
-      if (body.status !== "active" || body.id !== row.id) throw new Error("Application status could not be confirmed. Refresh the list.");
+      if (body.status !== "active" || body.id !== row.id || !body.referralCode) throw new Error("Application status could not be confirmed. Refresh the list.");
       setApplications((current) => current.filter((item) => item.id !== row.id));
-      setNotice(`${row.companyName}'s application was approved and is now active.`);
+      setNotice(`${row.companyName} is now an active affiliate. Referral code: ${body.referralCode}.${body.emailSent === false ? " Approval email could not be sent; contact the affiliate directly." : ""}`);
     } catch (approveError) {
       setActionError(approveError.message || "Unable to approve application");
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
+  async function hold(row) {
+    const reason = window.prompt(`Why is ${row.companyName}'s application being placed on hold? (at least 5 characters)`);
+    if (reason == null) return;
+    if (reason.trim().length < 5) {
+      setActionError("A hold reason of at least 5 characters is required.");
+      return;
+    }
+    setApprovingId(row.id);
+    setActionError("");
+    try {
+      const response = await fetch(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/hold`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Unable to hold application");
+      if (result.status !== "pending" || !result.applicationHeldAt) throw new Error("Hold could not be confirmed. Refresh the list.");
+      setApplications((current) => current.map((item) => item.id === row.id
+        ? { ...item, applicationHeldAt: result.applicationHeldAt, applicationHoldReason: result.applicationHoldReason } : item));
+      setNotice(`${row.companyName}'s application is on hold.`);
+    } catch (failure) {
+      setActionError(failure.message || "Unable to hold application");
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
+  async function releaseHold(row) {
+    setApprovingId(row.id);
+    setActionError("");
+    try {
+      const response = await fetch(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/release-hold`, {
+        method: "POST", credentials: "include",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Unable to release application hold");
+      if (result.status !== "pending" || result.id !== row.id) throw new Error("Release could not be confirmed. Refresh the list.");
+      setApplications((current) => current.map((item) => item.id === row.id
+        ? { ...item, applicationHeldAt: null, applicationHoldReason: null } : item));
+      setNotice(`${row.companyName}'s application is ready for review.`);
+    } catch (failure) {
+      setActionError(failure.message || "Unable to release application hold");
     } finally {
       setApprovingId(null);
     }
@@ -4664,14 +4697,34 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
                 ? `Accepted ${row.agreementAcceptance.version} ${row.agreementAcceptance.invitationId == null ? "with application" : "after invitation"} on ${new Date(row.agreementAcceptance.acceptedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })} by ${row.agreementAcceptance.signerName}`
                 : "No acceptance of the current reviewed agreement recorded."}
             </p>
+            {row.applicationHeldAt && <p role="status" style={{ color: "#FBBF24", fontSize: "12px" }}>
+              On hold since {new Date(row.applicationHeldAt).toLocaleString("en-US")}: {row.applicationHoldReason}
+            </p>}
             {isSuperAdmin && !row.agreementAcceptance && <button type="button" disabled={actionBusy || !agreementStatus?.published}
               onClick={() => invite(row)} style={{ marginRight: "8px", padding: "7px 14px", cursor: "pointer" }}>
               Send agreement invitation
             </button>}
-            {isSuperAdmin && activationEnabled && agreementStatus?.published && row.agreementAcceptance && <button type="button" disabled={approvingId != null} onClick={() => approve(row)}
-              style={{ marginTop: "12px", padding: "7px 14px", background: "#F5C542", border: "none", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, cursor: approvingId ? "wait" : "pointer" }}>
-              {approvingId === row.id ? "Approving…" : "Approve after terms review"}
+            {isSuperAdmin && !row.applicationHeldAt && <button type="button" disabled={approvingId != null}
+              onClick={() => hold(row)} style={{ marginRight: "8px", padding: "7px 14px", cursor: "pointer" }}>
+              Hold
             </button>}
+            {isSuperAdmin && row.applicationHeldAt && <button type="button" disabled={approvingId != null}
+              onClick={() => releaseHold(row)} style={{ marginRight: "8px", padding: "7px 14px", cursor: "pointer" }}>
+              Release hold
+            </button>}
+            {isSuperAdmin && activationEnabled && agreementStatus?.published && row.agreementAcceptance && !row.applicationHeldAt && <>
+              <label style={{ color: "#fff", fontSize: "12px", marginRight: "8px" }}>
+                Commission rate{" "}
+                <select aria-label={`Commission rate for ${row.companyName}`} value={ratesById[row.id] ?? 20}
+                  onChange={(event) => setRatesById((current) => ({ ...current, [row.id]: Number(event.target.value) }))}>
+                  <option value={20}>20%</option><option value={10}>10%</option>
+                </select>
+              </label>
+              <button type="button" disabled={approvingId != null} onClick={() => approve(row)}
+              style={{ marginTop: "12px", padding: "7px 14px", background: "#F5C542", border: "none", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, cursor: approvingId ? "wait" : "pointer" }}>
+                {approvingId === row.id ? "Approving…" : "Approve"}
+              </button>
+            </>}
             {isSuperAdmin && <button type="button" disabled={approvingId != null} onClick={() => disapprove(row)}
               style={{ marginTop: "12px", marginLeft: "8px", padding: "7px 14px", cursor: approvingId ? "wait" : "pointer" }}>
               {approvingId === row.id ? "Updating…" : "Disapprove application"}

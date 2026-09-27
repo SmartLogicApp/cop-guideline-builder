@@ -335,7 +335,7 @@ test('pending applications have a separate admin review view with approval gated
   assert.match(review, /row\.phone/);
   assert.match(review, /row\.referralPlan/);
   assert.match(review, /setActivationEnabled\(stats\.activationEnabled === true\)/);
-  assert.match(review, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && <button/);
+  assert.match(review, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && !row\.applicationHeldAt && <>/);
   assert.match(review, /\/approve`/);
   assert.match(review, /Paid partner approvals are paused/);
   assert.doesNotMatch(review, /holdback|grace period/i);

@@ -76,6 +76,11 @@ test("actual application handler rejects suffixed notes and unsafe email", async
 test("application outcomes are traceable without leaking applicant fields or revealing duplicates", async () => {
   const apply = handler(affiliateRouter, "post", "/apply");
   const attemptId = "78f04526-2f18-41e5-a6f0-26b3268bf684";
+  const previousVersion = process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
+  process.env.AFFILIATE_REVIEWED_TERMS_VERSION = "4.0";
+  const agreedApplication = {
+    ...application, agreed: true, agreementVersion: "4.0", agreementSha256: "a".repeat(64),
+  };
   const run = async (body: Record<string, unknown>, existingAt: number[], insertError?: unknown) => {
     let reads = 0;
     const logs: unknown[] = [];
@@ -88,9 +93,18 @@ test("application outcomes are traceable without leaking applicant fields or rev
         return existingAt.includes(reads) ? [{ id: "existing" }] : [];
       } }) }),
     }) as unknown as ReturnType<typeof db.select>);
-    const insert = mock.method(db, "insert", () => ({
-      values: async () => { if (insertError) throw insertError; },
-    }) as unknown as ReturnType<typeof db.insert>);
+    let inserts = 0;
+    const transaction = mock.method(db, "transaction", async (callback: Function) => callback({
+      select: () => ({ from: () => ({ where: () => ({ limit: async () =>
+        [{ version: "4.0", contentSha256: "a".repeat(64) }] }) }) }),
+      insert: () => ({
+        values: () => {
+          inserts += 1;
+          if (insertError) throw insertError;
+          return { returning: async () => [{ id: "created", identityEpoch: 0 }] };
+        },
+      }),
+    }));
     try {
       await apply({
         body,
@@ -103,7 +117,7 @@ test("application outcomes are traceable without leaking applicant fields or rev
       });
     } finally {
       select.mock.restore();
-      insert.mock.restore();
+      transaction.mock.restore();
     }
     assert.equal(headers["X-Application-Reference"], attemptId);
     assert.equal(JSON.stringify(logs).includes(application.email), false);
@@ -115,16 +129,17 @@ test("application outcomes are traceable without leaking applicant fields or rev
       { applicationReference: attemptId, outcome: status === 400 ? "validation_rejected" :
         status === 500 ? "persistence_failed" : status === 201 ? "inserted" : "duplicate" },
     ]);
-    return { status, payload, inserts: insert.mock.callCount() };
+    return { status, payload, inserts };
   };
 
-  const rejected = await run({ ...application, about: "short" }, []);
+  try {
+  const rejected = await run({ ...agreedApplication, about: "short" }, []);
   assert.equal(rejected.status, 400);
   assert.equal(rejected.inserts, 0);
 
-  const inserted = await run(application, []);
-  const duplicate = await run(application, [1]);
-  const racedDuplicate = await run(application, [3], { code: "23505", detail: application.about });
+  const inserted = await run(agreedApplication, []);
+  const duplicate = await run(agreedApplication, [1]);
+  const racedDuplicate = await run(agreedApplication, [3], { code: "23505", detail: application.about });
   assert.equal(inserted.status, 201);
   assert.equal(duplicate.status, 200);
   assert.equal(racedDuplicate.status, 200);
@@ -132,9 +147,13 @@ test("application outcomes are traceable without leaking applicant fields or rev
   assert.deepEqual(inserted.payload, racedDuplicate.payload);
   assert.equal(duplicate.inserts, 0);
 
-  const failed = await run(application, [], { code: "23505", detail: application.about });
+  const failed = await run(agreedApplication, [], { code: "23505", detail: application.about });
   assert.equal(failed.status, 500, "a referral-code collision must not pretend an insert succeeded");
   assert.equal(typeof failed.payload.error, "string");
+  } finally {
+    if (previousVersion === undefined) delete process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
+    else process.env.AFFILIATE_REVIEWED_TERMS_VERSION = previousVersion;
+  }
 });
 
 test("actual admin create and approval handlers reject numeric referral codes", async () => {
@@ -241,6 +260,13 @@ test("paid approval stays blocked while owner-reviewed terms are disabled", asyn
     if (previousVersion === undefined) delete process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
     else process.env.AFFILIATE_REVIEWED_TERMS_VERSION = previousVersion;
   }
+});
+
+test("application holds require an authorized safe reason before touching the database", async () => {
+  const hold = handler(affiliateRouter, "post", "/:id/hold");
+  await rejects(hold, {});
+  await rejects(hold, { reason: "no" });
+  await rejects(hold, { reason: "Review needed: 123456789-ref" });
 });
 
 test("disapproval changes only pending applications to rejected and records a review audit", async () => {

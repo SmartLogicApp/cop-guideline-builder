@@ -28,6 +28,7 @@
 - [Public document bundling boundary](public-document-bundling.md) — trim and transform draft documents before Vite embeds them; runtime slicing leaks the original raw import.
 - [Affiliate agreement identity revisions](affiliate-agreement-identity-revisions.md) — scope acceptance to the applicant contact revision, while preserving older evidence for audit.
 - [Public affiliate clickwrap](public-affiliate-clickwrap.md) — only a currently published reviewed agreement may be accepted at application time; older pending applicants retain invitation review.
+- [Affiliate application review](affiliate-application-review.md) — promote the pending affiliate row instead of duplicating identity, and keep review holds separate from payout holds.
 - [Affiliate payout settlement boundary](affiliate-payout-settlement-boundary.md) — legacy settlement must stay blocked until it shares verified transfer evidence and exact commission claims.
 - [Stripe Connect account policy](stripe-connect-account-policy.md) — a newly enabled sandbox may still reject v1 connected-account creation; check Stripe's Accounts v1 API policy before testing onboarding.
 - [Test affiliate identity handoff](test-affiliate-identity-handoff.md) — moving a synthetic affiliate to owner control must revoke synthetic consents and align the existing Stripe Test account contact.

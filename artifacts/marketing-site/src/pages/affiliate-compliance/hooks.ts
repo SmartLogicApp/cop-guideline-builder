@@ -165,11 +165,14 @@ export function useAdminApplicationDecision(id: string) {
   const fetchAuth = useFetchAuth('/api/affiliates');
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (decision: { action: 'approve'; referralCode: string; commissionRatePct: number } | { action: 'reject'; reason: string }) =>
+    mutationFn: (decision:
+      | { action: 'approve'; commissionRatePct: number }
+      | { action: 'reject' | 'hold'; reason: string }
+      | { action: 'release-hold' }) =>
       fetchAuth(`/${encodeURIComponent(id)}/${decision.action}`, {
         method: 'POST', body: JSON.stringify(decision.action === 'approve'
-          ? { referralCode: decision.referralCode, commissionRatePct: decision.commissionRatePct }
-          : { reason: decision.reason }),
+          ? { commissionRatePct: decision.commissionRatePct }
+          : decision.action === 'release-hold' ? {} : { reason: decision.reason }),
       }),
     onSuccess: async () => {
       await Promise.all([

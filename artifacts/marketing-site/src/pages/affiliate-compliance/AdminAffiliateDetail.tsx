@@ -10,9 +10,9 @@ export default function AdminAffiliateDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: affiliate, isLoading, error } = useAdminAffiliateDetail(id || '');
   const [reason, setReason] = useState('');
-  const [referralCode, setReferralCode] = useState('');
   const [commissionRatePct, setCommissionRatePct] = useState(20);
   const [decisionReason, setDecisionReason] = useState('');
+  const [holdReason, setHoldReason] = useState('');
   const action = useAdminAction(id || '');
   const decision = useAdminApplicationDecision(id || '');
   const recheck = useAdminRecheck(id || '');
@@ -43,25 +43,29 @@ export default function AdminAffiliateDetail() {
     }
   };
 
-  const decideApplication = async (type: 'approve' | 'reject') => {
-    if (type === 'approve' && !/^[A-Za-z0-9][A-Za-z0-9-]{1,63}$/.test(referralCode.trim())) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Enter a valid permanent referral code.' });
-      return;
-    }
+  const decideApplication = async (type: 'approve' | 'reject' | 'hold' | 'release-hold') => {
     if (type === 'reject' && decisionReason.trim().length < 5) {
       toast({ variant: 'destructive', title: 'Error', description: 'Enter a review reason of at least 5 characters.' });
       return;
     }
+    if (type === 'hold' && holdReason.trim().length < 5) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Enter a hold reason of at least 5 characters.' });
+      return;
+    }
     try {
       const result = await decision.mutateAsync(type === 'approve'
-        ? { action: 'approve', referralCode: referralCode.trim(), commissionRatePct }
-        : { action: 'reject', reason: decisionReason.trim() });
-      if (result.status !== (type === 'approve' ? 'active' : 'rejected')) {
+        ? { action: 'approve', commissionRatePct }
+        : type === 'release-hold' ? { action: 'release-hold' }
+          : { action: type, reason: type === 'hold' ? holdReason.trim() : decisionReason.trim() });
+      if (result.status !== (type === 'approve' ? 'active' : type === 'reject' ? 'rejected' : 'pending')
+        || (type === 'hold' && !result.applicationHeldAt)
+        || (type === 'release-hold' && result.applicationHeldAt)) {
         throw new Error('The application status could not be confirmed. Refresh this page.');
       }
-      toast({ title: type === 'approve' ? 'Application approved' : 'Application disapproved',
-        description: `Affiliate status is now ${result.status}.` });
+      toast({ title: type === 'approve' ? 'Application approved' : type === 'reject' ? 'Application disapproved' : type === 'hold' ? 'Application held' : 'Hold released',
+        description: type === 'approve' ? `Affiliate activated. Referral code: ${result.referralCode}.${result.emailSent === false ? ' Approval email was not sent.' : ''}` : `Affiliate status is ${result.status}.` });
       setDecisionReason('');
+      setHoldReason('');
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     }
@@ -154,11 +158,10 @@ export default function AdminAffiliateDetail() {
                 agreement and this applicant’s acceptance; the server refuses approval otherwise.
                 Disapproval keeps the application for audit but does not activate the affiliate.
               </p>
-              <label className="block text-sm font-medium text-slate-700">
-                Permanent referral code
-                <input data-testid="input-referral-code" value={referralCode} onChange={e => setReferralCode(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2" maxLength={64} />
-              </label>
+              <p className="text-sm text-slate-600">A permanent referral code is generated automatically on approval.</p>
+              {affiliate.affiliate.applicationHeldAt && <p role="status" className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+                On hold: {affiliate.affiliate.applicationHoldReason}
+              </p>}
               <label className="block text-sm font-medium text-slate-700">
                 Commission rate
                 <select data-testid="select-commission-rate" value={commissionRatePct}
@@ -167,8 +170,23 @@ export default function AdminAffiliateDetail() {
                   <option value={20}>20%</option><option value={10}>10%</option>
                 </select>
               </label>
-              <Button data-testid="button-approve-application" disabled={decision.isPending}
+              <Button data-testid="button-approve-application" disabled={decision.isPending || !!affiliate.affiliate.applicationHeldAt}
                 onClick={() => decideApplication('approve')}>Approve paid application</Button>
+              {affiliate.affiliate.applicationHeldAt ? (
+                <Button data-testid="button-release-application-hold" variant="outline" disabled={decision.isPending}
+                  onClick={() => decideApplication('release-hold')}>Release hold</Button>
+              ) : (
+                <>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Hold reason (required)
+                    <textarea data-testid="input-application-hold-reason" value={holdReason}
+                      onChange={e => setHoldReason(e.target.value)} rows={2}
+                      className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2" />
+                  </label>
+                  <Button data-testid="button-hold-application" variant="outline" disabled={decision.isPending}
+                    onClick={() => decideApplication('hold')}>Hold application</Button>
+                </>
+              )}
               <label className="block text-sm font-medium text-slate-700">
                 Reason for disapproval (required)
                 <textarea data-testid="input-disapproval-reason" value={decisionReason}

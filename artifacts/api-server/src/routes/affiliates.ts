@@ -17,6 +17,7 @@ import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../
 import { affiliateActivationEnabled, isBlockedAffiliateActivation } from "../lib/affiliate-activation.js";
 import { currentReviewedAffiliateAcceptanceCondition, hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementExists, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
 import { applicationAcceptanceEvidence } from "../lib/affiliate-application-acceptance.js";
+import { generateAffiliateReferralCode } from "../lib/affiliate-referral-code.js";
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getReturnBase } from "../lib/return-base.js";
 import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
@@ -362,6 +363,8 @@ router.get("/", requireAnyAdmin, async (req, res) => {
           ? row.adminNotes.slice("Application note: ".length)
           : null,
         status: row.status,
+        applicationHeldAt: row.applicationHeldAt,
+        applicationHoldReason: row.applicationHoldReason,
         agreementAcceptance: acceptedById.get(row.id) ?? null,
         commissionRatePct: row.commissionRatePct,
         lastQualifyingReferralAt: row.lastQualifyingReferralAt,
@@ -604,6 +607,7 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
     if (body.status === "active") {
       const [existing] = await db.select({
         status: affiliates.status, email: affiliates.email, identityEpoch: affiliates.agreementIdentityEpoch,
+        applicationHeldAt: affiliates.applicationHeldAt,
       })
         .from(affiliates).where(eq(affiliates.id, String(req.params.id))).limit(1);
       if (!existing) return res.status(404).json({ error: "Affiliate not found" });
@@ -620,6 +624,9 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
           code: "AFFILIATE_ACTIVATION_PAUSED",
           error: "New paid affiliate activations are paused until the owner enables reviewed program terms.",
         });
+      }
+      if (existing.status !== "active" && existing.applicationHeldAt) {
+        return res.status(409).json({ error: "Release the application hold before activating this applicant." });
       }
       if (existing.status !== "active" && typeof patch.email === "string"
           && patch.email.toLowerCase() !== existing.email.toLowerCase()) {
@@ -649,7 +656,7 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
           eq(affiliates.status, expectedStatus), eq(affiliates.email, expectedEmail),
           eq(affiliates.agreementIdentityEpoch, expectedEpoch),
           ...(body.status === "active" && expectedStatus !== "active"
-            ? [currentReviewedAffiliateAcceptanceCondition()] : []))
+            ? [currentReviewedAffiliateAcceptanceCondition(), isNull(affiliates.applicationHeldAt)] : []))
         : eq(affiliates.id, String(req.params.id)))
       .returning();
     if (!updated) return res.status(expectedStatus !== null ? 409 : 404).json({
@@ -661,7 +668,60 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
   }
 });
 
-// ─── POST /api/affiliates/:id/approve — pending → active ─────────────────────
+// ─── Application review: hold, release, reject, approve ─────────────────────
+
+router.post("/:id/hold", requireSuperAdmin, async (req, res) => {
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (reason.length < 5 || reason.length > 2000 || containsSensitiveFinancialNumber(reason)) {
+    return res.status(400).json({ error: "Provide a safe hold reason (5–2,000 characters)." });
+  }
+  try {
+    const held = await db.transaction(async (tx) => {
+      const now = new Date();
+      const [row] = await tx.update(affiliates)
+        .set({ applicationHeldAt: now, applicationHoldReason: reason, updatedAt: now })
+        .where(and(eq(affiliates.id, String(req.params.id)), eq(affiliates.status, "pending"),
+          isNull(affiliates.applicationHeldAt)))
+        .returning({ id: affiliates.id, status: affiliates.status, applicationHeldAt: affiliates.applicationHeldAt,
+          applicationHoldReason: affiliates.applicationHoldReason });
+      if (!row) return null;
+      await tx.insert(affiliateComplianceAuditLog).values({
+        affiliateId: row.id, actorType: "admin", actorId: (req as any).clerkUserId,
+        eventType: "application_held", reason,
+        priorValue: { status: "pending", held: false }, newValue: { status: "pending", held: true },
+      });
+      return row;
+    });
+    if (!held) return res.status(409).json({ error: "Only an unheld pending application can be held." });
+    return res.json(held);
+  } catch {
+    return res.status(500).json({ error: "Unable to hold application." });
+  }
+});
+
+router.post("/:id/release-hold", requireSuperAdmin, async (req, res) => {
+  try {
+    const released = await db.transaction(async (tx) => {
+      const now = new Date();
+      const [row] = await tx.update(affiliates)
+        .set({ applicationHeldAt: null, applicationHoldReason: null, updatedAt: now })
+        .where(and(eq(affiliates.id, String(req.params.id)), eq(affiliates.status, "pending"),
+          isNotNull(affiliates.applicationHeldAt)))
+        .returning({ id: affiliates.id, status: affiliates.status });
+      if (!row) return null;
+      await tx.insert(affiliateComplianceAuditLog).values({
+        affiliateId: row.id, actorType: "admin", actorId: (req as any).clerkUserId,
+        eventType: "application_hold_released", reason: "Application review resumed",
+        priorValue: { status: "pending", held: true }, newValue: { status: "pending", held: false },
+      });
+      return row;
+    });
+    if (!released) return res.status(409).json({ error: "Only a held pending application can be released." });
+    return res.json(released);
+  } catch {
+    return res.status(500).json({ error: "Unable to release application hold." });
+  }
+});
 
 // A declined application is not an enrolled partner. Keep its record for the
 // review trail, but prevent subsequent approval or commission accrual.
@@ -692,8 +752,8 @@ router.post("/:id/reject", requireSuperAdmin, async (req, res) => {
 });
 
 /**
- * Approve an application: assign the real referral code and put the rate in
- * effect.
+ * Approve an application: generate a permanent referral code and put the rate
+ * in effect. The pending affiliate row becomes the active Affiliate record.
  *
  * This is the ONLY place a referral code may be changed, and only while the
  * affiliate is still "pending". Once active, the code is frozen — PATCH refuses
@@ -705,7 +765,15 @@ router.post("/:id/reject", requireSuperAdmin, async (req, res) => {
  * is never reviewed can never quietly start earning.
  */
 router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
-  const requestedCode = normalizeReferralCode(req.body?.referralCode);
+  const legacyCode = req.body?.referralCode === undefined ? null : normalizeReferralCode(req.body.referralCode);
+  if (req.body?.referralCode !== undefined
+      && (!legacyCode || !isValidReferralCode(legacyCode) || !isSafeAffiliateIdentifier(legacyCode))) {
+    return res.status(400).json({ error: "Invalid referral code. Codes are now assigned automatically." });
+  }
+  if (activationBlocked(res)) return;
+  if (req.body?.referralCode !== undefined) {
+    return res.status(400).json({ error: "Referral codes are assigned automatically at approval." });
+  }
   const ratePct = Number.isFinite(Number(req.body?.commissionRatePct))
     ? Number(req.body.commissionRatePct)
     : 20;
@@ -713,13 +781,6 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
   if (!COMMISSION_RATE_LADDER.includes(ratePct as any) || ratePct <= 0) {
     return res.status(400).json({ error: "Approve at 20% or 10% (§14)." });
   }
-  if (!requestedCode || !isValidReferralCode(requestedCode) || !isSafeAffiliateIdentifier(requestedCode)) {
-    return res.status(400).json({
-      error: "A referral code is required to approve — 2–64 characters, letters, digits and hyphens.",
-      code: "INVALID_REFERRAL_CODE",
-    });
-  }
-  if (activationBlocked(res)) return;
   if (!(await reviewedAffiliateAgreementExists())) {
     return res.status(409).json({ code: "AGREEMENT_NOT_PUBLISHED",
       error: "Publish the reviewed agreement before approving applicants." });
@@ -734,42 +795,57 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
         error: `This affiliate is already ${row.status}. Only a pending application can be approved.`,
       });
     }
+    if (row.applicationHeldAt) {
+      return res.status(409).json({ error: "Release the application hold before approving this applicant." });
+    }
     if (!(await hasReviewedAffiliateAcceptance(row.id))) {
       return res.status(409).json({ code: "AGREEMENT_ACCEPTANCE_REQUIRED",
         error: `The applicant must accept agreement ${reviewedAffiliateAgreementVersion()} before approval.` });
     }
 
-    const now = new Date();
-    const [updated] = await db.update(affiliates)
-      .set({
-        referralCode: requestedCode,
-        status: "active",
-        commissionRatePct: ratePct,
-        rateEffectiveAt: now,
-        updatedAt: now,
-      })
-      .where(and(
-        eq(affiliates.id, row.id), eq(affiliates.status, "pending"),
-        eq(affiliates.email, row.email), eq(affiliates.agreementIdentityEpoch, row.agreementIdentityEpoch),
-        currentReviewedAffiliateAcceptanceCondition(),
-      ))
-      .returning();
+    let updated: typeof affiliates.$inferSelect | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        updated = await db.transaction(async (tx) => {
+          const now = new Date();
+          const [activated] = await tx.update(affiliates)
+            .set({
+              referralCode: generateAffiliateReferralCode(),
+              status: "active",
+              commissionRatePct: ratePct,
+              rateEffectiveAt: now,
+              updatedAt: now,
+            })
+            .where(and(
+              eq(affiliates.id, row.id), eq(affiliates.status, "pending"),
+              isNull(affiliates.applicationHeldAt),
+              eq(affiliates.email, row.email), eq(affiliates.agreementIdentityEpoch, row.agreementIdentityEpoch),
+              currentReviewedAffiliateAcceptanceCondition(),
+            ))
+            .returning();
+          if (!activated) return undefined;
+          await tx.insert(affiliateRateChanges).values({
+            affiliateId: row.id,
+            fromPct: row.commissionRatePct,
+            toPct: ratePct,
+            reason: "enrollment",
+            note: approvalRateChangeNote(),
+            changedBy: (req as any).clerkUserId ?? null,
+            effectiveAt: now,
+          });
+          return activated;
+        });
+        break;
+      } catch (error: any) {
+        if (error?.code !== "23505" || attempt === 2) throw error;
+      }
+    }
 
     if (!updated) {
       return res.status(409).json({
         error: "The application or agreement acceptance changed. Refresh before approving.",
       });
     }
-
-    await db.insert(affiliateRateChanges).values({
-      affiliateId: row.id,
-      fromPct: row.commissionRatePct,
-      toPct: ratePct,
-      reason: "enrollment",
-      note: approvalRateChangeNote(),
-      changedBy: (req as any).clerkUserId ?? null,
-      effectiveAt: now,
-    });
 
     const referralLink = `${getReturnBase(req)}/register?ref=${encodeURIComponent(updated.referralCode)}`;
     let emailSent = false;

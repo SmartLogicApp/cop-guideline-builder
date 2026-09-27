@@ -22,5 +22,16 @@ test('older pending applications without acceptance retain the invitation button
   const applications = admin.slice(admin.indexOf('function AffiliateApplicationsSection('), admin.indexOf('function AdminQuickPanel('));
   assert.match(applications, /row\.agreementAcceptance\.invitationId == null \? "with application" : "after invitation"/);
   assert.match(applications, /isSuperAdmin && !row\.agreementAcceptance && <button[^>]*[\s\S]*?Send agreement invitation/);
-  assert.match(applications, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && <button/);
+  assert.match(applications, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && !row\.applicationHeldAt && <>/);
+});
+
+test('application review exposes hold and release while approval generates its code on the server', () => {
+  const admin = readFileSync(new URL('../../../../index.jsx', import.meta.url), 'utf8');
+  const applications = admin.slice(admin.indexOf('function AffiliateApplicationsSection('), admin.indexOf('function AdminQuickPanel('));
+  assert.match(applications, /\/hold`/);
+  assert.match(applications, /\/release-hold`/);
+  assert.match(applications, /row\.applicationHeldAt && <p role="status"/);
+  assert.match(applications, /row\.agreementAcceptance && !row\.applicationHeldAt/);
+  assert.match(applications, /body: JSON\.stringify\(\{ commissionRatePct: ratesById\[row\.id\] \?\? 20 \}\)/);
+  assert.doesNotMatch(applications.slice(applications.indexOf('async function approve('), applications.indexOf('async function hold(')), /window\.prompt/);
 });

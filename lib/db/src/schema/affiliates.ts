@@ -68,6 +68,9 @@ export const affiliates = pgTable("affiliates", {
    * already earned.
    */
   status: text("status").default("pending").notNull(),
+  /** Review hold applies only to pending applications, not payout compliance. */
+  applicationHeldAt: timestamp("application_held_at", { withTimezone: true }),
+  applicationHoldReason: text("application_hold_reason"),
 
   /**
    * Current rate for FUTURE accruals, as whole percent: 20, 10 or 0 (§14).

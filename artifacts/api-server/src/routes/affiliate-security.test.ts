@@ -56,10 +56,12 @@ test("affiliate handlers keep their own database targets after a merge", () => {
   const patch = routeSection('router.patch("/:id"', 'router.post("/:id/approve"');
   const approve = routeSection('router.post("/:id/approve"', 'router.post("/:id/rate"');
   const rate = routeSection('router.post("/:id/rate"', 'router.post("/:id/commissions"');
-  for (const section of [patch, approve, rate]) {
+  for (const section of [patch, rate]) {
     assert.match(section, /db\.update\(affiliates\)/);
     assert.doesNotMatch(section, /db\.update\(affiliatePayouts\)/);
   }
+  assert.match(approve, /tx\.update\(affiliates\)/);
+  assert.doesNotMatch(approve, /db\.update\(affiliatePayouts\)/);
 
   const reverse = routeSection('router.post("/commissions/:commissionId/reverse"', 'router.post("/cron/maturity-sweep"');
   assert.match(reverse, /db\.update\(affiliateCommissions\)/);
@@ -157,7 +159,7 @@ test("the application form does not reveal who is already in the programme", () 
   // match the input-validation 400s above it, which are fine and necessary.
   assert.match(
     apply,
-    /if \(existing\) \{\s*return res\.status\(200\)/,
+    /if \(existing\) \{\s*outcome\("duplicate"\);\s*return res\.status\(200\)/,
     "a duplicate application must answer 200, identically to a new one",
   );
 });
@@ -211,7 +213,7 @@ test("every legacy paid activation path checks the reviewed-terms gate", () => {
   assert.match(ui, /showEnroll && stats &&/);
   const applicationsUi = adminUi.slice(adminUi.indexOf("function AffiliateApplicationsSection("), adminUi.indexOf("function AdminQuickPanel("));
   assert.match(applicationsUi, /setActivationEnabled\(stats\.activationEnabled === true\)/);
-  assert.match(applicationsUi, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && <button/);
+  assert.match(applicationsUi, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && !row\.applicationHeldAt && <>/);
   assert.match(applicationsUi, /\/approve`/);
   assert.match(applicationsUi, /agreementAcceptance\.version/);
   assert.match(applicationsUi, /agreementAcceptance\.acceptedAt/);
