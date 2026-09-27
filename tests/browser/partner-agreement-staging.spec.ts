@@ -105,3 +105,79 @@ test("Partner Agreement stages the canonical draft without review or publication
     await clerkClient.users.deleteUser(user.id);
   }
 });
+
+test("a corrupted reload clears the previously reviewed agreement", async ({ page, baseURL }) => {
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  if (!secretKey) throw new Error("CLERK_SECRET_KEY is required for the development-only browser check");
+
+  const clerkClient = createClerkClient({ secretKey });
+  const emailAddress = `agreement-integrity-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
+  const user = await clerkClient.users.createUser({
+    emailAddress: [emailAddress], firstName: "Synthetic", lastName: "Integrity",
+    skipPasswordRequirement: true, skipLegalChecks: true,
+  });
+  let draftRequests = 0;
+  const writeRequests: string[] = [];
+  try {
+    await page.route("**/api/accounts/me", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          clerkUserId: user.id, isActive: true, isSuperAdmin: true, isAdminUser: true,
+        }),
+      }),
+    );
+    // All agreement requests are intercepted: the test only reads synthetic
+    // responses, and even an accidental submit cannot reach the real API.
+    await page.route("**/api/affiliates/agreements/**", (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (request.method() !== "GET") {
+        writeRequests.push(`${request.method()} ${path}`);
+        return route.fulfill({ status: 405, body: "{}" });
+      }
+      if (path.endsWith("/current")) {
+        return route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ version: null, published: false }),
+        });
+      }
+      if (path.endsWith("/v4-draft")) {
+        draftRequests++;
+        return route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            version: "4.0",
+            body: draftRequests === 1 ? body : `${body} corrupted`,
+            contentSha256: checksum,
+          }),
+        });
+      }
+      return route.fulfill({ status: 404, body: "{}" });
+    });
+
+    const url = (path: string) => new URL(path, baseURL!.replace(/\/?$/, "/")).toString();
+    await page.goto(url("sign-in"));
+    await clerk.signIn({ page, emailAddress });
+    await page.goto(url("admin/affiliate-compliance"));
+    await page.getByTestId("button-agreement-tab").click();
+    await expect(page.getByTestId("input-agreement-version")).toHaveValue("4.0");
+    await expect(page.getByTestId("input-agreement-body")).toHaveValue(body);
+    await expect(page.getByText(`Prepared Version 4.0 text checksum (SHA-256): ${checksum}`, { exact: false })).toBeVisible();
+    await page.getByTestId("checkbox-review-agreement").check();
+    await expect(page.getByTestId("button-publish-agreement")).toBeEnabled();
+
+    await page.getByRole("button", { name: "Load prepared attorney-reviewed Version 4.0" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Prepared agreement integrity check failed" })).toBeVisible();
+    await expect(page.getByTestId("input-agreement-version")).toHaveValue("");
+    await expect(page.getByTestId("input-agreement-body")).toHaveValue("");
+    await expect(page.getByText(`Prepared Version 4.0 text checksum (SHA-256): ${checksum}`, { exact: false })).toHaveCount(0);
+    await expect(page.getByTestId("checkbox-review-agreement")).not.toBeChecked();
+    await expect(page.getByTestId("checkbox-review-agreement")).toBeDisabled();
+    await expect(page.getByTestId("button-publish-agreement")).toBeDisabled();
+    expect(draftRequests).toBe(2);
+    expect(writeRequests).toEqual([]);
+  } finally {
+    await clerkClient.users.deleteUser(user.id);
+  }
+});
