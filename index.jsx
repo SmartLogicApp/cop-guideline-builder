@@ -4661,7 +4661,7 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
             </p>}
             <p style={{ color: row.agreementAcceptance ? "#86EFAC" : "#FBBF24", fontSize: "12px" }}>
               {row.agreementAcceptance
-                ? `Accepted ${row.agreementAcceptance.version} on ${new Date(row.agreementAcceptance.acceptedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })} by ${row.agreementAcceptance.signerName}`
+                ? `Accepted ${row.agreementAcceptance.version} ${row.agreementAcceptance.invitationId == null ? "with application" : "after invitation"} on ${new Date(row.agreementAcceptance.acceptedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })} by ${row.agreementAcceptance.signerName}`
                 : "No acceptance of the current reviewed agreement recorded."}
             </p>
             {isSuperAdmin && !row.agreementAcceptance && <button type="button" disabled={actionBusy || !agreementStatus?.published}

@@ -81,6 +81,25 @@ router.get("/current", requireSuperAdmin, async (_req, res) => {
     : { version, published: false });
 });
 
+// The public application may only display text that the owner already
+// published and configured as the currently reviewed agreement.
+router.get("/application", publicLimit, async (_req, res) => {
+  const version = reviewedAffiliateAgreementVersion();
+  if (!version) return res.status(503).json({ error: "The affiliate agreement is not available for applications." });
+  try {
+    const [agreement] = await db.select({
+      version: affiliateAgreements.version,
+      body: affiliateAgreements.body,
+      contentSha256: affiliateAgreements.contentSha256,
+    }).from(affiliateAgreements).where(eq(affiliateAgreements.version, version)).limit(1);
+    if (!agreement) return res.status(503).json({ error: "The affiliate agreement is not available for applications." });
+    res.set("Cache-Control", "no-store");
+    return res.json(agreement);
+  } catch {
+    return res.status(503).json({ error: "The affiliate agreement is temporarily unavailable." });
+  }
+});
+
 router.post("/:affiliateId/invite", requireSuperAdmin, async (req, res) => {
   const version = reviewedAffiliateAgreementVersion();
   if (!version) return res.status(409).json({ error: "Set the reviewed agreement version before inviting applicants." });

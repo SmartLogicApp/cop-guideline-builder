@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'wouter';
 import { CONTACT_EMAIL_SUPPORT } from '@/lib/contact';
+import { canSubmitApplication, type ApplicationAgreement } from './affiliates-agreement';
 
 /**
  * The public front door to the affiliate and vendor programme.
@@ -26,9 +27,40 @@ export default function AffiliatesPage() {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState('');
   const [reference, setReference] = useState('');
+  const [agreement, setAgreement] = useState<ApplicationAgreement | null>(null);
+  const [agreementError, setAgreementError] = useState('');
+  const [agreementLoading, setAgreementLoading] = useState(true);
+  const [agreementRefresh, setAgreementRefresh] = useState(0);
+  const [agreed, setAgreed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setAgreementLoading(true);
+    setAgreementError('');
+    setAgreement(null);
+    setAgreed(false);
+    fetch(`${import.meta.env.BASE_URL}api/affiliates/agreements/application`, {
+      cache: 'no-store', signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error('The current agreement is unavailable. Please try again later.');
+      const document = await response.json() as ApplicationAgreement;
+      if (typeof document.version !== 'string' || !document.version
+        || typeof document.body !== 'string' || !document.body
+        || !/^[a-f0-9]{64}$/.test(document.contentSha256)) {
+        throw new Error('The current agreement could not be verified. Please try again later.');
+      }
+      if (!controller.signal.aborted) setAgreement(document);
+    }).catch((failure) => {
+      if (!controller.signal.aborted) setAgreementError(failure.message);
+    }).finally(() => {
+      if (!controller.signal.aborted) setAgreementLoading(false);
+    });
+    return () => controller.abort();
+  }, [agreementRefresh]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!canSubmitApplication(agreement, agreed, agreementLoading) || !agreement) return;
     setStatus('sending');
     setError('');
     const attemptReference = crypto.randomUUID();
@@ -37,17 +69,27 @@ export default function AffiliatesPage() {
       const response = await fetch(`${import.meta.env.BASE_URL}api/affiliates/apply`.replace(/\/\/api/, '/api'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Application-Reference': attemptReference },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form, agreed, agreementVersion: agreement.version,
+          agreementSha256: agreement.contentSha256,
+        }),
       });
       // A rate limiter or proxy might reject the request before the route
       // returns its reference; retain the browser's attempt reference then.
       const serverReference = response.headers.get('X-Application-Reference');
       if (serverReference) setReference(serverReference);
+      if (response.status === 409) {
+        setAgreed(false);
+        setAgreementRefresh((value) => value + 1);
+        throw new Error('The agreement changed. Review the current version and accept it again.');
+      }
       if (!response.ok) throw new Error('Application submission failed');
       setStatus('sent');
-    } catch {
+    } catch (failure) {
       setStatus('error');
-      setError('We could not confirm your application. Please try again. If it still fails, contact support and include the attempt reference below.');
+      setError(failure instanceof Error && failure.message.startsWith('The agreement changed.')
+        ? failure.message
+        : 'We could not confirm your application. Please try again. If it still fails, contact support and include the attempt reference below.');
     }
   }
 
@@ -197,6 +239,35 @@ export default function AffiliatesPage() {
                   />
                 </div>
 
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="font-semibold text-slate-900">Affiliate Partner Agreement{agreement ? ` v${agreement.version}` : ''}</h3>
+                  {agreementLoading && <p role="status" className="mt-2 text-sm text-slate-600">Loading the current published agreement…</p>}
+                  {agreementError && (
+                    <div role="alert" className="mt-2 text-sm text-red-800">
+                      {agreementError}{' '}
+                      <button type="button" className="underline" onClick={() => setAgreementRefresh((value) => value + 1)}>
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {agreement && (
+                    <>
+                      <div tabIndex={0} aria-label={`Full Affiliate Partner Agreement version ${agreement.version}`}
+                        className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap rounded-lg border border-slate-300 bg-white p-4 text-sm leading-6 text-slate-800">
+                        {agreement.body}
+                      </div>
+                      <label className="mt-4 flex items-start gap-3 text-sm font-medium text-slate-900">
+                        <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)}
+                          required data-testid="checkbox-agreement" className="mt-1" />
+                        I have read and agree to the Affiliate Partner Agreement version {agreement.version} on behalf of the applicant.
+                      </label>
+                      <p className="mt-2 text-xs text-slate-600">
+                        Your acceptance, name, email, time, IP address, and browser information are recorded with this application.
+                      </p>
+                    </>
+                  )}
+                </div>
+
                 {error && (
                   <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" data-testid="status-error">
                     {error}{' '}
@@ -208,7 +279,7 @@ export default function AffiliatesPage() {
                 <div className="flex flex-wrap items-center gap-4">
                   <button
                     type="submit"
-                    disabled={status === 'sending'}
+                    disabled={status === 'sending' || !canSubmitApplication(agreement, agreed, agreementLoading)}
                     className="rounded-lg bg-teal-800 px-6 py-3 text-[15px] font-bold text-white hover:bg-teal-900 disabled:opacity-60 transition-colors"
                     data-testid="button-submit"
                   >

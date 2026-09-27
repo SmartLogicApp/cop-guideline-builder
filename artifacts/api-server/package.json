@@ -11,7 +11,7 @@
     "test": "node --test src/**/*.test.ts",
     "test:seo-sitemap": "node --test src/routes/sitemap-contract.test.mjs",
     "test:generation": "node --test src/services/generation.test.ts",
-    "test:startup-schema-safety": "node --test src/lib/startup-schema-safety.test.ts src/lib/payment-config.test.ts src/lib/stripe-billing-contract.test.ts src/routes/sitemap-contract.test.mjs src/services/generation.test.ts && pnpm --dir ../.. run test:gap-history",
+    "test:startup-schema-safety": "node --test src/lib/startup-schema-safety.test.ts src/lib/payment-config.test.ts src/lib/stripe-billing-contract.test.ts src/lib/affiliate-application-acceptance.test.ts src/routes/sitemap-contract.test.mjs src/services/generation.test.ts && pnpm --dir ../.. run test:gap-history",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:cache": "node --experimental-transform-types --test src/lib/durable-cache.test.ts",
     "test:ccn": "node --experimental-transform-types --test src/lib/ccn-lookup.test.ts"

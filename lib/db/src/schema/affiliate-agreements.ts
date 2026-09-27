@@ -30,7 +30,8 @@ export const affiliateAgreementInvitations = pgTable("affiliate_agreement_invita
 export const affiliateAgreementAcceptances = pgTable("affiliate_agreement_acceptances", {
   id: uuid("id").primaryKey().defaultRandom(),
   affiliateId: uuid("affiliate_id").notNull().references(() => affiliates.id),
-  invitationId: uuid("invitation_id").notNull().references(() => affiliateAgreementInvitations.id),
+  // Null only for acceptance recorded atomically with a public application.
+  invitationId: uuid("invitation_id").references(() => affiliateAgreementInvitations.id),
   agreementVersion: text("agreement_version").notNull().references(() => affiliateAgreements.version),
   contentSha256: text("content_sha256").notNull(),
   signerName: text("signer_name").notNull(),
@@ -41,6 +42,8 @@ export const affiliateAgreementAcceptances = pgTable("affiliate_agreement_accept
   signerEmail: text("signer_email").notNull(),
   identityEpoch: integer("identity_epoch").notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull().defaultNow(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
 }, (table) => [
   uniqueIndex("affiliate_agreement_acceptances_invitation_idx").on(table.invitationId),
   index("affiliate_agreement_acceptances_affiliate_version_idx").on(table.affiliateId, table.agreementVersion),

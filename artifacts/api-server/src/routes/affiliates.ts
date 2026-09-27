@@ -16,6 +16,7 @@ import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, sql } from "dri
 import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { affiliateActivationEnabled, isBlockedAffiliateActivation } from "../lib/affiliate-activation.js";
 import { currentReviewedAffiliateAcceptanceCondition, hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementExists, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
+import { applicationAcceptanceEvidence } from "../lib/affiliate-application-acceptance.js";
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getReturnBase } from "../lib/return-base.js";
 import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
@@ -146,6 +147,8 @@ router.post("/apply", async (req, res) => {
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const phone = typeof body.phone === "string" ? body.phone.trim() : "";
   const about = typeof body.about === "string" ? body.about.trim() : "";
+  const agreementVersion = typeof body.agreementVersion === "string" ? body.agreementVersion : "";
+  const agreementSha256 = typeof body.agreementSha256 === "string" ? body.agreementSha256 : "";
 
   if (companyName.length < 2 || companyName.length > 200) {
     return reject("Please enter your company or practice name.");
@@ -166,6 +169,9 @@ router.post("/apply", async (req, res) => {
       || hasSensitiveContact({ email, phone })) {
     return reject("Do not enter tax identifiers or payment account numbers.");
   }
+  if (body.agreed !== true || !agreementVersion || !/^[a-f0-9]{64}$/.test(agreementSha256)) {
+    return reject("Read and agree to the current affiliate agreement before applying.");
+  }
 
   try {
     // One application per email. Returns the same 200 either way — an endpoint
@@ -180,20 +186,46 @@ router.post("/apply", async (req, res) => {
 
     const assignedCode = await provisionalReferralCode(companyName);
 
-    await db.insert(affiliates).values({
-      referralCode: assignedCode,
-      companyName,
-      contactName,
-      email,
-      phone,
-      status: "pending",
-      // No rate is in effect until approval. Recorded as 0 rather than 20 so a
-      // pending applicant cannot accrue anything even if their status were
-      // flipped by mistake without a deliberate rate decision.
-      commissionRatePct: 0,
-      rateEffectiveAt: new Date(),
-      adminNotes: `Application note: ${about}`,
+    const accepted = await db.transaction(async (tx) => {
+      const currentVersion = reviewedAffiliateAgreementVersion();
+      if (!currentVersion || agreementVersion !== currentVersion) return false;
+      const [agreement] = await tx.select({
+        version: affiliateAgreements.version,
+        contentSha256: affiliateAgreements.contentSha256,
+      }).from(affiliateAgreements).where(eq(affiliateAgreements.version, currentVersion)).limit(1);
+      if (!agreement || agreement.contentSha256 !== agreementSha256) return false;
+      const now = new Date();
+      const [application] = await tx.insert(affiliates).values({
+        referralCode: assignedCode,
+        companyName,
+        contactName,
+        email,
+        phone,
+        status: "pending",
+        // No rate is in effect until a human approves this application.
+        commissionRatePct: 0,
+        rateEffectiveAt: now,
+        createdAt: now,
+        adminNotes: `Application note: ${about}`,
+      }).returning({ id: affiliates.id, identityEpoch: affiliates.agreementIdentityEpoch });
+      await tx.insert(affiliateAgreementAcceptances).values(applicationAcceptanceEvidence({
+        affiliateId: application.id,
+        version: agreement.version,
+        contentSha256: agreement.contentSha256,
+        contactName,
+        companyName,
+        email,
+        identityEpoch: application.identityEpoch,
+        acceptedAt: now,
+        ipAddress: req.ip ?? null,
+        userAgent: req.get("user-agent"),
+      }));
+      return true;
     });
+    if (!accepted) {
+      outcome("validation_rejected");
+      return res.status(409).json({ error: "The affiliate agreement changed or is unavailable. Reload it before applying." });
+    }
 
     outcome("inserted");
     return res.status(201).json({ ok: true, received: true });
@@ -282,6 +314,7 @@ router.get("/", requireAnyAdmin, async (req, res) => {
         affiliateId: affiliateAgreementAcceptances.affiliateId,
         version: affiliateAgreementAcceptances.agreementVersion,
         acceptedAt: affiliateAgreementAcceptances.acceptedAt,
+        invitationId: affiliateAgreementAcceptances.invitationId,
         signerName: affiliateAgreementAcceptances.signerName,
         legalBusinessName: affiliateAgreementAcceptances.legalBusinessName,
       }).from(affiliateAgreementAcceptances)
