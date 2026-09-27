@@ -7,6 +7,7 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "pretest:browser": "playwright install chromium",
     "test:browser": "playwright test",
+    "test:gap-action-plan-history": "playwright test --config=playwright.gap-action-plan-history.config.ts",
     "pretest:marketing-browser-boundary": "playwright install chromium",
     "test:marketing-browser-boundary": "playwright test tests/browser/public-bundle-boundary.spec.ts --project=marketing-auth-chromium --project=marketing-auth-prefixed-chromium",
     "test:partner-agreement-staging": "node --test artifacts/api-server/src/routes/affiliate-agreement-staging.test.ts && playwright test tests/browser/partner-agreement-staging.spec.ts --project=marketing-auth-chromium",

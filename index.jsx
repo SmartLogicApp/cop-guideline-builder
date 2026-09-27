@@ -1256,7 +1256,15 @@ async function fetchGapHistory(ownerId, signal) {
   const remote = await response.json();
   if (!Array.isArray(remote)) throw new Error("Invalid gap history response");
   const deletedIds = new Set(pendingDeletions);
-  const visibleRemote = remote.filter((entry) => !deletedIds.has(entry.id));
+  const cachedById = new Map(cached.map((entry) => [entry.id, entry]));
+  const visibleRemote = remote
+    .filter((entry) => !deletedIds.has(entry.id))
+    .map((entry) => {
+      // The history API returns scan results but not the generated plan.
+      // Keep the locally attached plan when refreshing that same scan.
+      const localPlan = cachedById.get(entry.id)?.actionPlan;
+      return localPlan && !entry.actionPlan ? { ...entry, actionPlan: localPlan } : entry;
+    });
   const remoteIds = new Set(visibleRemote.map((entry) => entry.id));
   const pending = cached.filter((entry) => !remoteIds.has(entry.id));
   const merged = [...pending, ...visibleRemote]

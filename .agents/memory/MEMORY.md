@@ -38,3 +38,4 @@
 - [Published public-route freshness](published-public-route-freshness.md) — compare direct route and index.html raw responses; correct local prerendering does not prove published routing is current.
 - [Stripe Test endpoint identity](stripe-test-endpoint-identity.md) — reconcile a configured destination by ID and preserve its URL query; a path-only list search can miss a working endpoint.
 - [Local marketing build validation](local-marketing-build-validation.md) — local verification can use browser-test mode with dev Clerk credentials; never treat that bypass as a production publish check.
+- [Workspace preview browser fixtures](workspace-preview-browser-fixtures.md) — scanner browser tests need a test-only identity wrapper and matching active access response.
