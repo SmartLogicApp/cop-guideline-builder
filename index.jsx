@@ -21,6 +21,7 @@ import {
 } from "./generation-client.js";
 import { buildGuidelinesPrompt, GUIDELINES_MAX_TOKENS } from "./guidelines-prompt.js";
 import { getScopedAccountAccess } from "./trial-access.js";
+import { citationToUrl } from "./citation-links.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -847,21 +848,6 @@ const INST_UNIT_CITATIONS = {
     "Laboratory":                    ["§486.106 – Standards","42 CFR 493 – CLIA"],
   },
 };
-
-function citationToUrl(citation) {
-  const sectionMatch = citation.match(/§\s*(\d+)\.(\d+)/);
-  if (sectionMatch) {
-    return `https://www.ecfr.gov/current/title-42/section-${sectionMatch[1]}.${sectionMatch[2]}`;
-  }
-
-  const partMatch = citation.match(/\b42\s+CFR\s+(\d+)\b/i);
-  if (partMatch) {
-    return `https://www.ecfr.gov/current/title-42/part-${partMatch[1]}`;
-  }
-
-  const standardCode = citation.split(/\s+[–—-]\s+/)[0].trim();
-  return `https://www.jointcommission.org/search/#q=${encodeURIComponent(standardCode)}`;
-}
 
 function getUnitCitations(institution, unit) {
   return INST_UNIT_CITATIONS[institution]?.[unit] || UNIT_CITATIONS[unit] || [];
