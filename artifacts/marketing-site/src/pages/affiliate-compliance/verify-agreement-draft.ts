@@ -1,15 +1,19 @@
 export type VerifiedAgreementDraft = {
-  version: string;
+  version: '4.0';
   body: string;
   contentSha256: string;
 };
 
 const INTEGRITY_ERROR = 'Prepared agreement integrity check failed. The text cannot be reviewed or published. Please reload the draft.';
+const VERSION_ERROR = 'Prepared agreement is not Version 4.0. The text cannot be reviewed or published. Please reload the draft.';
 
 export async function verifyAgreementDraft(response: unknown): Promise<VerifiedAgreementDraft> {
   if (!response || typeof response !== 'object') throw new Error(INTEGRITY_ERROR);
   const { version, body, contentSha256 } = response as Record<string, unknown>;
-  if (typeof version !== 'string' || typeof body !== 'string' ||
+  // The review screen is specifically for Version 4.0. A valid body hash
+  // alone does not bind the server's version label to that screen.
+  if (version !== '4.0') throw new Error(VERSION_ERROR);
+  if (typeof body !== 'string' ||
       typeof contentSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(contentSha256)) {
     throw new Error(INTEGRITY_ERROR);
   }

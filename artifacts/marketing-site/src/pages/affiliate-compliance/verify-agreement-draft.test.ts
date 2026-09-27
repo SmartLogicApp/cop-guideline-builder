@@ -16,6 +16,13 @@ test('only the exact UTF-8 body matching its checksum is returned to the review 
   await assert.rejects(verifyAgreementDraft({ ...draft, contentSha256: 'not-a-digest' }), /integrity check failed/);
 });
 
+test('a matching body and checksum cannot be reviewed under an unexpected version', async () => {
+  const draft = { version: '4.0', body, contentSha256 };
+  for (const version of ['4.1', '3.0', ' 4.0 ', '', null, undefined]) {
+    await assert.rejects(verifyAgreementDraft({ ...draft, version }), /not Version 4\.0/);
+  }
+});
+
 test('review stays unavailable while loading or after a rejected draft', () => {
   const hook = readFileSync(new URL('./hooks.ts', import.meta.url), 'utf8');
   const form = readFileSync(new URL('./AdminPartnerAgreement.tsx', import.meta.url), 'utf8');
