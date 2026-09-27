@@ -24,10 +24,11 @@ export default function AdminPartnerAgreement() {
 
   const loadVersion4 = useCallback(async () => {
     setResult('');
+    // Revoke the prior draft and review attestation before requesting a fresh
+    // copy; an unauthorized or failed reload must not leave either behind.
     setCanonicalV4Loaded(false);
     setLoadedV4Hash('');
     form.reset({ version: '', body: '', confirmedReviewed: false });
-    form.clearErrors('root');
     try {
       const prepared = await v4Draft.mutateAsync();
       form.setValue('version', prepared.version, { shouldValidate: true, shouldDirty: true });
@@ -38,7 +39,7 @@ export default function AdminPartnerAgreement() {
     } catch (error) {
       form.setError('root', { message: error instanceof Error ? error.message : 'Unable to load the prepared Version 4.0 text.' });
     }
-  }, [form.clearErrors, form.setError, form.setValue, v4Draft.mutateAsync]);
+  }, [form.reset, form.setError, form.setValue, v4Draft.mutateAsync]);
 
   // Prepare the immutable source-derived text only after the server has
   // confirmed super-admin access. Nothing is published or acknowledged here.

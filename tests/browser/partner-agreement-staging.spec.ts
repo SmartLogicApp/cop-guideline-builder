@@ -28,6 +28,7 @@ test("Partner Agreement stages the canonical draft without review or publication
     skipPasswordRequirement: true, skipLegalChecks: true,
   });
   let authorized = true;
+  let draftAuthorized = true;
   let draftRequests = 0;
   const publicationRequests: string[] = [];
   try {
@@ -57,8 +58,8 @@ test("Partner Agreement stages the canonical draft without review or publication
       if (path.endsWith("/v4-draft")) {
         draftRequests++;
         return route.fulfill({
-          status: authorized ? 200 : 403, contentType: "application/json",
-          body: JSON.stringify(authorized ? { version: "4.0", body, contentSha256: checksum } : { error: "Super-admin access required" }),
+          status: authorized && draftAuthorized ? 200 : 403, contentType: "application/json",
+          body: JSON.stringify(authorized && draftAuthorized ? { version: "4.0", body, contentSha256: checksum } : { error: "Super-admin access required" }),
         });
       }
       return route.fulfill({ status: 404, body: "{}" });
@@ -77,13 +78,28 @@ test("Partner Agreement stages the canonical draft without review or publication
     expect(draftRequests).toBe(1);
     expect(publicationRequests).toEqual([]);
 
+    // A rejected manual reload must revoke the earlier draft and its review
+    // state, not leave an old copy apparently ready to publish.
+    await page.getByTestId("checkbox-review-agreement").check();
+    await expect(page.getByTestId("button-publish-agreement")).toBeEnabled();
+    draftAuthorized = false;
+    await page.getByRole("button", { name: "Load prepared attorney-reviewed Version 4.0" }).click();
+    await expect(page.getByText("Super-admin access required", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("input-agreement-version")).toHaveValue("");
+    await expect(page.getByTestId("input-agreement-body")).toHaveValue("");
+    await expect(page.getByTestId("checkbox-review-agreement")).not.toBeChecked();
+    await expect(page.getByTestId("button-publish-agreement")).toBeDisabled();
+    await expect(page.getByText(`Prepared Version 4.0 text checksum (SHA-256): ${checksum}`, { exact: false })).toHaveCount(0);
+    expect(draftRequests).toBe(2);
+    expect(publicationRequests).toEqual([]);
+
     // A browser session that the API does not authorize must not even request
     // the prepared text; the route-level guard is separately tested in Node.
     authorized = false;
     await page.reload();
     await page.getByTestId("button-agreement-tab").click();
     await expect(page.getByText("Super-admin access is required to manage the Partner Agreement.")).toBeVisible();
-    expect(draftRequests).toBe(1);
+    expect(draftRequests).toBe(2);
     expect(publicationRequests).toEqual([]);
   } finally {
     await clerkClient.users.deleteUser(user.id);
