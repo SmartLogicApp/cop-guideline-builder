@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "prebuild": "pnpm run test:routing && pnpm run test:documents && pnpm run test:clerk-credentials && pnpm run test:bundle-boundary && pnpm run test:generation && pnpm run test:seo",
-    "build": "vite build --config vite.config.ts && node scripts/prerender-public.mjs && pnpm run check:bundle-boundary",
+    "build": "vite build --config vite.config.ts && node scripts/prerender-public.mjs && pnpm run test:prerender && pnpm run check:bundle-boundary",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "test:routing": "node --test scripts/auth-routing-contract.test.mjs",
     "test:documents": "node --test scripts/policy-file-text.test.mjs",
@@ -14,6 +14,7 @@
     "test:bundle-boundary": "node --test scripts/public-bundle-boundary.test.mjs",
     "test:generation": "node --test ../../generation-client.test.mjs",
     "test:seo": "node --test scripts/public-seo.test.mjs",
+    "test:prerender": "node --test scripts/public-prerender.test.mjs",
     "check:bundle-boundary": "node scripts/check-public-bundle-boundary.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
