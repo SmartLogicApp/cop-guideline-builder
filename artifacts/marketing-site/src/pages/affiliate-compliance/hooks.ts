@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/react';
 import { useCallback } from 'react';
+import { verifyAgreementDraft, type VerifiedAgreementDraft } from './verify-agreement-draft';
 
 const API_BASE = '/api/affiliate-compliance';
 
@@ -49,8 +50,8 @@ export function useAdminAgreementCurrent() {
 
 export function useAdminAgreementV4Draft() {
   const fetchAuth = useFetchAuth('/api/affiliates/agreements');
-  return useMutation<{ version: string; body: string; contentSha256: string }, Error, void>({
-    mutationFn: () => fetchAuth('/v4-draft'),
+  return useMutation<VerifiedAgreementDraft, Error, void>({
+    mutationFn: async () => verifyAgreementDraft(await fetchAuth('/v4-draft')),
   });
 }
 

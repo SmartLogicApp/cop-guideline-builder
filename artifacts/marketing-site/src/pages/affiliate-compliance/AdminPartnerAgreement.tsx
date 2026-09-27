@@ -24,6 +24,9 @@ export default function AdminPartnerAgreement() {
 
   const loadVersion4 = useCallback(async () => {
     setResult('');
+    setCanonicalV4Loaded(false);
+    setLoadedV4Hash('');
+    form.reset({ version: '', body: '', confirmedReviewed: false });
     form.clearErrors('root');
     try {
       const prepared = await v4Draft.mutateAsync();
@@ -47,7 +50,7 @@ export default function AdminPartnerAgreement() {
 
   async function onSubmit(fields: AgreementPublishFields) {
     // Keep this check even if the form is submitted programmatically.
-    if (fields.confirmedReviewed !== true) return;
+    if (!canonicalV4Loaded || fields.confirmedReviewed !== true) return;
     setResult('');
     try {
       const response = await publish.mutateAsync({
@@ -114,7 +117,7 @@ export default function AdminPartnerAgreement() {
           </div>
           <label className="flex items-start gap-3 text-sm font-medium text-slate-900">
             <input
-              type="checkbox" data-testid="checkbox-review-agreement" required
+              type="checkbox" data-testid="checkbox-review-agreement" required disabled={!canonicalV4Loaded || v4Draft.isPending}
               {...form.register('confirmedReviewed')}
               className="mt-1 h-4 w-4"
             />
@@ -123,7 +126,7 @@ export default function AdminPartnerAgreement() {
           {form.formState.errors.confirmedReviewed && <p role="alert" className="text-sm text-red-700">{form.formState.errors.confirmedReviewed.message}</p>}
           {form.formState.errors.root && <p role="alert" className="text-sm text-red-700">{form.formState.errors.root.message}</p>}
           {result && <p role="status" data-testid="status-agreement-published" className="text-sm text-green-800">{result}</p>}
-          <Button type="submit" data-testid="button-publish-agreement" disabled={!reviewed || publish.isPending || form.formState.isSubmitting}>
+          <Button type="submit" data-testid="button-publish-agreement" disabled={!canonicalV4Loaded || !reviewed || v4Draft.isPending || publish.isPending || form.formState.isSubmitting}>
             {publish.isPending ? 'Publishing…' : 'Publish reviewed agreement'}
           </Button>
         </form>

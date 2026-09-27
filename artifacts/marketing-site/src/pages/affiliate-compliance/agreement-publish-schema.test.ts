@@ -35,8 +35,8 @@ test('the rendered form is wired to that validation and disables unchecked publi
   const component = readFileSync(new URL('./AdminPartnerAgreement.tsx', import.meta.url), 'utf8');
   assert.match(component, /resolver:\s*zodResolver\(agreementPublishSchema\)/);
   assert.match(component, /defaultValues:\s*\{[^}]*confirmedReviewed:\s*false/);
-  assert.match(component, /if \(fields\.confirmedReviewed !== true\) return/);
+  assert.match(component, /if \(!canonicalV4Loaded \|\| fields\.confirmedReviewed !== true\) return/);
   assert.match(component, /confirmedReviewed:\s*fields\.confirmedReviewed/);
   assert.match(component, /type="checkbox"[^>]*required/);
-  assert.match(component, /disabled=\{!reviewed \|\| publish\.isPending \|\| form\.formState\.isSubmitting\}/);
+  assert.match(component, /disabled=\{!canonicalV4Loaded \|\| !reviewed \|\| v4Draft\.isPending \|\| publish\.isPending \|\| form\.formState\.isSubmitting\}/);
 });
