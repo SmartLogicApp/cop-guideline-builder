@@ -21,6 +21,7 @@ import {
 } from "./generation-client.js";
 import { buildGuidelinesPrompt, GUIDELINES_MAX_TOKENS } from "./guidelines-prompt.js";
 import { getScopedAccountAccess } from "./trial-access.js";
+import { fetchWithClerkToken } from "./workspace-auth-fetch.js";
 import { citationToUrl } from "./citation-links.js";
 import { policySourceRows, policyToTxt } from "./policy-export.mjs";
 
@@ -4428,7 +4429,7 @@ function AffiliateAdminSection({ basePath, month }) {
 
 // Review applicants separately from the existing affiliate accounting tools.
 // Applying only records contact details; it does not activate a partnership.
-function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
+function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
   const [applications, setApplications] = useState([]);
   const [activationEnabled, setActivationEnabled] = useState(false);
   const [agreementStatus, setAgreementStatus] = useState(null);
@@ -4445,6 +4446,14 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
   const [actionError, setActionError] = useState("");
   const [approvingId, setApprovingId] = useState(null);
   const [ratesById, setRatesById] = useState({});
+  const reviewButtonStyle = {
+    padding: "8px 14px", minHeight: "36px", background: "#0B3D8E",
+    border: "1px solid #93C5FD", borderRadius: "6px", color: "#FFFFFF",
+    fontSize: "12px", fontWeight: 700, cursor: "pointer",
+  };
+  const inviteButtonStyle = {
+    ...reviewButtonStyle, background: "#F5C542", borderColor: "#F5C542", color: "#0B1F3A",
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -4623,10 +4632,10 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
     setApprovingId(row.id);
     setActionError("");
     try {
-      const response = await fetch(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/reject`, {
+      const response = await fetchWithClerkToken(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/reject`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: reason.trim() }),
-      });
+      }, getToken);
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "Unable to decline application");
       if (result.status !== "rejected" || result.id !== row.id) throw new Error("Application status could not be confirmed. Refresh the list.");
@@ -4661,19 +4670,21 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
         </p>
         <form onSubmit={publishAgreement} style={{ display: "grid", gap: "8px" }}>
           <input aria-label="New agreement version" value={version} onChange={(event) => setVersion(event.target.value)}
-            placeholder="Approved version" maxLength={64} required style={{ padding: "8px" }} />
+            placeholder="Approved version" maxLength={64} required style={{ padding: "8px", background: "#FFFFFF", color: "#0B1F3A", border: "1px solid #94A3B8", borderRadius: "6px" }} />
           <textarea aria-label="Full owner-reviewed affiliate agreement text" value={agreementBody}
             onChange={(event) => setAgreementBody(event.target.value)}
-            placeholder="Paste the complete owner-reviewed agreement text here" rows={5} required style={{ padding: "8px" }} />
+            placeholder="Paste the complete owner-reviewed agreement text here" rows={5} required
+            style={{ padding: "8px", background: "#FFFFFF", color: "#0B1F3A", border: "1px solid #94A3B8", borderRadius: "6px" }} />
           <label style={{ color: "#fff", fontSize: "12px" }}>
-            <input type="checkbox" checked={confirmedReviewed} onChange={(event) => setConfirmedReviewed(event.target.checked)} required />
+            <input type="checkbox" checked={confirmedReviewed} onChange={(event) => setConfirmedReviewed(event.target.checked)}
+              required style={{ accentColor: "#F5C542", width: "16px", height: "16px", verticalAlign: "middle", marginRight: "6px" }} />
             {" "}I confirm this exact version and text have been reviewed and approved by the owner.
           </label>
           <button type="submit" disabled={actionBusy || !confirmedReviewed || !agreementStatus}
-            style={{ padding: "8px", cursor: "pointer" }}>Publish immutable agreement version</button>
+            style={inviteButtonStyle}>Publish immutable agreement version</button>
         </form>
       </section>}
-      <button type="button" onClick={() => setRefreshKey((key) => key + 1)} style={{ marginBottom: "10px" }}>
+      <button type="button" onClick={() => setRefreshKey((key) => key + 1)} style={{ ...reviewButtonStyle, marginBottom: "10px" }}>
         Refresh applications and acceptance status
       </button>
       {!loading && isSuperAdmin && !activationEnabled && !statsError && <p role="status" style={{ color: "#FBBF24", fontSize: "12px" }}>
@@ -4701,32 +4712,33 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
               On hold since {new Date(row.applicationHeldAt).toLocaleString("en-US")}: {row.applicationHoldReason}
             </p>}
             {isSuperAdmin && !row.agreementAcceptance && <button type="button" disabled={actionBusy || !agreementStatus?.published}
-              onClick={() => invite(row)} style={{ marginRight: "8px", padding: "7px 14px", cursor: "pointer" }}>
+              onClick={() => invite(row)} style={{ ...inviteButtonStyle, marginRight: "8px", marginTop: "12px" }}>
               Send agreement invitation
             </button>}
             {isSuperAdmin && !row.applicationHeldAt && <button type="button" disabled={approvingId != null}
-              onClick={() => hold(row)} style={{ marginRight: "8px", padding: "7px 14px", cursor: "pointer" }}>
+              onClick={() => hold(row)} style={{ ...reviewButtonStyle, marginRight: "8px", marginTop: "12px" }}>
               Hold
             </button>}
             {isSuperAdmin && row.applicationHeldAt && <button type="button" disabled={approvingId != null}
-              onClick={() => releaseHold(row)} style={{ marginRight: "8px", padding: "7px 14px", cursor: "pointer" }}>
+              onClick={() => releaseHold(row)} style={{ ...reviewButtonStyle, marginRight: "8px", marginTop: "12px" }}>
               Release hold
             </button>}
             {isSuperAdmin && activationEnabled && agreementStatus?.published && row.agreementAcceptance && !row.applicationHeldAt && <>
               <label style={{ color: "#fff", fontSize: "12px", marginRight: "8px" }}>
                 Commission rate{" "}
                 <select aria-label={`Commission rate for ${row.companyName}`} value={ratesById[row.id] ?? 20}
-                  onChange={(event) => setRatesById((current) => ({ ...current, [row.id]: Number(event.target.value) }))}>
+                  onChange={(event) => setRatesById((current) => ({ ...current, [row.id]: Number(event.target.value) }))}
+                  style={{ background: "#FFFFFF", color: "#0B1F3A", border: "1px solid #94A3B8", borderRadius: "4px", padding: "5px" }}>
                   <option value={20}>20%</option><option value={10}>10%</option>
                 </select>
               </label>
               <button type="button" disabled={approvingId != null} onClick={() => approve(row)}
-              style={{ marginTop: "12px", padding: "7px 14px", background: "#F5C542", border: "none", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, cursor: approvingId ? "wait" : "pointer" }}>
+              style={{ ...inviteButtonStyle, marginTop: "12px", cursor: approvingId ? "wait" : "pointer" }}>
                 {approvingId === row.id ? "Approving…" : "Approve"}
               </button>
             </>}
             {isSuperAdmin && <button type="button" disabled={approvingId != null} onClick={() => disapprove(row)}
-              style={{ marginTop: "12px", marginLeft: "8px", padding: "7px 14px", cursor: approvingId ? "wait" : "pointer" }}>
+              style={{ ...reviewButtonStyle, marginTop: "12px", marginLeft: "8px", borderColor: "#FCA5A5", background: "#7F1D1D", cursor: approvingId ? "wait" : "pointer" }}>
               {approvingId === row.id ? "Updating…" : "Disapprove application"}
             </button>}
           </article>
@@ -4738,7 +4750,7 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
 
 // ─── Admin Quick Panel (super-admin only, embedded in main page) ──────────────
 
-function AdminQuickPanel({ basePath, onClose, isSuperAdmin }) {
+function AdminQuickPanel({ basePath, onClose, isSuperAdmin, getToken }) {
   const [section, setSection] = useState("clients");
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -4855,7 +4867,7 @@ function AdminQuickPanel({ basePath, onClose, isSuperAdmin }) {
           </div>
         </div>
 
-        {section === "applications" && <AffiliateApplicationsSection basePath={basePath} isSuperAdmin={isSuperAdmin} />}
+        {section === "applications" && <AffiliateApplicationsSection basePath={basePath} isSuperAdmin={isSuperAdmin} getToken={getToken} />}
         {section === "affiliates" && <AffiliateAdminSection basePath={basePath} month={month} />}
 
         {section === "clients" && (<>
@@ -4934,7 +4946,7 @@ function AdminQuickPanel({ basePath, onClose, isSuperAdmin }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
-export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
+export default function CoPGuidelineBuilder({ onSignOut, clerkUserId, getToken }) {
   const [tab, setTab] = useState(() => {
     try {
       const savedTab = sessionStorage.getItem(ACTIVE_WORKSPACE_TAB_KEY);
@@ -4957,6 +4969,8 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
     status: "loading",
   }));
   const [identityRefreshNonce, setIdentityRefreshNonce] = useState(0);
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
   const scopedAccess = getScopedAccountAccess(identityState, clerkUserId);
   const resolvedHistoryOwnerId = scopedAccess.ownerId;
   const accountData = scopedAccess.accountData;
@@ -4990,10 +5004,9 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
       // resolve a shared/null identity or reuse a previous user's access.
       if (!clerkUserId) return;
       try {
-        const response = await fetch("/api/accounts/me", {
-          credentials: "include",
+        const response = await fetchWithClerkToken(`${basePath}/api/accounts/me`, {
           cache: "no-store",
-        });
+        }, getTokenRef.current);
         if (cancelled || generation !== requestGeneration) return;
         if (response.status === 401) {
           setIdentityState({
@@ -5052,7 +5065,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
       window.clearInterval(accessRefreshInterval);
       if (typeof removeClerkListener === "function") removeClerkListener();
     };
-  }, [clerkUserId, explicitOwnerId, identityRefreshNonce]);
+  }, [basePath, clerkUserId, explicitOwnerId, identityRefreshNonce]);
 
   async function handleSignOut() {
     setIdentityState({
@@ -5146,7 +5159,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
       </div>
 
       {/* Admin quick panel — toggles open when ⚙ Admin button is clicked */}
-      {isAdmin && adminOpen && <AdminQuickPanel basePath={basePath} isSuperAdmin={accountData?.isSuperAdmin === true} onClose={() => setAdminOpen(false)} />}
+      {isAdmin && adminOpen && <AdminQuickPanel basePath={basePath} isSuperAdmin={accountData?.isSuperAdmin === true} getToken={getToken} onClose={() => setAdminOpen(false)} />}
 
       <div style={S.container}>
         <OnboardingBanner />

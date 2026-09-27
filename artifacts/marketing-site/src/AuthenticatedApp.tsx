@@ -8,6 +8,7 @@ import {
   Show,
   SignIn,
   SignUp,
+  useAuth,
   useClerk,
   useUser,
 } from '@clerk/react';
@@ -172,6 +173,7 @@ function WorkspaceLoadError() {
 
 function ComplianceWorkspace() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const { signOut } = useClerk();
 
   return (
@@ -181,6 +183,7 @@ function ComplianceWorkspace() {
           <Suspense fallback={<WorkspaceLoading />}>
             <CoPGuidelineBuilder
               clerkUserId={user?.id}
+              getToken={getToken}
               onSignOut={() => signOut({ redirectUrl: basePath || '/' })}
             />
           </Suspense>
