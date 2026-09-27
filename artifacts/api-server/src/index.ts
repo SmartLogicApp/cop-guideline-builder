@@ -4,7 +4,13 @@ import { db, pool } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { reconcileTestWebhookEndpointForDevelopment } from "./lib/stripe-test-webhook.js";
+import { validateProductionClerkCredentials } from "./lib/production-clerk-credentials.js";
 
+validateProductionClerkCredentials(
+  process.env.NODE_ENV,
+  process.env.CLERK_SECRET_KEY,
+  process.env.CLERK_PUBLISHABLE_KEY,
+);
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
 const port = Number(rawPort);

@@ -63,6 +63,8 @@ function spawnApi(port, extraEnv = {}) {
     cwd: rootDirectory,
     env: {
       NODE_ENV: "production",
+      CLERK_SECRET_KEY: "sk_live_readiness_smoke",
+      CLERK_PUBLISHABLE_KEY: "pk_live_readiness_smoke",
       PORT: String(port),
       API_READINESS_SMOKE: "1",
       DATABASE_URL:
@@ -72,6 +74,35 @@ function spawnApi(port, extraEnv = {}) {
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
+
+test("compiled production API refuses a Clerk development secret before listening", async () => {
+  const port = await availablePort();
+  const child = spawnApi(port, { CLERK_SECRET_KEY: "sk_test_readiness_smoke" });
+  const getOutput = collectOutput(child);
+  const timeout = AbortSignal.timeout(10_000);
+  try {
+    const [code] = await once(child, "exit", { signal: timeout });
+    assert.notEqual(code, 0);
+    assert.match(getOutput(), /Production startup blocked:.*development credentials.*sk_live_/);
+    assert.doesNotMatch(getOutput(), /Server listening/);
+  } finally {
+    await stopProcess(child);
+  }
+});
+
+test("compiled production API refuses a development publishable key with a live secret", async () => {
+  const port = await availablePort();
+  const child = spawnApi(port, { CLERK_PUBLISHABLE_KEY: "pk_test_readiness_smoke" });
+  const getOutput = collectOutput(child);
+  try {
+    const [code] = await once(child, "exit", { signal: AbortSignal.timeout(10_000) });
+    assert.notEqual(code, 0);
+    assert.match(getOutput(), /Production startup blocked:.*CLERK_PUBLISHABLE_KEY.*development credentials.*pk_live_/);
+    assert.doesNotMatch(getOutput(), /Server listening/);
+  } finally {
+    await stopProcess(child);
+  }
+});
 
 async function requestReadiness(url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;

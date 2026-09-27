@@ -3,7 +3,10 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
+const { validateProductionClerkCredentials } = require('./validate-clerk-credentials');
 
+// Fail before Metro starts or static-build is replaced.
+validateProductionClerkCredentials(process.env);
 let metroProcess = null;
 
 const projectRoot = path.resolve(__dirname, '..');
