@@ -5,8 +5,10 @@
  * Stripe subscription exists. Its end date lives in accounts.trial_ends_at.
  *
  * STRIPE_TRIAL_STATUS is what Stripe itself reports, and the webhook writes it
- * verbatim. Stripe owns the subscription, so when it says a subscription is
- * trialing we trust that without re-deriving it from a local date.
+ * verbatim. In both trial states the mirrored trial end is an access boundary:
+ * it prevents a delayed/missed cancellation webhook from extending a trial.
+ * When a Stripe trial converts to a paid subscription Stripe changes the status
+ * to "active", which is handled separately.
  *
  * Treating only "trial" as a trial locks out every customer Stripe considers
  * trialing. Use isTrialStatus() rather than comparing to either literal.
@@ -24,8 +26,7 @@ export function hasActiveSubscription(
 ): boolean {
   const status = account?.subscriptionStatus;
   if (status === "active") return true;
-  if (status === STRIPE_TRIAL_STATUS) return true;
-  return status === APP_TRIAL_STATUS &&
+  return isTrialStatus(status) &&
     account?.trialEndsAt != null &&
     account.trialEndsAt > now;
 }

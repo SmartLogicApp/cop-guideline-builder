@@ -6,6 +6,7 @@ const billing = await readFile(new URL("../routes/billing.ts", import.meta.url),
 const webhook = await readFile(new URL("../webhookHandlers.ts", import.meta.url), "utf8");
 const app = await readFile(new URL("../app.ts", import.meta.url), "utf8");
 const stripeClient = await readFile(new URL("../stripeClient.ts", import.meta.url), "utf8");
+const startup = await readFile(new URL("../index.ts", import.meta.url), "utf8");
 
 test("Stripe requests use isolated direct Test and Live credentials without a sandbox connector", () => {
   assert.match(stripeClient, /process\.env\.STRIPE_TEST_SECRET_KEY/);
@@ -112,6 +113,19 @@ test("webhooks are raw-body verified and converge supported events to current St
   assert.match(webhook, /subscription\.cancel_at != null/);
   assert.match(webhook, /subscription\.cancel_at <= periodEnd/);
   assert.match(webhook, /subscriptionCancelAtPeriodEnd: subscription\.cancel_at_period_end \|\| cancelsByPeriodEnd/);
+});
+
+test("test webhook endpoint reconciliation runs only in development outside readiness smoke", () => {
+  assert.match(startup, /!readinessSmokeTest\s*&&\s*process\.env\.NODE_ENV\s*===\s*"development"/);
+  assert.match(startup, /process\.env\.STRIPE_TEST_SECRET_KEY/);
+  assert.match(startup, /reconcileTestWebhookEndpointForDevelopment/);
+  assert.doesNotMatch(startup, /NODE_ENV\s*!==\s*"production"\s*\)\s*\{\s*const stripe/);
+});
+
+test("Stripe trial end is mirrored and scheduled cancellation metadata is normalized", () => {
+  assert.match(webhook, /\.\.\.\(subscription\.trial_end\s*\?\s*\{\s*trialEndsAt:\s*timestamp\(subscription\.trial_end\)/);
+  assert.match(webhook, /subscriptionCancelAtPeriodEnd:\s*subscription\.cancel_at_period_end\s*\|\|\s*cancelsByPeriodEnd/);
+  assert.match(webhook, /subscription\.cancel_at\s*<=\s*periodEnd/);
 });
 
 test("deletion revokes locally without requiring a successful Stripe retrieval", () => {

@@ -15,6 +15,28 @@ test("unexpired trials have access", () => {
   }, now), true);
 });
 
+test("a Stripe trial scheduled to cancel keeps access only until its trial end", () => {
+  assert.equal(hasActiveSubscription({
+    subscriptionStatus: "trialing",
+    trialEndsAt: new Date("2026-09-07T12:00:00.001Z"),
+  }, now), true);
+  assert.equal(hasActiveSubscription({
+    subscriptionStatus: "trialing",
+    trialEndsAt: new Date("2026-09-07T12:00:00.000Z"),
+  }, now), false);
+  assert.equal(hasActiveSubscription({
+    subscriptionStatus: "trialing",
+    trialEndsAt: new Date("2026-09-07T11:59:59.999Z"),
+  }, now), false);
+});
+
+test("a Stripe trial without a mirrored end date fails closed", () => {
+  assert.equal(hasActiveSubscription({
+    subscriptionStatus: "trialing",
+    trialEndsAt: null,
+  }, now), false);
+});
+
 test("expired trials do not have access", () => {
   assert.equal(hasActiveSubscription({
     subscriptionStatus: "trial",

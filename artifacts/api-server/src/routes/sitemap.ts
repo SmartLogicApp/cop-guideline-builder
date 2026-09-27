@@ -1,4 +1,6 @@
-<?xml version="1.0" encoding="UTF-8"?>
+import type { Request, Response } from "express";
+
+export const SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://cmscomplianceguardian.com/</loc>
@@ -12,4 +14,11 @@
   <url>
     <loc>https://cmscomplianceguardian.com/privacy/</loc>
   </url>
-</urlset>
+</urlset>`;
+
+export function sitemapHandler(_req: Request, res: Response): void {
+  res
+    .status(200)
+    .set("Content-Type", "application/xml; charset=utf-8")
+    .send(SITEMAP_XML);
+}

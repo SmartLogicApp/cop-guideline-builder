@@ -2,6 +2,8 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { db, pool } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import Stripe from "stripe";
+import { reconcileTestWebhookEndpointForDevelopment } from "./lib/stripe-test-webhook.js";
 
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
@@ -11,6 +13,41 @@ const readinessSmokeTest = process.env.API_READINESS_SMOKE === "1";
 const shutdownGracePeriodMs = Number(process.env.API_SHUTDOWN_GRACE_PERIOD_MS ?? "10000");
 if (!Number.isFinite(shutdownGracePeriodMs) || shutdownGracePeriodMs <= 0) {
   throw new Error("API_SHUTDOWN_GRACE_PERIOD_MS must be a positive number.");
+}
+
+// Keep the existing Test-mode Stripe endpoint pointed at this workspace's
+// current Replit preview host. This is deliberately development-only: it uses
+// the explicit Test key, only changes the one uniquely matching test endpoint
+// URL, never creates endpoints or edits its signing secret, and logs blocked
+// reconciliation without preventing ordinary local development.
+if (!readinessSmokeTest && process.env.NODE_ENV === "development") {
+  const testSecretKey = process.env.STRIPE_TEST_SECRET_KEY?.trim();
+  const testWebhookSecret = process.env.STRIPE_TEST_WEBHOOK_SECRET?.trim();
+  if (testSecretKey?.startsWith("sk_test_") && testWebhookSecret?.startsWith("whsec_")) {
+    const stripe = new Stripe(testSecretKey, {
+      apiVersion: "2026-07-29.dahlia",
+      timeout: 5_000,
+    });
+    try {
+      const outcome = await reconcileTestWebhookEndpointForDevelopment({
+        nodeEnv: process.env.NODE_ENV,
+        testSecretKey,
+        testWebhookSecret,
+        previewDomain: process.env.REPLIT_DEV_DOMAIN ?? process.env.REPLIT_DOMAINS?.split(",")[0],
+        stripe: stripe as unknown as Parameters<typeof reconcileTestWebhookEndpointForDevelopment>[0]["stripe"],
+      });
+      if (outcome.status === "updated") {
+        logger.info({ endpointId: outcome.endpointId }, "Stripe Test webhook URL updated for current preview");
+      } else if (outcome.status === "skipped") {
+        logger.warn({ reason: outcome.reason }, "Stripe Test webhook URL reconciliation skipped");
+      }
+    } catch (error) {
+      logger.warn(
+        { errorName: error instanceof Error ? error.name : "UnknownError" },
+        "Stripe Test webhook URL reconciliation failed closed",
+      );
+    }
+  }
 }
 
 // ── Bootstrap super-admins into the DB on every startup ──────────────────────

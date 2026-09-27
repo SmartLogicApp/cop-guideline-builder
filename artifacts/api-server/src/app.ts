@@ -9,6 +9,7 @@ import { publishableKeyFromHost } from "@clerk/shared/keys";
 import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from "./middlewares/clerkProxyMiddleware";
 import { WebhookHandlers } from "./webhookHandlers";
 import router from "./routes";
+import { sitemapHandler } from "./routes/sitemap";
 import { logger } from "./lib/logger";
 import { HealthCheckResponse } from "@workspace/api-zod";
 import { isPaymentAcceptanceEnabled } from "./lib/payment-config";
@@ -56,6 +57,10 @@ app.use(
     },
   }),
 );
+
+// Public sitemap is routed here rather than the static SPA fallback so XML
+// crawlers receive the correct application/xml content type.
+app.get("/sitemap.xml", sitemapHandler);
 
 // ── Clerk proxy (must be before body parsers) ─────────────────────────────────
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());

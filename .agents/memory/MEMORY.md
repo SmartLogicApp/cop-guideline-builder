@@ -34,3 +34,4 @@
 - [Noninteractive schema push](noninteractive-schema-push.md) — Drizzle may exit 0 after a non-TTY truncation prompt without applying changes; post-merge setup must fail closed.
 - [Affiliate agreement transition](affiliate-agreement-transition.md) — publication alone does not authorize new commissions or v4 rate automation for older-term partners; judge acceptance at payment time.
 - [Affiliate agreement staging](affiliate-agreement-staging.md) — load source-derived text for owner review without confusing app deployment or draft viewing with legal publication.
+- [Static sitemap MIME boundary](static-sitemap-mime-boundary.md) — static preview served XML as text/xml; strict application/xml requires a dedicated routed response and a live header check.

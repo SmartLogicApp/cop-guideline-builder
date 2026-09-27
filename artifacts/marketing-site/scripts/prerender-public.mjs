@@ -11,11 +11,11 @@ const origin = 'https://cmscomplianceguardian.com';
 const pages = [
   { route: '/', module: 'landing.tsx', title: 'CMS Compliance Suite | CMS Survey Readiness Software',
     description: 'Prepare for CMS surveys with verified CoP guidance, policy templates, inspection checklists, and AI-powered gap assessment for healthcare facilities.' },
-  { route: '/affiliates', module: 'affiliates.tsx', title: 'Affiliate Partner Program | CMS Compliance Suite',
+  { route: '/affiliates/', module: 'affiliates.tsx', title: 'Affiliate Partner Program | CMS Compliance Suite',
     description: 'Healthcare compliance consultants and associations can apply to refer facilities to CMS Compliance Suite. Review commissions, eligibility, and terms.' },
-  { route: '/terms', module: 'terms.tsx', title: 'Terms of Service | CMS Compliance Suite',
+  { route: '/terms/', module: 'terms.tsx', title: 'Terms of Service | CMS Compliance Suite',
     description: 'Read the CMS Compliance Suite terms of service, including acceptable use, subscriptions, billing, cancellation, and important compliance limitations.' },
-  { route: '/privacy', module: 'privacy.tsx', title: 'Privacy Policy | CMS Compliance Suite',
+  { route: '/privacy/', module: 'privacy.tsx', title: 'Privacy Policy | CMS Compliance Suite',
     description: 'Read how CMS Compliance Suite handles account information, service data, security, retention, and privacy requests.' },
 ];
 
