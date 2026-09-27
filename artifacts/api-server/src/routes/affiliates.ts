@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { db } from "@workspace/db";
 import {
   accounts,
@@ -127,6 +127,19 @@ function affiliateSummaryFields(row: typeof affiliates.$inferSelect, now: Date) 
  * to review. No portal access, no commission, no rate.
  */
 router.post("/apply", async (req, res) => {
+  // The browser supplies a random attempt ID so even a lost response can be
+  // investigated. Never log a caller-supplied value without validating it.
+  const suppliedReference = req.get("X-Application-Reference");
+  const reference = suppliedReference && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(suppliedReference)
+    ? suppliedReference.toLowerCase() : randomUUID();
+  res.set("X-Application-Reference", reference);
+  const outcome = (value: "received" | "validation_rejected" | "duplicate" | "inserted" | "persistence_failed") =>
+    req.log.info({ applicationReference: reference, outcome: value }, "Affiliate application outcome");
+  const reject = (message: string) => {
+    outcome("validation_rejected");
+    return res.status(400).json({ error: message });
+  };
+  outcome("received");
   const body = req.body ?? {};
   const companyName = typeof body.companyName === "string" ? body.companyName.trim() : "";
   const contactName = typeof body.contactName === "string" ? body.contactName.trim() : "";
@@ -135,23 +148,23 @@ router.post("/apply", async (req, res) => {
   const about = typeof body.about === "string" ? body.about.trim() : "";
 
   if (companyName.length < 2 || companyName.length > 200) {
-    return res.status(400).json({ error: "Please enter your company or practice name." });
+    return reject("Please enter your company or practice name.");
   }
   if (contactName.length < 2 || contactName.length > 200) {
-    return res.status(400).json({ error: "Please enter your name." });
+    return reject("Please enter your name.");
   }
   if (!/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(email) || email.length > 200) {
-    return res.status(400).json({ error: "Please enter a valid email address." });
+    return reject("Please enter a valid email address.");
   }
   if (phone.length < 7 || phone.length > 50) {
-    return res.status(400).json({ error: "Please enter a phone number." });
+    return reject("Please enter a phone number.");
   }
   if (about.length < 10 || about.length > 2000) {
-    return res.status(400).json({ error: "Please describe how you plan to refer clients (10–2,000 characters)." });
+    return reject("Please describe how you plan to refer clients (10–2,000 characters).");
   }
   if ([companyName, contactName, about].some(containsSensitiveFinancialNumber)
       || hasSensitiveContact({ email, phone })) {
-    return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
+    return reject("Do not enter tax identifiers or payment account numbers.");
   }
 
   try {
@@ -161,6 +174,7 @@ router.post("/apply", async (req, res) => {
     const [existing] = await db.select({ id: affiliates.id })
       .from(affiliates).where(eq(affiliates.email, email)).limit(1);
     if (existing) {
+      outcome("duplicate");
       return res.status(200).json({ ok: true, received: true });
     }
 
@@ -181,13 +195,26 @@ router.post("/apply", async (req, res) => {
       adminNotes: `Application note: ${about}`,
     });
 
+    outcome("inserted");
     return res.status(201).json({ ok: true, received: true });
-  } catch (error: any) {
-    // Unique violation on the provisional code — vanishingly unlikely given the
-    // random suffix, and not the applicant's problem. Same shape as success so
-    // the endpoint reveals nothing about internal state.
-    if (error?.code === "23505") return res.status(200).json({ ok: true, received: true });
-    return res.status(500).json({ error: "We could not record your application. Please email us instead." });
+  } catch (error: unknown) {
+    // A concurrent submission for the same email is a duplicate. A unique
+    // collision on the provisional code is NOT a successful application.
+    if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+      try {
+        const [existing] = await db.select({ id: affiliates.id })
+          .from(affiliates).where(eq(affiliates.email, email)).limit(1);
+        if (existing) {
+          outcome("duplicate");
+          return res.status(200).json({ ok: true, received: true });
+        }
+      } catch {
+        // The lookup failed as well; report failure, not a false success.
+      }
+    }
+    // DB errors can contain SQL parameters and applicant data: never log them.
+    outcome("persistence_failed");
+    return res.status(500).json({ error: "We could not record your application. Please try again or contact support." });
   }
 });
 

@@ -287,6 +287,12 @@ test('the affiliate application posts to the public apply endpoint', async () =>
   const affiliatesPage = await readFile(new URL('../src/pages/affiliates.tsx', import.meta.url), 'utf8');
   assert.match(affiliatesPage, /api\/affiliates\/apply/);
   assert.match(affiliatesPage, /method:\s*'POST'/);
+  assert.match(affiliatesPage, /crypto\.randomUUID\(\)/);
+  assert.match(affiliatesPage, /'X-Application-Reference': attemptReference/);
+  assert.match(affiliatesPage, /response\.headers\.get\('X-Application-Reference'\)/);
+  assert.match(affiliatesPage, /if \(!response\.ok\) throw/);
+  assert.match(affiliatesPage, /Attempt reference:/);
+  assert.match(affiliatesPage, /Reference for support:/);
 
   // The applicant must not be asked to choose a referral code — the server
   // assigns it at approval. A field here would make the form lie about what

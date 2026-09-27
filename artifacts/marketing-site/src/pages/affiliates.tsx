@@ -25,22 +25,29 @@ export default function AffiliatesPage() {
   });
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState('');
+  const [reference, setReference] = useState('');
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setStatus('sending');
     setError('');
+    const attemptReference = crypto.randomUUID();
+    setReference(attemptReference);
     try {
       const response = await fetch(`${import.meta.env.BASE_URL}api/affiliates/apply`.replace(/\/\/api/, '/api'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Application-Reference': attemptReference },
         body: JSON.stringify(form),
       });
-      if (!response.ok) throw new Error('We could not record your application.');
+      // A rate limiter or proxy might reject the request before the route
+      // returns its reference; retain the browser's attempt reference then.
+      const serverReference = response.headers.get('X-Application-Reference');
+      if (serverReference) setReference(serverReference);
+      if (!response.ok) throw new Error('Application submission failed');
       setStatus('sent');
     } catch {
       setStatus('error');
-      setError('Something went wrong submitting your application. Please try again.');
+      setError('We could not confirm your application. Please try again. If it still fails, contact support and include the attempt reference below.');
     }
   }
 
@@ -117,6 +124,9 @@ export default function AffiliatesPage() {
                 </a>
                 .
               </p>
+              <p className="mt-3 text-sm text-slate-600" data-testid="application-reference">
+                Reference for support: <span className="font-mono break-all">{reference}</span>. This confirms the request was handled, not that a new application was created.
+              </p>
             </div>
           ) : (
             <>
@@ -188,9 +198,11 @@ export default function AffiliatesPage() {
                 </div>
 
                 {error && (
-                  <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" data-testid="status-error">
-                    {error}
-                  </p>
+                  <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" data-testid="status-error">
+                    {error}{' '}
+                    <a className="font-semibold underline" href={`mailto:${CONTACT_EMAIL_SUPPORT}`}>{CONTACT_EMAIL_SUPPORT}</a>
+                    <p className="mt-2">Attempt reference: <span className="font-mono break-all">{reference}</span></p>
+                  </div>
                 )}
 
                 <div className="flex flex-wrap items-center gap-4">

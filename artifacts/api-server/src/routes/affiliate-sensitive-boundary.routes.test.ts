@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
 
@@ -17,6 +18,12 @@ registerHooks({
       }
     }
     return nextResolve(specifier, context);
+  },
+  load(url, context, nextLoad) {
+    if (url.endsWith("/affiliate-partner-agreement-v4-source.txt")) {
+      return { format: "module", source: `export default ${JSON.stringify(readFileSync(new URL(url), "utf8"))};`, shortCircuit: true };
+    }
+    return nextLoad(url, context);
   },
 });
 process.env.DATABASE_URL ??= "postgresql://test:test@localhost:1/disconnected";
@@ -45,7 +52,10 @@ async function rejects(handlerFn: Function, body: Record<string, unknown>, statu
     status(code: number) { result.status = code; return this; },
     json(payload: unknown) { result.body = payload; return this; },
   };
-  await handlerFn({ body }, res);
+  await handlerFn({ body, get: () => undefined, log: { info: () => {} } }, {
+    ...res,
+    set: () => {},
+  });
   assert.equal(result.status, status, JSON.stringify(result.body));
   assert.equal(typeof result.body?.error, "string");
 }
@@ -61,6 +71,70 @@ test("actual application handler rejects suffixed notes and unsafe email", async
   await rejects(apply, { ...application, about: "Referral note: 0000-0000-ref" });
   await rejects(apply, { ...application, about: "Referral note: 123456789-ref" });
   await rejects(apply, { ...application, email: "user-123456789-ref@example.org" });
+});
+
+test("application outcomes are traceable without leaking applicant fields or revealing duplicates", async () => {
+  const apply = handler(affiliateRouter, "post", "/apply");
+  const attemptId = "78f04526-2f18-41e5-a6f0-26b3268bf684";
+  const run = async (body: Record<string, unknown>, existingAt: number[], insertError?: unknown) => {
+    let reads = 0;
+    const logs: unknown[] = [];
+    const headers: Record<string, string> = {};
+    let status = 200;
+    let payload: any;
+    const select = mock.method(db, "select", () => ({
+      from: () => ({ where: () => ({ limit: async () => {
+        reads += 1;
+        return existingAt.includes(reads) ? [{ id: "existing" }] : [];
+      } }) }),
+    }) as unknown as ReturnType<typeof db.select>);
+    const insert = mock.method(db, "insert", () => ({
+      values: async () => { if (insertError) throw insertError; },
+    }) as unknown as ReturnType<typeof db.insert>);
+    try {
+      await apply({
+        body,
+        get: () => attemptId,
+        log: { info: (data: unknown) => logs.push(data) },
+      }, {
+        set: (key: string, value: string) => { headers[key] = value; },
+        status(code: number) { status = code; return this; },
+        json(value: unknown) { payload = value; return this; },
+      });
+    } finally {
+      select.mock.restore();
+      insert.mock.restore();
+    }
+    assert.equal(headers["X-Application-Reference"], attemptId);
+    assert.equal(JSON.stringify(logs).includes(application.email), false);
+    assert.equal(JSON.stringify(logs).includes(application.contactName), false);
+    assert.equal(JSON.stringify(logs).includes(application.phone), false);
+    assert.equal(JSON.stringify(logs).includes(application.about), false);
+    assert.deepEqual(logs, [
+      { applicationReference: attemptId, outcome: "received" },
+      { applicationReference: attemptId, outcome: status === 400 ? "validation_rejected" :
+        status === 500 ? "persistence_failed" : status === 201 ? "inserted" : "duplicate" },
+    ]);
+    return { status, payload, inserts: insert.mock.callCount() };
+  };
+
+  const rejected = await run({ ...application, about: "short" }, []);
+  assert.equal(rejected.status, 400);
+  assert.equal(rejected.inserts, 0);
+
+  const inserted = await run(application, []);
+  const duplicate = await run(application, [1]);
+  const racedDuplicate = await run(application, [3], { code: "23505", detail: application.about });
+  assert.equal(inserted.status, 201);
+  assert.equal(duplicate.status, 200);
+  assert.equal(racedDuplicate.status, 200);
+  assert.deepEqual(inserted.payload, duplicate.payload);
+  assert.deepEqual(inserted.payload, racedDuplicate.payload);
+  assert.equal(duplicate.inserts, 0);
+
+  const failed = await run(application, [], { code: "23505", detail: application.about });
+  assert.equal(failed.status, 500, "a referral-code collision must not pretend an insert succeeded");
+  assert.equal(typeof failed.payload.error, "string");
 });
 
 test("actual admin create and approval handlers reject numeric referral codes", async () => {
