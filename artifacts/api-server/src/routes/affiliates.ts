@@ -15,7 +15,7 @@ import {
 import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { affiliateActivationEnabled, isBlockedAffiliateActivation } from "../lib/affiliate-activation.js";
-import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementExists, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
+import { currentReviewedAffiliateAcceptanceCondition, hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementExists, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
 import { sendViaResend } from "../lib/resend-mailer.js";
 import { getReturnBase } from "../lib/return-base.js";
 import { monthBounds, money, sendCsv, toCsv } from "../lib/report-format.js";
@@ -459,18 +459,23 @@ router.get("/:id", requireAnyAdmin, async (req, res) => {
 // ─── POST /api/affiliates — enroll ───────────────────────────────────────────
 
 router.post("/", requireSuperAdmin, async (req, res) => {
-  // Do not create even a pending legacy enrollment with a default paid rate.
-  // Applicants can still use /apply, which stores a pending 0% record.
+  // Direct enrollment may only create a pending, unpaid applicant. No admin
+  // supplied signature date/version is evidence of the applicant's acceptance.
   const {
     referralCode, companyName, contactName, email, phone,
-    commissionRatePct, enrollmentSignedAt, enrollmentVersion, agreementVersion,
-    subscriptionFeeWaived, adminNotes, status,
+    adminNotes, status,
   } = req.body ?? {};
   // An applicant must accept the reviewed document before activation. A new
   // admin-created row has no verified applicant identity or acceptance yet.
-  if (status === "active") {
+  if (status != null && status !== "pending") {
     return res.status(409).json({ code: "AGREEMENT_ACCEPTANCE_REQUIRED",
       error: "Create a pending application, invite the applicant to accept, then approve it." });
+  }
+  if (req.body?.agreementAcceptance != null || req.body?.agreementVersion != null
+      || req.body?.acceptedAt != null || req.body?.enrollmentSignedAt != null
+      || req.body?.enrollmentVersion != null || req.body?.commissionRatePct != null
+      || req.body?.subscriptionFeeWaived === true) {
+    return res.status(400).json({ error: "Agreement acceptance and paid rates cannot be supplied for a new application." });
   }
 
   const code = normalizeReferralCode(referralCode);
@@ -486,46 +491,25 @@ router.post("/", requireSuperAdmin, async (req, res) => {
   if (typeof email !== "string" || !email.includes("@")) {
     return res.status(400).json({ error: "A contact email is required." });
   }
-  if ([companyName, contactName, adminNotes, enrollmentVersion, agreementVersion]
+  if ([companyName, contactName, adminNotes]
     .some((value) => typeof value === "string" && containsSensitiveFinancialNumber(value))
       || hasSensitiveContact({ email, phone })) {
     return res.status(400).json({ error: "Do not enter tax identifiers or payment account numbers." });
   }
-  if (activationBlocked(res)) return;
-
-  const rate = Number.isFinite(Number(commissionRatePct)) ? Number(commissionRatePct) : 20;
-  if (!COMMISSION_RATE_LADDER.includes(rate as any)) {
-    return res.status(400).json({
-      error: `Commission rate must be one of ${COMMISSION_RATE_LADDER.join(", ")} (§14).`,
-    });
-  }
-
   try {
     const now = new Date();
     const [created] = await db.insert(affiliates).values({
       referralCode: code,
       companyName: companyName.trim(),
       contactName: typeof contactName === "string" ? contactName.trim() || null : null,
-      email: email.trim(),
+      email: email.trim().toLowerCase(),
       phone: typeof phone === "string" ? phone.trim() || null : null,
       status: "pending",
       commissionRatePct: 0,
       rateEffectiveAt: now,
-      enrollmentSignedAt: enrollmentSignedAt ? new Date(enrollmentSignedAt) : null,
-      enrollmentVersion: typeof enrollmentVersion === "string" ? enrollmentVersion : null,
-      agreementVersion: typeof agreementVersion === "string" ? agreementVersion : null,
-      subscriptionFeeWaived: subscriptionFeeWaived === true,
+      subscriptionFeeWaived: false,
       adminNotes: typeof adminNotes === "string" ? adminNotes : null,
     }).returning();
-
-    await db.insert(affiliateRateChanges).values({
-      affiliateId: created!.id,
-      fromPct: rate,
-      toPct: rate,
-      reason: "enrollment",
-      changedBy: (req as any).clerkUserId ?? null,
-      effectiveAt: now,
-    });
 
     return res.status(201).json(redactSensitiveFinancialData(created));
   } catch (error: any) {
@@ -630,7 +614,9 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
       .where(expectedStatus !== null && expectedEmail !== null && expectedEpoch !== null
         ? and(eq(affiliates.id, String(req.params.id)),
           eq(affiliates.status, expectedStatus), eq(affiliates.email, expectedEmail),
-          eq(affiliates.agreementIdentityEpoch, expectedEpoch))
+          eq(affiliates.agreementIdentityEpoch, expectedEpoch),
+          ...(body.status === "active" && expectedStatus !== "active"
+            ? [currentReviewedAffiliateAcceptanceCondition()] : []))
         : eq(affiliates.id, String(req.params.id)))
       .returning();
     if (!updated) return res.status(expectedStatus !== null ? 409 : 404).json({
@@ -732,11 +718,14 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
       .where(and(
         eq(affiliates.id, row.id), eq(affiliates.status, "pending"),
         eq(affiliates.email, row.email), eq(affiliates.agreementIdentityEpoch, row.agreementIdentityEpoch),
+        currentReviewedAffiliateAcceptanceCondition(),
       ))
       .returning();
 
     if (!updated) {
-      return res.status(409).json({ error: "That application was already approved." });
+      return res.status(409).json({
+        error: "The application or agreement acceptance changed. Refresh before approving.",
+      });
     }
 
     await db.insert(affiliateRateChanges).values({

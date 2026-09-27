@@ -35,3 +35,23 @@ export async function hasReviewedAffiliateAcceptance(affiliateId: string): Promi
     )).limit(1);
   return Boolean(accepted);
 }
+
+/**
+ * Use in the WHERE clause of the activating UPDATE, not only as a preceding
+ * read: the accepted document and applicant identity must still match at the
+ * instant the row changes status.
+ */
+export function currentReviewedAffiliateAcceptanceCondition() {
+  const version = reviewedAffiliateAgreementVersion();
+  if (!version) return sql`false`;
+  return sql`exists (
+    select 1 from ${affiliateAgreementAcceptances}
+    inner join ${affiliateAgreements}
+      on ${affiliateAgreementAcceptances.agreementVersion} = ${affiliateAgreements.version}
+      and ${affiliateAgreementAcceptances.contentSha256} = ${affiliateAgreements.contentSha256}
+    where ${affiliateAgreementAcceptances.affiliateId} = ${affiliates.id}
+      and ${affiliateAgreementAcceptances.agreementVersion} = ${version}
+      and ${affiliateAgreementAcceptances.signerEmail} = lower(${affiliates.email})
+      and ${affiliateAgreementAcceptances.identityEpoch} = ${affiliates.agreementIdentityEpoch}
+  )`;
+}

@@ -4324,7 +4324,7 @@ function AffiliateAdminSection({ basePath, month }) {
           </button>
         ))}
         <span style={{ flex: 1 }} />
-        {stats?.activationEnabled === true && <button
+        {stats && <button
           onClick={() => setShowEnroll((open) => !open)}
           style={{ padding: "6px 14px", background: showEnroll ? "#F5C542" : "rgba(245,197,66,0.2)", border: "1px solid #F5C542", borderRadius: "6px", color: showEnroll ? "#0B1F3A" : "#F5C542", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
         >
@@ -4332,7 +4332,7 @@ function AffiliateAdminSection({ basePath, month }) {
         </button>}
       </div>
 
-      {showEnroll && stats?.activationEnabled === true && (
+      {showEnroll && stats && (
         <form onSubmit={enroll} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", padding: "12px", marginBottom: "14px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px", marginBottom: "9px" }}>
             <label style={{ fontSize: "10px", color: "rgba(255,255,255,0.45)", fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase" }}>
@@ -4629,7 +4629,7 @@ function AffiliateApplicationsSection({ basePath }) {
             </p>}
             <p style={{ color: row.agreementAcceptance ? "#86EFAC" : "#FBBF24", fontSize: "12px" }}>
               {row.agreementAcceptance
-                ? `Accepted ${row.agreementAcceptance.version} on ${new Date(row.agreementAcceptance.acceptedAt).toLocaleDateString()} by ${row.agreementAcceptance.signerName}`
+                ? `Accepted ${row.agreementAcceptance.version} on ${new Date(row.agreementAcceptance.acceptedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })} by ${row.agreementAcceptance.signerName}`
                 : "No acceptance of the current reviewed agreement recorded."}
             </p>
             {!row.agreementAcceptance && <button type="button" disabled={actionBusy || !agreementStatus?.published}

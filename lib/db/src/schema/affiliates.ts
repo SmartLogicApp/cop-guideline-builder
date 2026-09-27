@@ -94,6 +94,7 @@ export const affiliates = pgTable("affiliates", {
 
   enrollmentSignedAt:  timestamp("enrollment_signed_at", { withTimezone: true }),
   enrollmentVersion:   text("enrollment_version"),
+  /** Legacy metadata only; reviewed acceptance evidence is in affiliate_agreement_acceptances. */
   agreementVersion:    text("agreement_version"),
   /** Incremented whenever the applicant email changes; old acceptance is retained as history but cannot activate them. */
   agreementIdentityEpoch: integer("agreement_identity_epoch").notNull().default(0),
