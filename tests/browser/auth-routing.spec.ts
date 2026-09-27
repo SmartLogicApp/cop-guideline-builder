@@ -32,7 +32,7 @@ async function expectClerkAuthFlow(page: Page, baseURL: string, path: string) {
 }
 
 test.describe("built marketing site auth routing", () => {
-  test("a Clerk user reaches the workspace and stays signed in after refresh", async ({
+  test("a Clerk user stays signed in after refresh and loses access after sign-out", async ({
     page,
     baseURL,
   }) => {
@@ -97,6 +97,25 @@ test.describe("built marketing site auth routing", () => {
           name: /^Navigate healthcare compliance with absolute confidence\.$/,
         }),
       ).toBeVisible();
+
+      await page.goto(routeUrl(baseURL!, "/app"));
+      await expect(page).toHaveURL(
+        new RegExp(`${basePath}/sign-in(?:\\?.*)?$`),
+      );
+      await expect(
+        page.getByRole("heading", { name: "Welcome back" }),
+      ).toBeVisible();
+
+      await page.reload();
+      await expect(page).toHaveURL(
+        new RegExp(`${basePath}/sign-in(?:\\?.*)?$`),
+      );
+      await expect(
+        page.getByRole("heading", { name: "Welcome back" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: workspaceHeading, exact: true }),
+      ).toHaveCount(0);
     } finally {
       await clerkClient.users.deleteUser(user.id);
     }
