@@ -9,6 +9,8 @@ const globalStyles = await readFile(new URL('../src/index.css', import.meta.url)
 const authStyles = await readFile(new URL('../src/auth.css', import.meta.url), 'utf8');
 const landingSource = await readFile(new URL('../src/pages/landing.tsx', import.meta.url), 'utf8');
 const billingSource = await readFile(new URL('../src/pages/billing.tsx', import.meta.url), 'utf8');
+const registerSource = await readFile(new URL('../src/pages/register.tsx', import.meta.url), 'utf8');
+const acceptTermsSource = await readFile(new URL('../src/pages/accept-terms.tsx', import.meta.url), 'utf8');
 const workspaceSource = await readFile(new URL('../../../index.jsx', import.meta.url), 'utf8');
 
 function componentBody(source, functionName) {
@@ -66,7 +68,7 @@ test('billing is authenticated and gates Stripe actions on server availability',
   const billing = componentBody(authenticatedAppSource, 'Billing');
 
   assert.match(routeBoundary, /normalizedLocation === ['"]\/billing['"]/);
-  assert.match(billing, /<Show when="signed-in">\s*<BillingPage \/>/);
+  assert.match(billing, /<Show when="signed-in">[\s\S]*<BillingPage key=\{user\.id\} \/>/);
   assert.match(billing, /<Show when="signed-out"><RedirectToSignIn \/><\/Show>/);
   assert.match(billingSource, /\/api\/billing\/subscription/);
   assert.match(billingSource, /\/api\/billing\/token-usage/);
@@ -162,6 +164,20 @@ test('registration is routed, authenticated, and reachable from the workspace', 
     /!accountData\?\.account && !accountData\?\.isActive/,
     'Expected the registration guard to consider access as well as account',
   );
+});
+
+test('new accounts record explicit acceptance after registration and show the receipt in billing', () => {
+  assert.match(registerSource, /<TermsDocument version=\{termsVersion\} \/>/);
+  assert.match(registerSource, /termsVersion !== null && termsChecked && termsScrolled/);
+  assert.match(registerSource, /const acceptedAt = new Date\(\)\.toISOString\(\)/);
+  assert.ok(registerSource.indexOf("fetch('/api/accounts/register'") < registerSource.indexOf("fetch('/api/accounts/terms-acceptance'"));
+  assert.match(registerSource, /acceptance\.status === 409 && attempt < 2/);
+  assert.match(registerSource, /if \(!accepted\) \{[\s\S]*?setLocation\([\s\S]*?'\/accept-terms/);
+  assert.match(registerSource, /invalidateQueries\(\{ queryKey: \['\/api\/accounts\/me'\] \}\)/);
+  assert.match(acceptTermsSource, /invalidateQueries\(\{ queryKey: \['\/api\/accounts\/me'\] \}\)/);
+  assert.match(billingSource, /fetch\('\/api\/accounts\/me'/);
+  assert.match(billingSource, /accountQuery\.data\.account\.termsVersion/);
+  assert.match(billingSource, /accountQuery\.data\.account\.termsAcceptedAt/);
 });
 
 test('terms acceptance is reachable from registration and from the checkout refusal', () => {

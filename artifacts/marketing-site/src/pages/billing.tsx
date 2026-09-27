@@ -1,6 +1,7 @@
 import { CONTACT_EMAIL_SUPPORT } from '@/lib/contact';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@clerk/react';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
   ArrowLeft,
@@ -41,6 +42,10 @@ type TokenUsageData = {
   };
 };
 
+type AccountData = {
+  account: null | { termsVersion: string | null; termsAcceptedAt: string | null };
+};
+
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const workspaceUrl = `${basePath}/app`;
 const supportEmail = CONTACT_EMAIL_SUPPORT;
@@ -71,6 +76,20 @@ function subscriptionLabel(data: SubscriptionData | null) {
 
 export default function BillingPage() {
   const { getToken } = useAuth();
+  const accountQuery = useQuery<AccountData>({
+    queryKey: ['/api/accounts/me'],
+    queryFn: async () => {
+      const token = await getToken();
+      if (!token) throw new Error('Your secure session is unavailable.');
+      const response = await fetch('/api/accounts/me', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error('Could not load your account.');
+      return response.json() as Promise<AccountData>;
+    },
+    staleTime: 0,
+  });
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [usage, setUsage] = useState<TokenUsageData['currentMonth'] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -344,6 +363,28 @@ export default function BillingPage() {
                   {formatNumber(usage?.inputTokens ?? 0)} input · {formatNumber(usage?.outputTokens ?? 0)} output
                 </p>
               </article>
+            </section>
+
+            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-950">Terms of Service</h2>
+              {accountQuery.isPending ? (
+                <p className="mt-2 text-sm text-slate-600">Loading acceptance record…</p>
+              ) : accountQuery.isError ? (
+                <p className="mt-2 text-sm text-red-800" role="alert">
+                  Acceptance record unavailable. <button type="button" className="underline" onClick={() => void accountQuery.refetch()}>Try again</button>
+                </p>
+              ) : accountQuery.data.account?.termsVersion && accountQuery.data.account.termsAcceptedAt ? (
+                <p className="mt-2 text-sm text-slate-700">
+                  Version {accountQuery.data.account.termsVersion} accepted on{' '}
+                  {new Date(accountQuery.data.account.termsAcceptedAt).toLocaleDateString('en-US', {
+                    month: 'long', day: 'numeric', year: 'numeric',
+                  })}.
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-slate-700">
+                  No acceptance recorded. <a href={`${basePath}/accept-terms`} className="font-semibold text-teal-800 underline">Review and accept the Terms</a>
+                </p>
+              )}
             </section>
 
             {paymentAcceptanceEnabled ? (

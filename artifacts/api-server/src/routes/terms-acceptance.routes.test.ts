@@ -29,7 +29,7 @@ const [{ default: accountRouter }, { default: billingRouter }, { default: adminR
     import("@workspace/db"),
     import("../lib/terms-versions.ts"),
   ]);
-const { db, accounts, accountUsers, adminUsers, tokenUsage, termsAcceptances } = schema;
+const { db, accounts, accountUsers, adminUsers, affiliates, tokenUsage, termsAcceptances } = schema;
 const { CURRENT_TERMS_VERSION } = terms;
 
 type Route = { route?: { path: string; methods: Record<string, boolean>; stack: { handle: Function }[] } };
@@ -218,5 +218,94 @@ test("Terms acceptance is authenticated, registered, server-timed and cannot be 
     selects.mock.restore();
     inserts.mock.restore();
     updates.mock.restore();
+  }
+});
+
+test("interrupted signup cannot leave a consultant trial without an acceptance receipt", async () => {
+  const userId = "synthetic-new-consultant";
+  const body = {
+    identifierType: "consultant",
+    facilityName: "Example Consultant",
+    termsVersion: CURRENT_TERMS_VERSION,
+    acceptedAt: new Date().toISOString(),
+    acceptsTerms: true,
+  };
+  let committed: { account: Record<string, any>; accountUser: Record<string, any>; receipt: Record<string, any> } | null = null;
+  let failReceipt = true;
+  const selects = mock.method(db, "select", () => ({
+    from(table: unknown) {
+      const builder: any = {
+        where: () => builder,
+        leftJoin: () => builder,
+        limit: async () => table === affiliates ? [{ id: "synthetic-active-affiliate" }]
+          : table === accountUsers && committed
+          ? [{ accountUser: committed.accountUser, account: committed.account, accountId: committed.account.id }]
+          : table === accounts && committed ? [committed.account] : [],
+      };
+      return builder;
+    },
+  }) as unknown as typeof db.select);
+  const transactions = mock.method(db, "transaction", (async (callback: Function) => {
+    let pendingAccount: Record<string, any> | null = null;
+    let pendingUser: Record<string, any> | null = null;
+    let pendingReceipt: Record<string, any> | null = null;
+    const tx = {
+      insert(table: unknown) {
+        return {
+          values(value: Record<string, any>) {
+            if (table === termsAcceptances) {
+              if (failReceipt) throw new Error("Simulated receipt insertion failure");
+              pendingReceipt = value;
+              return Promise.resolve();
+            }
+            return {
+              returning: async () => {
+                if (table === accounts) {
+                  pendingAccount = { id: "synthetic-consultant-account", ...value };
+                  return [pendingAccount];
+                }
+                assert.equal(table, accountUsers);
+                pendingUser = value;
+                return [pendingUser];
+              },
+            };
+          },
+        };
+      },
+    };
+    const result = await callback(tx);
+    assert.ok(pendingAccount && pendingUser && pendingReceipt);
+    committed = { account: pendingAccount, accountUser: pendingUser, receipt: pendingReceipt };
+    return result;
+  }) as unknown as typeof db.transaction);
+
+  try {
+    const missingConsent = await request(accountRouter, "post", "/register", userId, {
+      ...body, acceptsTerms: false,
+    });
+    assert.equal(missingConsent.status, 400);
+    assert.equal(transactions.mock.callCount(), 0);
+
+    await assert.rejects(request(accountRouter, "post", "/register", userId, body), /receipt insertion failure/);
+    assert.equal(committed, null, "failed receipt rolls back the account and trial");
+    const unsigned = await request(accountRouter, "get", "/me", userId);
+    assert.equal(unsigned.body.account, null);
+    assert.equal(unsigned.body.isActive, false);
+
+    failReceipt = false;
+    const registered = await request(accountRouter, "post", "/register", userId, body);
+    assert.equal(registered.status, 201);
+    assert.equal(registered.body.account.termsVersion, CURRENT_TERMS_VERSION);
+    assert.equal(registered.body.account.termsAcceptedAt, committed!.receipt.acceptedAt.toISOString());
+
+    // The browser disappears before its follow-up POST; signing back in still
+    // finds the same account, receipt, and access without any recovery click.
+    const signedBackIn = await request(accountRouter, "get", "/me", userId);
+    assert.equal(signedBackIn.body.isActive, true);
+    assert.equal(signedBackIn.body.account.termsVersion, CURRENT_TERMS_VERSION);
+    assert.equal(signedBackIn.body.account.termsAcceptedAt, registered.body.account.termsAcceptedAt);
+  } finally {
+    selects.mock.restore();
+    transactions.mock.restore();
   }
 });

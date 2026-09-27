@@ -371,10 +371,21 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
 router.post("/register", requireAuth, async (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const email  = (req as any).clerkEmail as string | null;
-  const { ccn, identifierType, facilityName, facilityType, state, city, referralCode } = req.body as {
+  const { ccn, identifierType, facilityName, facilityType, state, city, referralCode, termsVersion, acceptedAt, acceptsTerms } = req.body as {
     ccn?: string; identifierType?: string; facilityName: string;
     facilityType?: string; state?: string; city?: string; referralCode?: string;
+    termsVersion?: string; acceptedAt?: string; acceptsTerms?: boolean;
   };
+
+  // Registration is the access boundary, especially for a consultant trial.
+  // Never create an account that is missing an explicit, current Terms receipt.
+  if (acceptsTerms !== true || termsVersion !== CURRENT_TERMS_VERSION
+      || !isAcceptableVersion(termsVersion)
+      || typeof acceptedAt !== "string"
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(acceptedAt)
+      || Number.isNaN(Date.parse(acceptedAt))) {
+    return res.status(400).json({ error: "Review and accept the current Terms before registering." });
+  }
 
   // Affiliate attribution. Recorded on the account at creation and never
   // afterwards, so a referrer cannot be added or swapped once money is moving.
@@ -480,14 +491,39 @@ router.post("/register", requireAuth, async (req, res) => {
     // must start their trial through Stripe checkout with a payment method.
     subscriptionStatus: isConsultant ? "trial" : "pending_payment",
     trialEndsAt:        trialEnds,
+    termsVersion:       CURRENT_TERMS_VERSION,
   };
 
+  const createWithAcceptance = async (identifier: string) => db.transaction(async (tx) => {
+    const receiptTime = new Date();
+    const [created] = await tx.insert(accounts).values({
+      ...values,
+      ccn: identifier,
+      termsAcceptedAt: receiptTime,
+    }).returning();
+    const [linked] = await tx.insert(accountUsers).values({
+      clerkUserId: userId,
+      accountId: created.id,
+      role: "admin",
+      email: email ?? null,
+    }).returning();
+    await tx.insert(termsAcceptances).values({
+      accountId: created.id,
+      clerkUserId: userId,
+      termsVersion: CURRENT_TERMS_VERSION,
+      acceptedAt: receiptTime,
+      ipAddress: req.ip ?? null,
+      userAgent: req.get("user-agent")?.slice(0, 500) ?? null,
+    });
+    return { account: created, accountUser: linked };
+  });
+
+  let registration: Awaited<ReturnType<typeof createWithAcceptance>> | undefined;
   if (idType === "consultant") {
     // The unique constraint, not the generator, decides. Retry on collision.
-    for (let attempt = 0; attempt < 5 && !account; attempt += 1) {
+    for (let attempt = 0; attempt < 5 && !registration; attempt += 1) {
       try {
-        [account] = await db.insert(accounts)
-          .values({ ...values, ccn: normalIdentifier }).returning();
+        registration = await createWithAcceptance(normalIdentifier);
       } catch (error) {
         if (!isUniqueViolation(error) || attempt === 4) throw error;
         normalIdentifier = generateConsultantIdentifier();
@@ -498,8 +534,7 @@ router.post("/register", requireAuth, async (req, res) => {
     // than silently joining the winner's account — the same rule as above,
     // enforced by the database instead of by the read a few lines up.
     try {
-      [account] = await db.insert(accounts)
-        .values({ ...values, ccn: normalIdentifier }).returning();
+      registration = await createWithAcceptance(normalIdentifier);
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       return res.status(409).json({
@@ -512,23 +547,12 @@ router.post("/register", requireAuth, async (req, res) => {
     }
   }
 
-  if (!account) {
+  if (!registration) {
     req.log?.error({ idType }, "Account insert returned no row");
     return res.status(500).json({ error: "We could not create your account. Please try again." });
   }
 
-  // Link this user to the account they just created. Always admin: self-
-  // registration no longer joins an existing account, so the registrant is by
-  // definition the first user. When invitations exist, invited users get
-  // "member" through that path, not this one.
-  const [accountUser] = await db.insert(accountUsers).values({
-    clerkUserId: userId,
-    accountId:   account.id,
-    role:        "admin",
-    email:       email ?? null,
-  }).returning();
-
-  return res.status(201).json({ account, accountUser });
+  return res.status(201).json(registration);
 });
 
 export default router;

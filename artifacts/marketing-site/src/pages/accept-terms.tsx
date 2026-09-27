@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import { AlertCircle, CheckCircle2, LoaderCircle, ShieldCheck } from 'lucide-react';
 import { TermsDocument } from '@/components/terms-document';
@@ -33,8 +34,11 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 export default function AcceptTermsPage() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
+  const queryClient = useQueryClient();
   const directRegistration =
     new URLSearchParams(window.location.search).get('registration') === 'direct';
+  const recordingFailed =
+    new URLSearchParams(window.location.search).get('recording') === 'failed';
   const [status, setStatus] = useState<TermsStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -91,7 +95,10 @@ export default function AcceptTermsPage() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ termsVersion: status.currentVersion }),
+        body: JSON.stringify({
+          termsVersion: status.currentVersion,
+          acceptedAt: new Date().toISOString(),
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -101,13 +108,14 @@ export default function AcceptTermsPage() {
         );
         return;
       }
+      await queryClient.invalidateQueries({ queryKey: ['/api/accounts/me'] });
       await loadStatus();
     } catch {
       setError('We could not reach the server. Please check your connection and try again.');
     } finally {
       setSubmitting(false);
     }
-  }, [status, submitting, getToken, loadStatus]);
+  }, [status, submitting, getToken, loadStatus, queryClient]);
 
   if (loading) {
     return (
@@ -189,6 +197,12 @@ export default function AcceptTermsPage() {
 
   return (
     <Shell>
+      {recordingFailed && (
+        <div role="alert" className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          Your organization was registered, but we could not confirm your Terms acceptance.
+          Please review and accept below before continuing to billing.
+        </div>
+      )}
       <div className="mb-6 rounded-xl border border-teal-300 bg-teal-50 p-5">
         <div className="flex items-start gap-3">
           <ShieldCheck className="mt-0.5 h-5 w-5 flex-none text-teal-800" aria-hidden="true" />

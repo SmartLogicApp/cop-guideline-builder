@@ -39,3 +39,4 @@
 - [Stripe Test endpoint identity](stripe-test-endpoint-identity.md) — reconcile a configured destination by ID and preserve its URL query; a path-only list search can miss a working endpoint.
 - [Local marketing build validation](local-marketing-build-validation.md) — local verification can use browser-test mode with dev Clerk credentials; never treat that bypass as a production publish check.
 - [Workspace preview browser fixtures](workspace-preview-browser-fixtures.md) — scanner browser tests need a test-only identity wrapper and matching active access response.
+- [Active signup source](active-signup-source.md) — use the current marketing-site flow rather than restoring the deleted standalone builder for signup changes.

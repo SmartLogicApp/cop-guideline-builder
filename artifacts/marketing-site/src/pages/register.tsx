@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation } from 'wouter';
 import { AlertCircle, Building2, LoaderCircle, ShieldCheck } from 'lucide-react';
+import { CLIENT_CURRENT_TERMS_VERSION, TermsDocument } from '@/components/terms-document';
 
 /**
  * Account registration.
@@ -70,6 +72,7 @@ const IDENTIFIER_CHOICES: ReadonlyArray<{
 
 export default function RegisterPage() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
+  const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
 
   const [identifierType, setIdentifierType] = useState<IdentifierType>('ccn');
@@ -82,6 +85,10 @@ export default function RegisterPage() {
   const [providerTypes, setProviderTypes] = useState<ProviderType[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [termsVersion, setTermsVersion] = useState<string | null>(null);
+  const [termsChecked, setTermsChecked] = useState(false);
+  const [termsScrolled, setTermsScrolled] = useState(false);
+  const termsRef = useRef<HTMLDivElement>(null);
 
   // Captured once, on first render, before anything can rewrite the URL.
   const [referralCode] = useState<string | null>(() => {
@@ -115,6 +122,44 @@ export default function RegisterPage() {
     };
   }, [isLoaded, isSignedIn, getToken]);
 
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getToken();
+        if (!token) throw new Error('Sign in again to review the Terms.');
+        const response = await fetch('/api/accounts/terms-status', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!response.ok) throw new Error('Could not load the current Terms.');
+        const status = await response.json() as { currentVersion: string };
+        if (status.currentVersion !== CLIENT_CURRENT_TERMS_VERSION) {
+          throw new Error('The Terms have changed. Please refresh to review the latest version.');
+        }
+        if (!cancelled) setTermsVersion(status.currentVersion);
+      } catch (failure) {
+        if (!cancelled) setError(failure instanceof Error ? failure.message : 'Could not load the current Terms.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isLoaded, isSignedIn, getToken]);
+
+  useEffect(() => {
+    const element = termsRef.current;
+    if (termsVersion && element && element.scrollHeight <= element.clientHeight + 4) {
+      setTermsScrolled(true);
+    }
+  }, [termsVersion]);
+
+  const handleTermsScroll = useCallback(() => {
+    const element = termsRef.current;
+    if (element && element.scrollHeight - element.scrollTop - element.clientHeight < 48) {
+      setTermsScrolled(true);
+    }
+  }, []);
+
   const choice = useMemo(
     () => IDENTIFIER_CHOICES.find((entry) => entry.value === identifierType)!,
     [identifierType],
@@ -124,6 +169,7 @@ export default function RegisterPage() {
   const canSubmit =
     facilityName.trim().length > 0 &&
     (!needsIdentifier || identifier.trim().length > 0) &&
+    termsVersion !== null && termsChecked && termsScrolled &&
     !submitting;
 
   const selectedProvider = providerTypes.find((type) => type.value === facilityType);
@@ -131,11 +177,14 @@ export default function RegisterPage() {
     selectedProvider?.contentStatus != null && selectedProvider.contentStatus !== 'verified';
 
   const submit = useCallback(async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || !termsVersion) return;
     setSubmitting(true);
     setError(null);
+    const acceptedAt = new Date().toISOString();
+    let registered = false;
     try {
       const token = await getToken();
+      if (!token) throw new Error('Your secure session is unavailable. Please sign in again.');
       const response = await fetch('/api/accounts/register', {
         method: 'POST',
         headers: {
@@ -150,6 +199,9 @@ export default function RegisterPage() {
           state: state.trim() || undefined,
           city: city.trim() || undefined,
           referralCode: referralCode ?? undefined,
+          termsVersion,
+          acceptedAt,
+          acceptsTerms: termsChecked && termsScrolled,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -160,19 +212,55 @@ export default function RegisterPage() {
         );
         return;
       }
-      // Registration is what the acceptance is recorded against, so the Terms
-      // come next. Without this the acceptance page is unreachable.
-      setLocation(identifierType === 'consultant'
-        ? '/accept-terms'
-        : '/accept-terms?registration=direct');
+      registered = true;
+      // Registration and its initial receipt are committed together by the
+      // server. This idempotent POST confirms the receipt and retries a
+      // transient 409 if the account link has not yet become visible.
+      let accepted = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const acceptance = await fetch('/api/accounts/terms-acceptance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ termsVersion, acceptedAt }),
+        });
+        if (acceptance.ok) {
+          accepted = true;
+          break;
+        }
+        if (acceptance.status === 409 && attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+          continue;
+        }
+        break;
+      }
+      if (!accepted) {
+        // Do not claim acceptance or send the customer to checkout on failure.
+        // The account already exists: the dedicated clickwrap page can recover.
+        setLocation(identifierType === 'consultant'
+          ? '/accept-terms?recording=failed'
+          : '/accept-terms?registration=direct&recording=failed');
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['/api/accounts/me'] });
+      setLocation('/billing');
     } catch {
-      setError('We could not reach the server. Please check your connection and try again.');
+      if (registered) {
+        // A lost acceptance response must not invite a second registration.
+        setLocation(identifierType === 'consultant'
+          ? '/accept-terms?recording=failed'
+          : '/accept-terms?registration=direct&recording=failed');
+      } else {
+        setError('We could not reach the server. Please check your connection and try again.');
+      }
     } finally {
       setSubmitting(false);
     }
   }, [
     canSubmit, getToken, identifierType, needsIdentifier, identifier,
-    facilityName, facilityType, state, city, referralCode, setLocation,
+    facilityName, facilityType, state, city, referralCode, setLocation, termsVersion, queryClient,
   ]);
 
   if (!isLoaded) {
@@ -205,12 +293,11 @@ export default function RegisterPage() {
               {identifierType === 'consultant' ? (
                 <>
                   Approved, active affiliates can create a consultant account with a 30-day trial
-                  and no payment method. Consultant registration is verified by our server. You
-                  will be asked to accept the Terms of Service next.
+                   and no payment method. Consultant registration is verified by our server.
                 </>
               ) : (
                 <>
-                  After accepting the Terms of Service, add a payment method through secure
+                   After registration, add a payment method through secure
                   checkout to start your 30-day free trial. Your subscription will be charged on
                   day 31 unless you cancel before then.
                 </>
@@ -331,6 +418,40 @@ export default function RegisterPage() {
             Referred by <span className="font-medium text-slate-900">{referralCode}</span>.
           </p>
         ) : null}
+
+        <section aria-labelledby="registration-terms-heading">
+          <h2 id="registration-terms-heading" className="text-lg font-semibold text-slate-950">
+            Terms of Service
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Read the full Terms below. Your acceptance will be recorded when your organization is registered.
+          </p>
+          {termsVersion ? (
+            <>
+              <div
+                ref={termsRef}
+                onScroll={handleTermsScroll}
+                tabIndex={0}
+                aria-label="Terms of Service"
+                className="mt-4 h-80 overflow-y-auto rounded-xl border border-slate-200 p-5 focus:outline-none focus:ring-2 focus:ring-teal-700"
+              >
+                <TermsDocument version={termsVersion} />
+              </div>
+              {!termsScrolled && <p className="mt-2 text-sm text-slate-600">Scroll to the end of the Terms to continue.</p>}
+              <label className="mt-4 flex items-start gap-3 text-sm leading-6 text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={termsChecked}
+                  onChange={(event) => setTermsChecked(event.target.checked)}
+                  className="mt-1 size-4 accent-teal-800"
+                />
+                <span>I have read and agree to the Terms of Service, and I am authorized to accept them on behalf of this organization.</span>
+              </label>
+            </>
+          ) : error ? (
+            <p className="mt-3 text-sm text-red-800">Please refresh this page before registering.</p>
+          ) : <p className="mt-3 text-sm text-slate-600" role="status">Loading current Terms…</p>}
+        </section>
 
         {error ? (
           <div
