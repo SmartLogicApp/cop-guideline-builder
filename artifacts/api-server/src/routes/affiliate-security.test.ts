@@ -211,7 +211,7 @@ test("every legacy paid activation path checks the reviewed-terms gate", () => {
   assert.match(ui, /showEnroll && stats &&/);
   const applicationsUi = adminUi.slice(adminUi.indexOf("function AffiliateApplicationsSection("), adminUi.indexOf("function AdminQuickPanel("));
   assert.match(applicationsUi, /setActivationEnabled\(stats\.activationEnabled === true\)/);
-  assert.match(applicationsUi, /activationEnabled && row\.agreementAcceptance && <button/);
+  assert.match(applicationsUi, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && <button/);
   assert.match(applicationsUi, /\/approve`/);
   assert.match(applicationsUi, /agreementAcceptance\.version/);
   assert.match(applicationsUi, /agreementAcceptance\.acceptedAt/);
@@ -246,6 +246,21 @@ test("writes that move money require a super-admin, not any admin", () => {
     const pattern = new RegExp(`router\\.(post|patch)\\(\\s*${path.replace(/[/$]/g, "\\$&")}\\s*,\\s*requireSuperAdmin`);
     assert.match(routes, pattern, `${path} must be super-admin only`);
   }
+});
+
+test("application review and agreement writes retain their server-side super-admin guards", () => {
+  const agreements = readFileSync(new URL("./affiliate-agreements.ts", import.meta.url), "utf8");
+  for (const path of ['"/:id/approve"', '"/:id/reject"']) {
+    assert.match(routes, new RegExp(`router\\.post\\(${path}, requireSuperAdmin`));
+  }
+  for (const path of ['"/publish"', '"/:affiliateId/invite"']) {
+    assert.match(agreements, new RegExp(`router\\.post\\(${path}, requireSuperAdmin`));
+  }
+  assert.match(routes, /router\.get\("\/", requireAnyAdmin/);
+  assert.match(routes, /router\.get\("\/stats", requireAnyAdmin/);
+  const applicationsUi = adminUi.slice(adminUi.indexOf("function AffiliateApplicationsSection("), adminUi.indexOf("function AdminQuickPanel("));
+  assert.match(applicationsUi, /isSuperAdmin && <button[^>]+onClick=\{\(\) => disapprove\(row\)\}/);
+  assert.match(adminUi, /isSuperAdmin=\{accountData\?\.isSuperAdmin === true\}/);
 });
 
 // ─── The double-payment defence ──────────────────────────────────────────────

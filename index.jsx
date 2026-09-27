@@ -4428,7 +4428,7 @@ function AffiliateAdminSection({ basePath, month }) {
 
 // Review applicants separately from the existing affiliate accounting tools.
 // Applying only records contact details; it does not activate a partnership.
-function AffiliateApplicationsSection({ basePath }) {
+function AffiliateApplicationsSection({ basePath, isSuperAdmin }) {
   const [applications, setApplications] = useState([]);
   const [activationEnabled, setActivationEnabled] = useState(false);
   const [agreementStatus, setAgreementStatus] = useState(null);
@@ -4439,41 +4439,73 @@ function AffiliateApplicationsSection({ basePath }) {
   const [actionBusy, setActionBusy] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [listError, setListError] = useState("");
+  const [agreementError, setAgreementError] = useState("");
+  const [statsError, setStatsError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [approvingId, setApprovingId] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([
-      fetch(`${basePath}/api/affiliates`, { credentials: "include", cache: "no-store", signal: controller.signal }),
-      fetch(`${basePath}/api/affiliates/stats`, { credentials: "include", cache: "no-store", signal: controller.signal }),
-      fetch(`${basePath}/api/affiliates/agreements/current`, { credentials: "include", cache: "no-store", signal: controller.signal }),
-    ])
-      .then(async ([listResponse, statsResponse, agreementResponse]) => {
-        if (!listResponse.ok || !statsResponse.ok || !agreementResponse.ok) throw new Error("Unable to load applications");
-        return Promise.all([listResponse.json(), statsResponse.json(), agreementResponse.json()]);
-      })
-      .then(([rows, stats, agreement]) => {
+    const options = { credentials: "include", cache: "no-store", signal: controller.signal };
+    setLoading(true);
+    setListError("");
+    setAgreementError("");
+    setStatsError("");
+    setActionError("");
+    setActivationEnabled(false);
+    setAgreementStatus(null);
+    setApplications([]);
+    const load = async (path) => {
+      const response = await fetch(`${basePath}${path}`, options);
+      if (!response.ok) {
+        const failure = new Error(`Request failed (${response.status})`);
+        failure.status = response.status;
+        throw failure;
+      }
+      return response.json();
+    };
+    load("/api/affiliates")
+      .then((rows) => {
         if (controller.signal.aborted) return;
-        setApplications(Array.isArray(rows) ? rows.filter((row) => row.status === "pending") : []);
-        setActivationEnabled(stats.activationEnabled === true);
-        setAgreementStatus(agreement);
-        if (agreement.version) setVersion(agreement.version);
-        setLoading(false);
+        if (!Array.isArray(rows)) throw new Error("Invalid application list");
+        setApplications(rows.filter((row) => row.status === "pending"));
       })
       .catch(() => {
         if (!controller.signal.aborted) {
-          setError("Could not load applications. Please try again later.");
-          setLoading(false);
+          setApplications([]);
+          setListError("Could not load applications. Please try again later.");
         }
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    load("/api/affiliates/stats")
+      .then((stats) => {
+        if (!controller.signal.aborted) setActivationEnabled(stats.activationEnabled === true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setStatsError("Approval availability could not be confirmed. Try refreshing.");
+      });
+    load("/api/affiliates/agreements/current")
+      .then((agreement) => {
+        if (controller.signal.aborted) return;
+        if (!agreement || typeof agreement.published !== "boolean") throw new Error("Invalid agreement status");
+        setAgreementStatus(agreement);
+        if (agreement.version) setVersion(agreement.version);
+      })
+      .catch((failure) => {
+        if (!controller.signal.aborted) setAgreementError(failure.status === 403
+          ? isSuperAdmin
+            ? "Super-admin permission was denied for agreement status. Check the configured owner access; agreement actions are unavailable."
+            : "Reviewed agreement status is restricted to the owner. Applications remain available for review."
+          : "Reviewed agreement status could not be loaded. Invitations and approvals are unavailable until it is confirmed.");
       });
     return () => controller.abort();
-  }, [basePath, refreshKey]);
+  }, [basePath, refreshKey, isSuperAdmin]);
 
   async function publishAgreement(event) {
     event.preventDefault();
     setActionBusy(true);
-    setError("");
+    setActionError("");
     setNotice("");
     try {
       const response = await fetch(`${basePath}/api/affiliates/agreements/publish`, {
@@ -4487,7 +4519,7 @@ function AffiliateApplicationsSection({ basePath }) {
       setNotice(`Agreement ${result.version} published. Set the reviewed version in server configuration before sending invitations.`);
       setRefreshKey((key) => key + 1);
     } catch (failure) {
-      setError(failure.message || "Could not publish agreement");
+      setActionError(failure.message || "Could not publish agreement");
     } finally {
       setActionBusy(false);
     }
@@ -4495,7 +4527,7 @@ function AffiliateApplicationsSection({ basePath }) {
 
   async function invite(row) {
     setActionBusy(true);
-    setError("");
+    setActionError("");
     setNotice("");
     try {
       const response = await fetch(`${basePath}/api/affiliates/agreements/${encodeURIComponent(row.id)}/invite`, {
@@ -4505,7 +4537,7 @@ function AffiliateApplicationsSection({ basePath }) {
       if (!response.ok) throw new Error(result.error || "Could not send invitation");
       setNotice(`Agreement invitation sent to ${row.email}. Acceptance is required before approval.`);
     } catch (failure) {
-      setError(failure.message || "Could not send invitation");
+      setActionError(failure.message || "Could not send invitation");
     } finally {
       setActionBusy(false);
     }
@@ -4523,12 +4555,12 @@ function AffiliateApplicationsSection({ basePath }) {
     if (rateInput == null) return;
     const commissionRatePct = Number(rateInput);
     if (!["10", "20"].includes(rateInput.trim())) {
-      setError("Commission rate must be 10 or 20 percent.");
+      setActionError("Commission rate must be 10 or 20 percent.");
       return;
     }
 
     setApprovingId(row.id);
-    setError("");
+    setActionError("");
     try {
       const response = await fetch(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/approve`, {
         method: "POST",
@@ -4542,7 +4574,7 @@ function AffiliateApplicationsSection({ basePath }) {
       setApplications((current) => current.filter((item) => item.id !== row.id));
       setNotice(`${row.companyName}'s application was approved and is now active.`);
     } catch (approveError) {
-      setError(approveError.message || "Unable to approve application");
+      setActionError(approveError.message || "Unable to approve application");
     } finally {
       setApprovingId(null);
     }
@@ -4552,11 +4584,11 @@ function AffiliateApplicationsSection({ basePath }) {
     const reason = window.prompt(`Why is ${row.companyName}'s application being declined? (at least 5 characters)`);
     if (reason == null) return;
     if (reason.trim().length < 5) {
-      setError("A review reason of at least 5 characters is required.");
+      setActionError("A review reason of at least 5 characters is required.");
       return;
     }
     setApprovingId(row.id);
-    setError("");
+    setActionError("");
     try {
       const response = await fetch(`${basePath}/api/affiliates/${encodeURIComponent(row.id)}/reject`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
@@ -4568,7 +4600,7 @@ function AffiliateApplicationsSection({ basePath }) {
       setApplications((current) => current.filter((item) => item.id !== row.id));
       setNotice(`${row.companyName}'s application was declined.`);
     } catch (failure) {
-      setError(failure.message || "Unable to decline application");
+      setActionError(failure.message || "Unable to decline application");
     } finally {
       setApprovingId(null);
     }
@@ -4581,13 +4613,17 @@ function AffiliateApplicationsSection({ basePath }) {
         Review each application and follow up manually. Applying does not enroll a partner.
       </p>
       {loading && <p style={{ color: "#fff" }}>Loading applications…</p>}
-      {error && <p role="alert" style={{ color: "#FCA5A5" }}>{error}</p>}
+      {listError && <p role="alert" style={{ color: "#FCA5A5" }}>{listError}</p>}
+      {actionError && <p role="alert" style={{ color: "#FCA5A5" }}>{actionError}</p>}
+      {agreementError && <p role="status" style={{ color: "#FBBF24" }}>{agreementError}</p>}
+      {statsError && isSuperAdmin && <p role="status" style={{ color: "#FBBF24" }}>{statsError}</p>}
       {notice && <p role="status" style={{ color: "#86EFAC" }}>{notice}</p>}
-      {!loading && <section style={{ padding: "14px", margin: "12px 0", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px" }}>
+      {!loading && isSuperAdmin && <section style={{ padding: "14px", margin: "12px 0", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px" }}>
         <h3 style={{ color: "#fff", margin: "0 0 8px", fontSize: "14px" }}>Reviewed affiliate agreement</h3>
         <p style={{ color: "#ddd", fontSize: "12px" }}>
-          Current configured version: {agreementStatus?.version || "not set"} ·
-          {agreementStatus?.published ? " document published" : " document not published"}.
+          {agreementStatus
+            ? `Current configured version: ${agreementStatus.version || "not set"} · ${agreementStatus.published ? "document published" : "document not published"}.`
+            : "Current agreement status unavailable."}
           Published versions cannot be edited. Keep paid approvals paused until each applicant accepts the matching version.
         </p>
         <form onSubmit={publishAgreement} style={{ display: "grid", gap: "8px" }}>
@@ -4600,17 +4636,17 @@ function AffiliateApplicationsSection({ basePath }) {
             <input type="checkbox" checked={confirmedReviewed} onChange={(event) => setConfirmedReviewed(event.target.checked)} required />
             {" "}I confirm this exact version and text have been reviewed and approved by the owner.
           </label>
-          <button type="submit" disabled={actionBusy || !confirmedReviewed}
+          <button type="submit" disabled={actionBusy || !confirmedReviewed || !agreementStatus}
             style={{ padding: "8px", cursor: "pointer" }}>Publish immutable agreement version</button>
         </form>
       </section>}
       <button type="button" onClick={() => setRefreshKey((key) => key + 1)} style={{ marginBottom: "10px" }}>
         Refresh applications and acceptance status
       </button>
-      {!loading && !activationEnabled && <p role="status" style={{ color: "#FBBF24", fontSize: "12px" }}>
+      {!loading && isSuperAdmin && !activationEnabled && !statsError && <p role="status" style={{ color: "#FBBF24", fontSize: "12px" }}>
         Paid partner approvals are paused until the owner enables reviewed program terms.
       </p>}
-      {!loading && !error && applications.length === 0 && <p style={{ color: "#fff" }}>No applications awaiting review.</p>}
+      {!loading && !listError && applications.length === 0 && <p style={{ color: "#fff" }}>No applications awaiting review.</p>}
       <div style={{ display: "grid", gap: "10px" }}>
         {applications.map((row) => (
           <article key={row.id} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "8px", padding: "14px" }}>
@@ -4628,18 +4664,18 @@ function AffiliateApplicationsSection({ basePath }) {
                 ? `Accepted ${row.agreementAcceptance.version} on ${new Date(row.agreementAcceptance.acceptedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })} by ${row.agreementAcceptance.signerName}`
                 : "No acceptance of the current reviewed agreement recorded."}
             </p>
-            {!row.agreementAcceptance && <button type="button" disabled={actionBusy || !agreementStatus?.published}
+            {isSuperAdmin && !row.agreementAcceptance && <button type="button" disabled={actionBusy || !agreementStatus?.published}
               onClick={() => invite(row)} style={{ marginRight: "8px", padding: "7px 14px", cursor: "pointer" }}>
               Send agreement invitation
             </button>}
-            {activationEnabled && row.agreementAcceptance && <button type="button" disabled={approvingId != null} onClick={() => approve(row)}
+            {isSuperAdmin && activationEnabled && agreementStatus?.published && row.agreementAcceptance && <button type="button" disabled={approvingId != null} onClick={() => approve(row)}
               style={{ marginTop: "12px", padding: "7px 14px", background: "#F5C542", border: "none", borderRadius: "6px", color: "#0B1F3A", fontWeight: 700, cursor: approvingId ? "wait" : "pointer" }}>
               {approvingId === row.id ? "Approving…" : "Approve after terms review"}
             </button>}
-            <button type="button" disabled={approvingId != null} onClick={() => disapprove(row)}
+            {isSuperAdmin && <button type="button" disabled={approvingId != null} onClick={() => disapprove(row)}
               style={{ marginTop: "12px", marginLeft: "8px", padding: "7px 14px", cursor: approvingId ? "wait" : "pointer" }}>
               {approvingId === row.id ? "Updating…" : "Disapprove application"}
-            </button>
+            </button>}
           </article>
         ))}
       </div>
@@ -4649,7 +4685,7 @@ function AffiliateApplicationsSection({ basePath }) {
 
 // ─── Admin Quick Panel (super-admin only, embedded in main page) ──────────────
 
-function AdminQuickPanel({ basePath, onClose }) {
+function AdminQuickPanel({ basePath, onClose, isSuperAdmin }) {
   const [section, setSection] = useState("clients");
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -4766,7 +4802,7 @@ function AdminQuickPanel({ basePath, onClose }) {
           </div>
         </div>
 
-        {section === "applications" && <AffiliateApplicationsSection basePath={basePath} />}
+        {section === "applications" && <AffiliateApplicationsSection basePath={basePath} isSuperAdmin={isSuperAdmin} />}
         {section === "affiliates" && <AffiliateAdminSection basePath={basePath} month={month} />}
 
         {section === "clients" && (<>
@@ -5057,7 +5093,7 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
       </div>
 
       {/* Admin quick panel — toggles open when ⚙ Admin button is clicked */}
-      {isAdmin && adminOpen && <AdminQuickPanel basePath={basePath} onClose={() => setAdminOpen(false)} />}
+      {isAdmin && adminOpen && <AdminQuickPanel basePath={basePath} isSuperAdmin={accountData?.isSuperAdmin === true} onClose={() => setAdminOpen(false)} />}
 
       <div style={S.container}>
         <OnboardingBanner />

@@ -330,12 +330,12 @@ test('the affiliate application posts to the public apply endpoint', async () =>
 
 test('pending applications have a separate admin review view with approval gated on reviewed terms', () => {
   const review = componentBody(workspaceSource, 'AffiliateApplicationsSection');
-  assert.match(review, /fetch\(`\$\{basePath\}\/api\/affiliates`/);
+  assert.match(review, /load\("\/api\/affiliates"\)/);
   assert.match(review, /row\.status === "pending"/);
   assert.match(review, /row\.phone/);
   assert.match(review, /row\.referralPlan/);
   assert.match(review, /setActivationEnabled\(stats\.activationEnabled === true\)/);
-  assert.match(review, /activationEnabled && row\.agreementAcceptance && <button/);
+  assert.match(review, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && <button/);
   assert.match(review, /\/approve`/);
   assert.match(review, /Paid partner approvals are paused/);
   assert.doesNotMatch(review, /holdback|grace period/i);

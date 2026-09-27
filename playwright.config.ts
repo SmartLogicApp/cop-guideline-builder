@@ -14,7 +14,7 @@ export default defineConfig({
   projects: [
     {
       name: "mockup-chromium",
-      testIgnore: /(auth-routing|public-bundle-boundary|partner-agreement-staging)\.spec\.ts/,
+      testIgnore: /(auth-routing|public-bundle-boundary|partner-agreement-staging|admin-applications)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://127.0.0.1:4173",
@@ -23,7 +23,7 @@ export default defineConfig({
     },
     {
       name: "marketing-auth-chromium",
-      testMatch: /(auth-routing|public-bundle-boundary|partner-agreement-staging)\.spec\.ts/,
+      testMatch: /(auth-routing|public-bundle-boundary|partner-agreement-staging|admin-applications)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://127.0.0.1:4174",
@@ -32,7 +32,7 @@ export default defineConfig({
     },
     {
       name: "marketing-auth-prefixed-chromium",
-      testMatch: /(auth-routing|public-bundle-boundary|partner-agreement-staging)\.spec\.ts/,
+      testMatch: /(auth-routing|public-bundle-boundary|partner-agreement-staging|admin-applications)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: "http://127.0.0.1:4175/auth-test/",
