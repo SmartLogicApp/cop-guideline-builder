@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
-    "prebuild": "pnpm run test:routing && pnpm run test:documents && pnpm run test:clerk-credentials && pnpm run test:bundle-boundary && pnpm run test:generation && pnpm run test:citations && pnpm run test:seo",
+    "prebuild": "pnpm run test:routing && pnpm run test:documents && pnpm run test:clerk-credentials && pnpm run test:bundle-boundary && pnpm run test:generation && pnpm run test:citations && pnpm run test:seo && pnpm --dir ../.. run test:gap-history",
     "build": "vite build --config vite.config.ts && node scripts/prerender-public.mjs && pnpm run test:prerender && pnpm run check:bundle-boundary",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "test:routing": "node --test scripts/auth-routing-contract.test.mjs",
