@@ -22,6 +22,7 @@ import {
 import { buildGuidelinesPrompt, GUIDELINES_MAX_TOKENS } from "./guidelines-prompt.js";
 import { getScopedAccountAccess } from "./trial-access.js";
 import { citationToUrl } from "./citation-links.js";
+import { policySourceRows, policyToTxt } from "./policy-export.mjs";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -948,12 +949,12 @@ function exportGuidelinesXlsx(result, inst, topic) {
   );
 }
 
-function exportPolicyXlsx(text, inst, topic) {
+function exportPolicyXlsx(text, inst, topic, dataSource) {
   // Split the policy text into sections by all-caps headings
   const lines = text.split("\n");
   const rows = lines.map((line) => ({ "Policy Content": line }));
   downloadXlsx(
-    [{ name: "Policy Template", rows }],
+    [{ name: "Policy Template", rows }, { name: "Source", rows: policySourceRows(dataSource) }],
     `${inst.label.replace(/\s+/g, "_")}_${topic.replace(/\s+/g, "_")}_Policy.xlsx`,
   );
 }
@@ -2139,7 +2140,7 @@ Output as plain text only (no JSON, no markdown headers with #).`;
   const topicFinal = customTopic.trim() || topic;
 
   function downloadTxt() {
-    const blob = new Blob([result], { type: "text/plain" });
+    const blob = new Blob([policyToTxt(result, dataSource)], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -2206,7 +2207,7 @@ Output as plain text only (no JSON, no markdown headers with #).`;
             <div style={{ display: "flex", gap: "8px" }}>
               <CopyButton text={result} />
               <button style={S.btnSm} onClick={downloadTxt}>↓ .txt</button>
-              <ExcelButton onClick={() => exportPolicyXlsx(result, inst, topicFinal)} />
+              <ExcelButton onClick={() => exportPolicyXlsx(result, inst, topicFinal, dataSource)} />
             </div>
           </div>
           <hr style={S.divider} />

@@ -37,3 +37,4 @@
 - [Static sitemap MIME boundary](static-sitemap-mime-boundary.md) — static preview served XML as text/xml; strict application/xml requires a dedicated routed response and a live header check.
 - [Published public-route freshness](published-public-route-freshness.md) — compare direct route and index.html raw responses; correct local prerendering does not prove published routing is current.
 - [Stripe Test endpoint identity](stripe-test-endpoint-identity.md) — reconcile a configured destination by ID and preserve its URL query; a path-only list search can miss a working endpoint.
+- [Local marketing build validation](local-marketing-build-validation.md) — local verification can use browser-test mode with dev Clerk credentials; never treat that bypass as a production publish check.
