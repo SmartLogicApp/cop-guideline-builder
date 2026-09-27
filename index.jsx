@@ -20,6 +20,7 @@ import {
   requestGeneration,
 } from "./generation-client.js";
 import { buildGuidelinesPrompt, GUIDELINES_MAX_TOKENS } from "./guidelines-prompt.js";
+import { getScopedAccountAccess } from "./trial-access.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -4872,10 +4873,10 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
     status: "loading",
   }));
   const [identityRefreshNonce, setIdentityRefreshNonce] = useState(0);
-  const identityIsCurrent = identityState.requestKey === explicitOwnerId;
-  const resolvedHistoryOwnerId = identityIsCurrent ? identityState.ownerId : undefined;
-  const accountData = identityIsCurrent ? identityState.accountData : null;
-  const accessResolutionStatus = identityIsCurrent ? identityState.status : "loading";
+  const scopedAccess = getScopedAccountAccess(identityState, clerkUserId);
+  const resolvedHistoryOwnerId = scopedAccess.ownerId;
+  const accountData = scopedAccess.accountData;
+  const accessResolutionStatus = scopedAccess.status;
   // Authorization is resolved by the server from controlled configuration.
   const isAdmin = accountData?.isSuperAdmin
     || accountData?.isAdminUser;
@@ -4901,6 +4902,9 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
           status: "loading",
         });
       }
+      // Clerk may be signed in before useUser supplies the user ID. Do not
+      // resolve a shared/null identity or reuse a previous user's access.
+      if (!clerkUserId) return;
       try {
         const response = await fetch("/api/accounts/me", {
           credentials: "include",
@@ -4919,7 +4923,10 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId }) {
         if (!response.ok) throw new Error("Could not resolve history owner");
         const data = await response.json();
         if (cancelled || generation !== requestGeneration) return;
-        const ownerId = clerkUserId || (typeof data.clerkUserId === "string" ? data.clerkUserId : null);
+        if (data.clerkUserId !== clerkUserId) {
+          throw new Error("Account response does not match the signed-in user");
+        }
+        const ownerId = clerkUserId;
         setIdentityState({
           requestKey: explicitOwnerId,
           ownerId,

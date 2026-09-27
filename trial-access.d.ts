@@ -9,6 +9,22 @@ export type TrialSubscription = {
   daysLeftInTrial?: number;
 };
 
+export type AccountAccessState<T = { clerkUserId?: string }> = {
+  requestKey: string | null;
+  ownerId: string | null | undefined;
+  accountData: T | null;
+  status: "loading" | "resolved" | "error";
+};
+
+export function getScopedAccountAccess<T extends { clerkUserId?: string }>(
+  state: AccountAccessState<T>,
+  clerkUserId: string | null | undefined,
+): {
+  ownerId: string | null | undefined;
+  accountData: T | null;
+  status: "loading" | "resolved" | "error";
+};
+
 export function getTrialAccessView(
   subscription: TrialSubscription | null | undefined,
 ): (typeof TRIAL_ACCESS_VIEW)[keyof typeof TRIAL_ACCESS_VIEW];

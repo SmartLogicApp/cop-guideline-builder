@@ -3,6 +3,23 @@ export const TRIAL_ACCESS_VIEW = Object.freeze({
   END_STATE: "end-state",
 });
 
+// Never expose access resolved for another Clerk identity, including during
+// the render before the effect for a newly signed-in user starts its request.
+export function getScopedAccountAccess(identityState, clerkUserId) {
+  if (!clerkUserId || identityState.requestKey !== clerkUserId) {
+    return { ownerId: undefined, accountData: null, status: "loading" };
+  }
+  if (identityState.accountData?.clerkUserId !== undefined &&
+      identityState.accountData.clerkUserId !== clerkUserId) {
+    return { ownerId: undefined, accountData: null, status: "error" };
+  }
+  return {
+    ownerId: identityState.ownerId,
+    accountData: identityState.accountData,
+    status: identityState.status,
+  };
+}
+
 export function getTrialAccessView(subscription) {
   const accessEnded = subscription !== undefined && (
     subscription === null ||

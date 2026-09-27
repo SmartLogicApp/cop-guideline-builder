@@ -192,10 +192,13 @@ function ComplianceWorkspace() {
 }
 
 function Billing() {
+  const { user } = useUser();
   return (
     <>
       <Show when="signed-in">
-        <BillingPage />
+        {user?.id
+          ? <BillingPage key={user.id} />
+          : <WorkspaceLoading />}
       </Show>
       <Show when="signed-out"><RedirectToSignIn /></Show>
     </>

@@ -1,9 +1,57 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getScopedAccountAccess,
   getTrialAccessView,
   TRIAL_ACCESS_VIEW,
 } from "../../../../trial-access.js";
+
+for (const [firstActive, secondActive] of [[true, false], [false, true]]) {
+  test(`${firstActive ? "active" : "expired"} to ${secondActive ? "active" : "expired"} account switch never borrows prior access`, () => {
+    const first = {
+      requestKey: "user_first",
+      ownerId: "user_first",
+      accountData: { clerkUserId: "user_first", isActive: firstActive, account: {} },
+      status: "resolved" as const,
+    };
+    assert.equal(getScopedAccountAccess(first, "user_first").accountData?.isActive, firstActive);
+    assert.deepEqual(getScopedAccountAccess(first, "user_second"), {
+      ownerId: undefined, accountData: null, status: "loading",
+    });
+    // A failed reload cannot expose the previous user's result, whether it
+    // completes before or after the new user's request starts.
+    const failed = {
+      requestKey: "user_second",
+      ownerId: "user_second",
+      accountData: null,
+      status: "error" as const,
+    };
+    assert.deepEqual(getScopedAccountAccess(failed, "user_second"), {
+      ownerId: "user_second", accountData: null, status: "error",
+    });
+    const second = {
+      requestKey: "user_second",
+      ownerId: "user_second",
+      accountData: { clerkUserId: "user_second", isActive: secondActive, account: {} },
+      status: "resolved" as const,
+    };
+    assert.equal(getScopedAccountAccess(second, "user_second").accountData?.isActive, secondActive);
+    assert.equal(getScopedAccountAccess(second, "user_first").accountData, null);
+    assert.equal(getScopedAccountAccess(second, undefined).status, "loading");
+  });
+}
+
+test("a mismatched account response cannot grant or deny access", () => {
+  const staleResponse = {
+    requestKey: "user_second",
+    ownerId: "user_second",
+    accountData: { clerkUserId: "user_first", isActive: true },
+    status: "resolved" as const,
+  };
+  assert.deepEqual(getScopedAccountAccess(staleResponse, "user_second"), {
+    ownerId: undefined, accountData: null, status: "error",
+  });
+});
 
 test("an expired trial with zero days remaining shows the end-state instead of the tool tabs", () => {
   assert.equal(
