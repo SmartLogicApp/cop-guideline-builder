@@ -3,15 +3,13 @@ type Endpoint = {
   url: string;
   livemode: boolean;
   status: "enabled" | "disabled" | string;
+  enabled_events: string[];
   secret?: string;
 };
 
 export type TestWebhookClient = {
   webhookEndpoints: {
-    list(params: { limit: number; starting_after?: string }): Promise<{
-      data: Endpoint[];
-      has_more: boolean;
-    }>;
+    retrieve(id: string): Promise<Endpoint>;
     update(id: string, params: { url: string }): Promise<Endpoint>;
   };
 };
@@ -21,8 +19,14 @@ export type TestWebhookReconciliation =
   | { status: "skipped"; reason: string };
 
 const BILLING_WEBHOOK_PATH = "/api/stripe/webhook";
-const ENDPOINTS_PER_PAGE = 100;
-const MAX_ENDPOINT_PAGES = 100;
+const REQUIRED_BILLING_EVENTS = [
+  "checkout.session.completed",
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+  "invoice.payment_succeeded",
+  "invoice.payment_failed",
+];
 
 function previewWebhookUrl(domain: string | undefined): string | null {
   const value = domain?.trim();
@@ -45,83 +49,39 @@ function previewWebhookUrl(domain: string | undefined): string | null {
   }
 }
 
-function isBillingWebhookEndpoint(endpoint: Endpoint): boolean {
+function billingWebhookQuery(endpoint: Endpoint): string | null {
   try {
     const url = new URL(endpoint.url);
-    return url.protocol === "https:" &&
-      url.pathname === BILLING_WEBHOOK_PATH &&
-      !url.search &&
-      !url.hash;
-  } catch {
-    return false;
-  }
-}
-
-async function listAllTestBillingWebhookEndpoints(
-  stripe: TestWebhookClient,
-): Promise<Endpoint[]> {
-  const endpoints: Endpoint[] = [];
-  const seenIds = new Set<string>();
-  let startingAfter: string | undefined;
-
-  for (let pageNumber = 0; pageNumber < MAX_ENDPOINT_PAGES; pageNumber += 1) {
-    const page = await stripe.webhookEndpoints.list({
-      limit: ENDPOINTS_PER_PAGE,
-      ...(startingAfter ? { starting_after: startingAfter } : {}),
-    });
     if (
-      !page ||
-      !Array.isArray(page.data) ||
-      typeof page.has_more !== "boolean" ||
-      page.data.some((endpoint) =>
-        !endpoint ||
-        typeof endpoint.id !== "string" ||
-        !endpoint.id ||
-        typeof endpoint.url !== "string" ||
-        typeof endpoint.livemode !== "boolean" ||
-        typeof endpoint.status !== "string"
-      )
-    ) {
-      throw new Error("Stripe returned an incomplete webhook endpoint page.");
-    }
-
-    for (const endpoint of page.data) {
-      if (seenIds.has(endpoint.id)) {
-        throw new Error("Stripe webhook endpoint pagination repeated an object.");
-      }
-      seenIds.add(endpoint.id);
-      if (endpoint.livemode === false && isBillingWebhookEndpoint(endpoint)) {
-        endpoints.push(endpoint);
-      }
-    }
-
-    if (!page.has_more) return endpoints;
-    const nextCursor = page.data.at(-1)?.id;
-    if (!nextCursor || nextCursor === startingAfter) {
-      throw new Error("Stripe webhook endpoint pagination did not advance.");
-    }
-    startingAfter = nextCursor;
+      url.protocol !== "https:" ||
+      !url.hostname.endsWith(".replit.dev") ||
+      url.pathname !== BILLING_WEBHOOK_PATH ||
+      (url.search !== "" && url.search !== "?v=2") ||
+      url.hash
+    ) return null;
+    return url.search;
+  } catch {
+    return null;
   }
-
-  throw new Error("Stripe webhook endpoint listing exceeded the pagination safety limit.");
 }
 
 /**
- * Keep the single Test-mode billing endpoint aimed at the current Replit dev
- * host. Listing and updating are deliberately separated: no endpoint is ever
- * created, and ambiguous, missing, disabled, or mismatched endpoints are left
- * untouched. Stripe's URL-only update preserves the endpoint's signing secret.
+ * Keep the explicitly configured Test-mode billing endpoint aimed at the current
+ * Replit dev host. Never discover another endpoint or create one. Stripe's
+ * URL-only update preserves its event subscriptions and signing secret.
  */
 export async function reconcileTestWebhookEndpointForDevelopment({
   nodeEnv,
   testSecretKey,
   testWebhookSecret,
+  endpointId,
   previewDomain,
   stripe,
 }: {
   nodeEnv: string | undefined;
   testSecretKey: string | undefined;
   testWebhookSecret: string | undefined;
+  endpointId: string | undefined;
   previewDomain: string | undefined;
   stripe: TestWebhookClient;
 }): Promise<TestWebhookReconciliation> {
@@ -135,28 +95,33 @@ export async function reconcileTestWebhookEndpointForDevelopment({
   if (!localSigningSecret?.startsWith("whsec_")) {
     return { status: "skipped", reason: "test-webhook-signing-secret-not-configured" };
   }
-  const targetUrl = previewWebhookUrl(previewDomain);
-  if (!targetUrl) {
+  if (!endpointId || !/^we_[A-Za-z0-9]+$/.test(endpointId)) {
+    return { status: "skipped", reason: "test-billing-webhook-endpoint-id-not-configured" };
+  }
+  const previewUrl = previewWebhookUrl(previewDomain);
+  if (!previewUrl) {
     return { status: "skipped", reason: "current-replit-preview-domain-unavailable-or-invalid" };
   }
 
-  const matches = await listAllTestBillingWebhookEndpoints(stripe);
-  if (matches.length === 0) {
-    return { status: "skipped", reason: "no-test-billing-webhook-endpoint-found" };
+  const endpoint = await stripe.webhookEndpoints.retrieve(endpointId);
+  if (!endpoint || endpoint.id !== endpointId || endpoint.livemode !== false) {
+    return { status: "skipped", reason: "configured-endpoint-is-not-the-test-billing-endpoint" };
   }
-  if (matches.length !== 1) {
-    return { status: "skipped", reason: "multiple-test-billing-webhook-endpoints-found" };
-  }
-
-  const [endpoint] = matches;
   if (endpoint.status !== "enabled") {
     return { status: "skipped", reason: "test-billing-webhook-endpoint-is-disabled" };
+  }
+  const query = billingWebhookQuery(endpoint);
+  if (query === null || !Array.isArray(endpoint.enabled_events) ||
+    (!endpoint.enabled_events.includes("*") &&
+      REQUIRED_BILLING_EVENTS.some((event) => !endpoint.enabled_events.includes(event)))) {
+    return { status: "skipped", reason: "configured-endpoint-url-or-events-do-not-match-billing" };
   }
   // Stripe only returns an endpoint secret when creating it. If it is present
   // anyway, treat a mismatch as a hard stop; never rotate or replace secrets.
   if (endpoint.secret && endpoint.secret !== localSigningSecret) {
     return { status: "skipped", reason: "test-billing-webhook-signing-secret-mismatch" };
   }
+  const targetUrl = previewUrl + query;
   if (endpoint.url === targetUrl) {
     return { status: "unchanged", endpointId: endpoint.id, url: targetUrl };
   }

@@ -36,3 +36,4 @@
 - [Affiliate agreement staging](affiliate-agreement-staging.md) — load source-derived text for owner review without confusing app deployment or draft viewing with legal publication.
 - [Static sitemap MIME boundary](static-sitemap-mime-boundary.md) — static preview served XML as text/xml; strict application/xml requires a dedicated routed response and a live header check.
 - [Published public-route freshness](published-public-route-freshness.md) — compare direct route and index.html raw responses; correct local prerendering does not prove published routing is current.
+- [Stripe Test endpoint identity](stripe-test-endpoint-identity.md) — reconcile a configured destination by ID and preserve its URL query; a path-only list search can miss a working endpoint.

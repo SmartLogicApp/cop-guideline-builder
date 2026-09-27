@@ -17,7 +17,7 @@ if (!Number.isFinite(shutdownGracePeriodMs) || shutdownGracePeriodMs <= 0) {
 
 // Keep the existing Test-mode Stripe endpoint pointed at this workspace's
 // current Replit preview host. This is deliberately development-only: it uses
-// the explicit Test key, only changes the one uniquely matching test endpoint
+// the explicit Test key and configured endpoint ID, changes only that endpoint's
 // URL, never creates endpoints or edits its signing secret, and logs blocked
 // reconciliation without preventing ordinary local development.
 if (!readinessSmokeTest && process.env.NODE_ENV === "development") {
@@ -33,6 +33,7 @@ if (!readinessSmokeTest && process.env.NODE_ENV === "development") {
         nodeEnv: process.env.NODE_ENV,
         testSecretKey,
         testWebhookSecret,
+        endpointId: process.env.STRIPE_TEST_BILLING_WEBHOOK_ENDPOINT_ID?.trim(),
         previewDomain: process.env.REPLIT_DEV_DOMAIN ?? process.env.REPLIT_DOMAINS?.split(",")[0],
         stripe: stripe as unknown as Parameters<typeof reconcileTestWebhookEndpointForDevelopment>[0]["stripe"],
       });
