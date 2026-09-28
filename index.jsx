@@ -20,7 +20,7 @@ import {
   requestGeneration,
 } from "./generation-client.js";
 import { buildGuidelinesPrompt, GUIDELINES_MAX_TOKENS } from "./guidelines-prompt.js";
-import { getScopedAccountAccess } from "./trial-access.js";
+import { getScopedAccountAccess, isPaymentSetupPending } from "./trial-access.js";
 import { fetchWithClerkToken } from "./workspace-auth-fetch.js";
 import { citationToUrl } from "./citation-links.js";
 import { policySourceRows, policyToTxt } from "./policy-export.mjs";
@@ -4017,9 +4017,9 @@ function Footer({ onTerms, onPrivacy }) {
 const TRIAL_END_PLANS = [
   {
     name: "CMS Compliance Suite",
-    price: "Coming soon",
-    priceSuffix: "",
-    description: "Paid subscriptions are not active yet. Review your billing status or contact support for access help.",
+    price: "$299",
+    priceSuffix: "/month",
+    description: "Start or manage your subscription from the billing page.",
     features: ["Unlimited staff users", "One account per organization", "All compliance tools", "AI gap scanning", "Priority support"],
     highlight: true,
   },
@@ -4071,7 +4071,7 @@ function NeedsRegistrationScreen({ registerUrl, onSignOut }) {
   );
 }
 
-function TrialEndedScreen({ billingUrl, onSignOut }) {
+function TrialEndedScreen({ billingUrl, onSignOut, pendingPayment }) {
   return (
     <main style={{
       minHeight: "100dvh", background: "linear-gradient(155deg, #071A2F 0%, #0B3D8E 55%, #0D5C6B 100%)",
@@ -4086,13 +4086,15 @@ function TrialEndedScreen({ billingUrl, onSignOut }) {
             border: "1px solid rgba(245,197,66,0.45)", color: "#F5C542", fontSize: "26px",
           }} aria-hidden="true">✓</div>
           <div style={{ color: "#F5C542", fontSize: "12px", fontWeight: 800, letterSpacing: "1.5px", textTransform: "uppercase", marginBottom: "10px" }}>
-            Trial complete
+            {pendingPayment ? "Payment method needed" : "Billing action needed"}
           </div>
           <h1 style={{ margin: "0 0 12px", fontSize: "clamp(28px, 5vw, 44px)", lineHeight: 1.12, letterSpacing: "-1px" }}>
-            Your 30-day trial has ended
+            {pendingPayment ? "Start your 30-day free trial" : "Your subscription needs attention"}
           </h1>
           <p style={{ margin: 0, color: "rgba(255,255,255,0.72)", fontSize: "16px", lineHeight: 1.6 }}>
-            Paid checkout is not active yet. Review your account status and contact support if you need continued access.
+            {pendingPayment
+              ? "Your trial has not started. Add a payment method through secure checkout to begin 30 days of free access. Your first subscription charge is after the trial unless you cancel."
+              : "Review your billing status and payment options to restore access."}
           </p>
         </div>
 
@@ -4127,7 +4129,7 @@ function TrialEndedScreen({ billingUrl, onSignOut }) {
                 padding: "12px 16px", fontSize: "14px", fontWeight: 800,
                 background: plan.highlight ? "#0B3D8E" : "#fff",
                 color: plan.highlight ? "#fff" : "#0B3D8E",
-              }}>View billing and access options →</a>
+              }}>{pendingPayment ? "Go to billing to start your trial →" : "View billing and access options →"}</a>
             </section>
           ))}
         </div>
@@ -5110,7 +5112,11 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId, getToken }
   }
 
   if (!accountData?.isActive) {
-    return <TrialEndedScreen billingUrl={`${basePath}/billing`} onSignOut={onSignOut} />;
+    return <TrialEndedScreen
+      billingUrl={`${basePath}/billing`}
+      onSignOut={onSignOut}
+      pendingPayment={isPaymentSetupPending(accountData?.account)}
+    />;
   }
 
   return (

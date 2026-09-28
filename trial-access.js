@@ -3,6 +3,10 @@ export const TRIAL_ACCESS_VIEW = Object.freeze({
   END_STATE: "end-state",
 });
 
+export function isPaymentSetupPending(account) {
+  return account?.subscriptionStatus === "pending_payment";
+}
+
 // Never expose access resolved for another Clerk identity, including during
 // the render before the effect for a newly signed-in user starts its request.
 export function getScopedAccountAccess(identityState, clerkUserId) {

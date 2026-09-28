@@ -3,8 +3,15 @@ import test from "node:test";
 import {
   getScopedAccountAccess,
   getTrialAccessView,
+  isPaymentSetupPending,
   TRIAL_ACCESS_VIEW,
 } from "../../../../trial-access.js";
+
+test("a newly registered direct account needs checkout, not an expired-trial message", () => {
+  assert.equal(isPaymentSetupPending({ subscriptionStatus: "pending_payment", trialEndsAt: null }), true);
+  assert.equal(isPaymentSetupPending({ subscriptionStatus: "trial", trialEndsAt: new Date(0) }), false);
+  assert.equal(isPaymentSetupPending({ subscriptionStatus: "past_due" }), false);
+});
 
 for (const [firstActive, secondActive] of [[true, false], [false, true]]) {
   test(`${firstActive ? "active" : "expired"} to ${secondActive ? "active" : "expired"} account switch never borrows prior access`, () => {
