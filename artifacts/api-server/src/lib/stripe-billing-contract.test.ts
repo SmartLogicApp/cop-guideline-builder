@@ -85,7 +85,8 @@ test("checkout preserves the production 30-day trial and uses setup mode for a n
   assert.match(checkout, /getStripeCustomerCurrentTime\(stripe, lockedCustomerId\)/);
   assert.match(checkout, /now:\s*checkoutNow/);
   assert.match(checkout, /mode:\s*"setup"/);
-  assert.match(checkout, /"setup_intent_data\[usage\]":\s*"off_session"/);
+  assert.match(checkout, /"managed_payments\[enabled\]":\s*"false"/);
+  assert.doesNotMatch(checkout, /"setup_intent_data\[usage\]":/);
   assert.match(checkout, /"metadata\[setupPolicy\]":\s*LOCAL_TRIAL_SETUP_POLICY/);
   assert.match(checkout, /LOCAL_TRIAL_SETUP_POLICY/);
 });

@@ -933,7 +933,10 @@ router.post("/checkout", requireAuth, async (req, res) => {
       customer: lockedCustomerId,
       mode: "setup",
       "payment_method_types[0]": "card",
-      "setup_intent_data[usage]": "off_session",
+      // Setup-mode Checkout does not accept setup_intent_data[usage]. Its
+      // SetupIntent defaults to off_session; Managed Payments must be opted
+      // out for this card-collection-only session.
+      "managed_payments[enabled]": "false",
       success_url: `${base}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${base}/billing?checkout=canceled`,
       client_reference_id: account.id,

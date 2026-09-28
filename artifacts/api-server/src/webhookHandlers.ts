@@ -535,7 +535,9 @@ export async function createSubscriptionFromSetupCheckout(
       "items[0][quantity]": "1",
       default_payment_method: paymentMethodId,
       collection_method: "charge_automatically",
-      payment_behavior: "default_incomplete",
+      // An expired local trial must charge the saved card now (or fail),
+      // rather than persist an incomplete subscription with an open invoice.
+      payment_behavior: "error_if_incomplete",
       proration_behavior: "none",
       "metadata[accountId]": account.id,
       "metadata[setupCheckoutSessionId]": session.id,

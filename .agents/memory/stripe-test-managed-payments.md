@@ -14,3 +14,9 @@ The Stripe customer portal can schedule trial-end cancellation by setting `cance
 **Why:** The customer portal showed cancellation scheduled at the trial end, but a mirror that checked only `cancel_at_period_end` told the user the plan would renew.
 
 **How to apply:** Derive the user-facing cancellation indicator from both Stripe cancellation fields against the current period end; do not interpret `canceled_at` alone as immediate loss of trial access.
+
+Setup-mode Checkout with this Stripe account's Managed Payments default rejects card collection unless Managed Payments is explicitly disabled for that setup session. Stripe also rejects a `setup_intent_data[usage]` parameter on that Checkout request; setup mode already prepares the card for future off-session use.
+
+**Why:** An authenticated Test-mode Checkout returned `parameter_unknown` before displaying a card form, and then rejected setup mode under the Managed Payments default. A controlled per-session opt-out let a real Test card complete without changing account-wide settings.
+
+**How to apply:** Keep the per-session setup-mode settings distinct from subscription-mode Checkout, and validate the hosted card page against the configured Stripe mode. For subscriptions created after an expired local trial, verify the first invoice actually charges automatically; a saved card plus an incomplete subscription is not proof of day-31 billing.
