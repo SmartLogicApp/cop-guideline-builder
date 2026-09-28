@@ -7,6 +7,16 @@ export type StripeSubscriptionSummary = {
   metadata?: Record<string, string> | null;
 };
 
+/** Use the same deliverable contact in reminders and admin reporting. */
+export function preferredAccountEmail(
+  users: readonly { email: string | null; role: string | null }[],
+): string | null {
+  return users
+    .filter((user) => user.email?.trim())
+    .sort((a, b) => Number(b.role === "admin") - Number(a.role === "admin"))[0]
+    ?.email?.trim() ?? null;
+}
+
 export type SubscriptionReconciliation = {
   primary: StripeSubscriptionSummary | null;
   duplicates: StripeSubscriptionSummary[];

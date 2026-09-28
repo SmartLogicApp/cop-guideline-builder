@@ -12,6 +12,7 @@ import { syncStripeSubscriptionById } from "../webhookHandlers.js";
 import {
   chooseCanonicalStripeSubscription,
   isStaleForStripeReconciliation,
+  preferredAccountEmail,
   type StripeSubscriptionSummary,
 } from "./subscription-lifecycle-rules.js";
 
@@ -158,7 +159,7 @@ function trialEmailSender(): string {
 async function sendTrialEndingReminderForAccount(
   accountId: string,
   now = new Date(),
-): Promise<{ sent: boolean; error?: string }> {
+): Promise<{ sent: boolean; error?: string; warning?: string }> {
   const { start, end } = trialWarningWindow(now);
   const [account] = await db.select().from(accounts).where(and(
     eq(accounts.id, accountId),
@@ -169,19 +170,17 @@ async function sendTrialEndingReminderForAccount(
   )).limit(1);
   if (!account?.trialEndsAt) return { sent: false };
 
-  const billingUrl = `${getBillingBaseUrl()}/billing`;
   const users = await db.select().from(accountUsers).where(
     eq(accountUsers.accountId, account.id),
   );
-  const recipient = users
-    .filter((user) => user.email)
-    .sort((a, b) => Number(b.role === "admin") - Number(a.role === "admin"))[0]?.email;
+  const recipient = preferredAccountEmail(users);
   if (!recipient) {
-    const error = "No account email recipient is available for the trial reminder.";
-    logger.error({ accountId }, error);
-    return { sent: false, error };
+    const warning = "No email on file";
+    logger.warn({ accountId }, "Trial reminder skipped: no email on file.");
+    return { sent: false, warning };
   }
 
+  const billingUrl = `${getBillingBaseUrl()}/billing`;
   // Claim atomically before delivery so concurrent requests and API instances
   // can never send two warnings for this account.
   const [claimed] = await db.update(accounts)
@@ -221,10 +220,17 @@ type LifecycleAccountFailure = {
   error: string;
 };
 
+type LifecycleAccountWarning = {
+  accountId: string;
+  operation: "trial-reminder";
+  warning: string;
+};
+
 type TrialReminderSweepResult = {
   accountsScanned: number;
   sent: number;
   failures: LifecycleAccountFailure[];
+  warnings: LifecycleAccountWarning[];
 };
 
 async function sendTrialEndingReminders(now = new Date()): Promise<TrialReminderSweepResult> {
@@ -232,6 +238,7 @@ async function sendTrialEndingReminders(now = new Date()): Promise<TrialReminder
     inArray(accounts.subscriptionStatus, ["trial", "trialing"]),
   );
   const failures: LifecycleAccountFailure[] = [];
+  const warnings: LifecycleAccountWarning[] = [];
   let sent = 0;
   for (const account of candidates) {
     try {
@@ -244,6 +251,13 @@ async function sendTrialEndingReminders(now = new Date()): Promise<TrialReminder
           error: result.error,
         });
       }
+      if (result.warning) {
+        warnings.push({
+          accountId: account.id,
+          operation: "trial-reminder",
+          warning: result.warning,
+        });
+      }
     } catch (error) {
       failures.push({
         accountId: account.id,
@@ -252,7 +266,7 @@ async function sendTrialEndingReminders(now = new Date()): Promise<TrialReminder
       });
     }
   }
-  return { accountsScanned: candidates.length, sent, failures };
+  return { accountsScanned: candidates.length, sent, failures, warnings };
 }
 
 /**
@@ -279,6 +293,7 @@ export type DailySubscriptionLifecycleResult = {
   trialReminderAccountsScanned: number;
   trialRemindersSent: number;
   failures: LifecycleAccountFailure[];
+  warnings: LifecycleAccountWarning[];
 };
 
 let dailyRun: Promise<DailySubscriptionLifecycleResult> | null = null;
@@ -331,6 +346,7 @@ export async function runDailySubscriptionLifecycle(
       trialReminderAccountsScanned: reminders.accountsScanned,
       trialRemindersSent: reminders.sent,
       failures,
+      warnings: reminders.warnings,
     };
   })().finally(() => {
     dailyRun = null;

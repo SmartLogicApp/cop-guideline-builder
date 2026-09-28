@@ -57,6 +57,7 @@ async function run() {
     "stripeAccountsProcessed",
     "trialReminderAccountsScanned",
     "trialRemindersSent",
+    "warningCount",
   ];
 
   if (
@@ -80,6 +81,7 @@ async function run() {
     stripeAccountsProcessed: body.stripeAccountsProcessed,
     trialReminderAccountsScanned: body.trialReminderAccountsScanned,
     trialRemindersSent: body.trialRemindersSent,
+    warningCount: body.warningCount,
   }));
 }
 

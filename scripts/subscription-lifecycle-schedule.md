@@ -12,4 +12,4 @@ Create a **separate Node.js 24 Scheduled Deployment/runner**; do not switch the 
 
 ## After publishing the separate schedule
 
-Verify the first scheduled run completes with exit code `0` and a success summary (`ok: true`, HTTP 200, `failedAccountCount: 0`). A partial or failed sweep exits nonzero; review the run status and correct the issue before considering the schedule operational. The runner intentionally does not print response bodies or secrets. Do not trigger an ad hoc run unless an owner approves its lifecycle/email side effects.
+Verify the first scheduled run completes with exit code `0` and a success summary (`ok: true`, HTTP 200, `failedAccountCount: 0`). A nonzero `warningCount` means trial reminders were skipped for accounts with no email on file; the schedule remains successful, but the owner should find those accounts in Admin Clients and add a contact email. A partial or failed sweep exits nonzero; review the run status and correct the issue before considering the schedule operational. The runner intentionally does not print response bodies or secrets. Do not trigger an ad hoc run unless an owner approves its lifecycle/email side effects.

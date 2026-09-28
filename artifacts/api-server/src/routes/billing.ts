@@ -49,6 +49,8 @@ router.post("/admin/cron/subscription-lifecycle", requireCronOrSuperAdmin, async
       trialRemindersSent: result.trialRemindersSent,
       failedAccountCount,
       failures: result.failures,
+      warningCount: result.warnings.length,
+      warnings: result.warnings,
       ...(failedAccountCount > 0
         ? { error: "Subscription lifecycle completed with account failures." }
         : {}),

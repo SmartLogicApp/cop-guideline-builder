@@ -30,6 +30,7 @@ import {
 } from "../lib/usage-alert";
 import { activityWindow, nextRateDown } from "../lib/affiliate-commission.js";
 import { getAffiliateWorkspaceReport, type ConsultantWorkspaceLink } from "../lib/admin-affiliate-report.js";
+import { preferredAccountEmail } from "../lib/subscription-lifecycle-rules.js";
 
 /**
  * Sender for transactional mail. Resend's onboarding@resend.dev is a shared
@@ -176,12 +177,18 @@ router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) =>
 
     let sent = 0;
     let skipped = 0;
+    let warningCount = 0;
     const failed: Array<{ accountId: string; error: string }> = [];
 
     for (const account of candidates) {
-      const recipient = (usersByAccount.get(account.id) ?? [])
-        .sort((a, b) => Number(b.role === "admin") - Number(a.role === "admin"))[0]?.email;
-      if (!recipient || !account.trialEndsAt) {
+      const recipient = preferredAccountEmail(usersByAccount.get(account.id) ?? []);
+      if (!recipient) {
+        req.log.warn({ accountId: account.id }, "Trial reminder skipped: no email on file.");
+        warningCount++;
+        skipped++;
+        continue;
+      }
+      if (!account.trialEndsAt) {
         skipped++;
         continue;
       }
@@ -223,6 +230,7 @@ router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) =>
       matched: candidates.length,
       sent,
       skipped,
+      warningCount,
       failed,
     });
   } catch (error: any) {
@@ -360,11 +368,7 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
         termsVersion:        a.termsVersion,
         createdAt:           a.createdAt,
         userCount:           userCountByAccount.get(a.id) ?? 0,
-        contact: (() => {
-          const contact = (usersByAccount.get(a.id) ?? []).slice().sort((x, y) =>
-            Number(y.role === "admin") - Number(x.role === "admin"))[0];
-          return { name: null, email: contact?.email ?? null, phone: null };
-        })(),
+        contact: { name: null, email: preferredAccountEmail(usersByAccount.get(a.id) ?? []), phone: null },
         referredBy: a.referralCode ? affiliateByCode.get(a.referralCode) ?? a.referralCode : null,
         totalTokens: allTokensByAccount.get(a.id) ?? 0,
         thisMonth: {
@@ -420,7 +424,7 @@ const AFFILIATE_CLIENT_CSV_HEADERS = [
 function adminClientCsvRows(clients: any[]) {
   return clients.map((client) => [
     client.facilityName, client.id,
-    [client.contact?.name, client.contact?.email, client.contact?.phone].filter(Boolean).join("; ") || "—",
+    [client.contact?.name, client.contact?.email?.trim() || "No email on file", client.contact?.phone].filter(Boolean).join("; "),
     client.createdAt ? new Date(client.createdAt).toISOString().slice(0, 10) : "",
     client.status,
     client.nextBillingDate ? new Date(client.nextBillingDate).toISOString().slice(0, 10) : "",
@@ -456,13 +460,11 @@ router.get("/clients/download", requireAnyAdmin, async (req, res) => {
     }
     const companyByCode = new Map(affiliateRows.map((row) => [row.referralCode, row.companyName]));
     const clients = allAccounts.map((account) => {
-      const contact = (usersByAccount.get(account.id) ?? []).slice().sort((x, y) =>
-        Number(y.role === "admin") - Number(x.role === "admin"))[0];
       return {
         id: account.id, facilityName: account.facilityName, createdAt: account.createdAt,
         status: adminClientStatus(account.subscriptionStatus, account.subscriptionCancelAtPeriodEnd, account.subscriptionCurrentPeriodEnd),
         nextBillingDate: account.subscriptionCurrentPeriodEnd,
-        contact: { name: null, email: contact?.email ?? null, phone: null },
+        contact: { name: null, email: preferredAccountEmail(usersByAccount.get(account.id) ?? []), phone: null },
         referredBy: account.referralCode ? companyByCode.get(account.referralCode) ?? account.referralCode : null,
         thisMonth: { totalTokens: monthTokens.get(account.id) ?? 0 },
         totalTokens: totalTokens.get(account.id) ?? 0,

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { preferredAccountEmail } from "../lib/subscription-lifecycle-rules.ts";
 
 const source = new URL("./billing.ts", import.meta.url);
 const billing = await readFile(source, "utf8");
@@ -11,6 +12,9 @@ const lifecycle = await readFile(new URL("../lib/subscription-lifecycle.ts", imp
 const lifecycleMiddleware = await readFile(new URL("../middlewares/requireActiveSubscription.ts", import.meta.url), "utf8");
 const warning = await readFile(new URL("../lib/trial-warning-email.ts", import.meta.url), "utf8");
 const billingUi = await readFile(new URL("../../../marketing-site/src/pages/billing.tsx", import.meta.url), "utf8");
+const adminClientsUi = await readFile(new URL("../../../marketing-site/src/pages/affiliate-compliance/AdminClients.tsx", import.meta.url), "utf8");
+const admin = await readFile(new URL("./admin.ts", import.meta.url), "utf8");
+const cronRunner = await readFile(new URL("../../../../scripts/run-subscription-lifecycle-cron.mjs", import.meta.url), "utf8");
 
 test("client cancellation is scheduled without proration and can be undone", () => {
   assert.match(billing, /router\.post\("\/subscription\/cancel"/);
@@ -57,6 +61,31 @@ test("external subscription lifecycle cron is protected and reports partial fail
   assert.match(billing, /failedAccountCount/);
   assert.match(billing, /subscriptionLifecycleHttpStatus\(failedAccountCount\)/);
   assert.match(billing, /status\(502\).*failedAccountCount:\s*null/s);
+});
+
+test("missing recipient is a logged, counted warning; it remains visible to the owner", () => {
+  assert.equal(preferredAccountEmail([]), null);
+  assert.equal(preferredAccountEmail([
+    { role: "admin", email: "  " },
+    { role: "member", email: null },
+  ]), null);
+  assert.equal(preferredAccountEmail([
+    { role: "member", email: " member@example.test " },
+    { role: "admin", email: "admin@example.test" },
+  ]), "admin@example.test");
+  assert.equal(preferredAccountEmail([
+    { role: "admin", email: null },
+    { role: "member", email: " member@example.test " },
+  ]), "member@example.test");
+
+  assert.match(lifecycle, /if \(!recipient\) \{[\s\S]*?logger\.warn\([\s\S]*?return \{ sent: false, warning \};/);
+  assert.match(lifecycle, /if \(result\.warning\) \{[\s\S]*?warnings\.push\(/);
+  assert.match(lifecycle, /failures,\s*warnings: reminders\.warnings/);
+  assert.match(billing, /warningCount: result\.warnings\.length/);
+  assert.match(cronRunner, /warningCount: body\.warningCount/);
+  assert.match(admin, /req\.log\.warn\(\{ accountId: account\.id \}/);
+  assert.match(admin, /contact: \{ name: null, email: preferredAccountEmail/);
+  assert.match(adminClientsUi, /No email on file/);
 });
 
 test("billing UI shows requested period-end cancellation copy and undo", () => {

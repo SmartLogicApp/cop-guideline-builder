@@ -81,6 +81,7 @@ export default function AdminClients() {
       .filter((client) => !query || [
         client.facilityName, client.id, client.contact.name, client.contact.email,
         client.contact.phone, client.status, client.referredBy,
+        !client.contact.email ? "No email on file" : null,
       ].some((value) => value?.toLocaleLowerCase().includes(query)))
       .sort((a, b) => {
         const value = (client: ClientRow): string | number => {
@@ -148,7 +149,8 @@ export default function AdminClients() {
                 <td className="whitespace-normal px-3 py-3 font-semibold text-slate-900">{client.facilityName}</td>
                 <td className="break-all px-3 py-3 font-mono text-xs">{client.id}</td>
                 <td className="whitespace-normal px-3 py-3">
-                  {[client.contact.name, client.contact.email, client.contact.phone].filter(Boolean).join(" · ") || "—"}
+                  {[client.contact.name, client.contact.email, client.contact.phone].filter(Boolean).join(" · ")}
+                  {!client.contact.email && <span className="inline-block rounded bg-amber-50 px-2 py-0.5 font-semibold text-amber-800">No email on file</span>}
                 </td>
                 <td className="whitespace-nowrap px-3 py-3">{date(client.createdAt)}</td>
                 <td className="min-w-[180px] whitespace-normal break-words px-3 py-3 font-medium">{client.status}</td>
