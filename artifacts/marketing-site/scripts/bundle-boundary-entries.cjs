@@ -31,7 +31,8 @@ function findPublicBundleBoundaryEntries(manifest) {
         normalize(chunk.src ?? '') === 'AuthenticatedApp.tsx' ||
         key.endsWith('/AuthenticatedApp.tsx') ||
         key === 'src/AuthenticatedApp.tsx' ||
-        key === 'AuthenticatedApp.tsx'),
+        key === 'AuthenticatedApp.tsx' ||
+        (key.startsWith('_AuthenticatedApp-') && publicEntry[1].dynamicImports?.includes(key))),
     'authenticated application',
   );
   const workspaceEntry = findChunk(

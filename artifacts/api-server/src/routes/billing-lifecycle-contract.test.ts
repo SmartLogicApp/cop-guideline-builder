@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { preferredAccountEmail } from "../lib/subscription-lifecycle-rules.ts";
 
 const source = new URL("./billing.ts", import.meta.url);
 const billing = await readFile(source, "utf8");
@@ -64,27 +63,16 @@ test("external subscription lifecycle cron is protected and reports partial fail
 });
 
 test("missing recipient is a logged, counted warning; it remains visible to the owner", () => {
-  assert.equal(preferredAccountEmail([]), null);
-  assert.equal(preferredAccountEmail([
-    { role: "admin", email: "  " },
-    { role: "member", email: null },
-  ]), null);
-  assert.equal(preferredAccountEmail([
-    { role: "member", email: " member@example.test " },
-    { role: "admin", email: "admin@example.test" },
-  ]), "admin@example.test");
-  assert.equal(preferredAccountEmail([
-    { role: "admin", email: null },
-    { role: "member", email: " member@example.test " },
-  ]), "member@example.test");
-
   assert.match(lifecycle, /if \(!recipient\) \{[\s\S]*?logger\.warn\([\s\S]*?return \{ sent: false, warning \};/);
   assert.match(lifecycle, /if \(result\.warning\) \{[\s\S]*?warnings\.push\(/);
   assert.match(lifecycle, /failures,\s*warnings: reminders\.warnings/);
   assert.match(billing, /warningCount: result\.warnings\.length/);
   assert.match(cronRunner, /warningCount: body\.warningCount/);
   assert.match(admin, /req\.log\.warn\(\{ accountId: account\.id \}/);
-  assert.match(admin, /contact: \{ name: null, email: preferredAccountEmail/);
+  assert.match(admin, /contact: contacts\.get\(a\.id\)/);
+  assert.match(admin, /contact: contacts\.get\(account\.id\)/);
+  assert.match(admin, /resolveAccountContact\(usersByAccount\.get\(account\.id\)/);
+  assert.match(lifecycle, /resolveAccountContact\(users\)/);
   assert.match(adminClientsUi, /No email on file/);
 });
 

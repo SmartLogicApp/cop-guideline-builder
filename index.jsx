@@ -4731,7 +4731,7 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
 
 // ─── Admin Quick Panel (super-admin only, embedded in main page) ──────────────
 
-function AdminQuickPanel({ basePath, onClose, isSuperAdmin, getToken }) {
+function AdminQuickPanel({ basePath, onClose, isSuperAdmin, getToken, AdminClientsTable, AdminAffiliatesTable }) {
   const [section, setSection] = useState("clients");
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -4743,13 +4743,15 @@ function AdminQuickPanel({ basePath, onClose, isSuperAdmin, getToken }) {
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   useEffect(() => {
+    if (section !== "access") return;
     fetch(`${basePath}/api/admin/stats?month=${month}`, { credentials: "include" })
       .then((r) => r.json())
       .then((d) => { setStats(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [basePath, month]);
+  }, [basePath, month, section]);
 
   useEffect(() => {
+    if (section !== "access") return;
     let cancelled = false;
     fetch(`${basePath}/api/admin/facility-users`, { credentials: "include", cache: "no-store" })
       .then(async (response) => {
@@ -4769,7 +4771,7 @@ function AdminQuickPanel({ basePath, onClose, isSuperAdmin, getToken }) {
         }
       });
     return () => { cancelled = true; };
-  }, [basePath]);
+  }, [basePath, section]);
 
   async function setComplimentaryAccess(user, hasComplimentaryAccess) {
     setUpdatingUserId(user.id);
@@ -4804,24 +4806,24 @@ function AdminQuickPanel({ basePath, onClose, isSuperAdmin, getToken }) {
 
   return (
     <div style={{ background: "#0B1F3A", borderBottom: "2px solid rgba(245,197,66,0.35)", padding: "18px 32px" }}>
-      <div style={{ maxWidth: "960px", margin: "0 auto" }}>
+      <div style={{ maxWidth: ["clients", "affiliates"].includes(section) ? "1600px" : "960px", margin: "0 auto" }}>
 
         {/* Panel header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", marginBottom: "14px" }}>
           <div>
             <div style={{ color: "#F5C542", fontWeight: 800, fontSize: "15px", letterSpacing: "-0.2px" }}>⚙ Admin Quick Access</div>
             <div style={{ color: "rgba(255,255,255,0.4)", fontSize: "11px", marginTop: "2px" }}>
-              {loading ? "Loading…" : `${stats?.monthLabel ?? month} · ${section === "clients" ? "Platform overview" : "Affiliate programme"}`}
+              {section === "access" ? (loading ? "Loading…" : `${stats?.monthLabel ?? month} · Platform overview`) : "Client and affiliate management"}
             </div>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            {/* Clients and affiliates are two views of the same month, so they
-                share one panel rather than one button each. */}
-            <div role="tablist" aria-label="Admin sections" style={{ display: "inline-flex", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "7px", padding: "2px" }}>
+            <div role="tablist" aria-label="Admin sections" style={{ display: "inline-flex", flexWrap: "wrap", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "7px", padding: "2px" }}>
               {[
                 { id: "clients",    label: "Clients" },
                 { id: "applications", label: "Applications" },
                 { id: "affiliates", label: "Affiliates" },
+                { id: "access", label: "Access & reports" },
+                { id: "affiliate-tools", label: "Affiliate tools" },
               ].map((t) => (
                 <button
                   key={t.id}
@@ -4849,9 +4851,11 @@ function AdminQuickPanel({ basePath, onClose, isSuperAdmin, getToken }) {
         </div>
 
         {section === "applications" && <AffiliateApplicationsSection basePath={basePath} isSuperAdmin={isSuperAdmin} getToken={getToken} />}
-        {section === "affiliates" && <AffiliateAdminSection basePath={basePath} month={month} />}
+        {section === "clients" && <div className="text-slate-900"><AdminClientsTable /></div>}
+        {section === "affiliates" && <div className="text-slate-900"><AdminAffiliatesTable /></div>}
+        {section === "affiliate-tools" && <AffiliateAdminSection basePath={basePath} month={month} />}
 
-        {section === "clients" && (<>
+        {section === "access" && (<>
 
         {/* Stats row */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "14px" }}>
@@ -4927,7 +4931,7 @@ function AdminQuickPanel({ basePath, onClose, isSuperAdmin, getToken }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
-export default function CoPGuidelineBuilder({ onSignOut, clerkUserId, getToken }) {
+export default function CoPGuidelineBuilder({ onSignOut, clerkUserId, getToken, AdminClientsTable, AdminAffiliatesTable }) {
   const [tab, setTab] = useState(() => {
     try {
       const savedTab = sessionStorage.getItem(ACTIVE_WORKSPACE_TAB_KEY);
@@ -5144,7 +5148,8 @@ export default function CoPGuidelineBuilder({ onSignOut, clerkUserId, getToken }
       </div>
 
       {/* Admin quick panel — toggles open when ⚙ Admin button is clicked */}
-      {isAdmin && adminOpen && <AdminQuickPanel basePath={basePath} isSuperAdmin={accountData?.isSuperAdmin === true} getToken={getToken} onClose={() => setAdminOpen(false)} />}
+      {isAdmin && adminOpen && <AdminQuickPanel basePath={basePath} isSuperAdmin={accountData?.isSuperAdmin === true} getToken={getToken}
+        AdminClientsTable={AdminClientsTable} AdminAffiliatesTable={AdminAffiliatesTable} onClose={() => setAdminOpen(false)} />}
 
       <div style={S.container}>
         <OnboardingBanner />

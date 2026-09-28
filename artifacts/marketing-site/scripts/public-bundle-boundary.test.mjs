@@ -13,6 +13,7 @@ async function fixture({
   eagerPrivateChunk,
   preloadPrivateChunk,
   virtualWorkspace = false,
+  virtualAuth = false,
   clerkFile = 'assets/clerk-auth.js',
   publicBytes = 20,
   publicCssBytes = 20,
@@ -20,6 +21,7 @@ async function fixture({
 } = {}) {
   const outDir = await mkdtemp(path.join(os.tmpdir(), 'bundle-boundary-'));
   const workspaceKey = virtualWorkspace ? '_workspace-entry-hash.js' : 'src/workspace-entry.tsx';
+  const authKey = virtualAuth ? '_AuthenticatedApp-hash.js' : 'src/AuthenticatedApp.tsx';
   await mkdir(path.join(outDir, '.vite'), { recursive: true });
   await mkdir(path.join(outDir, 'assets'), { recursive: true });
   const manifest = {
@@ -28,12 +30,12 @@ async function fixture({
       src: 'index.html',
       isEntry: true,
       imports: eagerPrivateChunk ? [eagerPrivateChunk] : [],
-      dynamicImports: ['src/AuthenticatedApp.tsx'],
+      dynamicImports: [authKey],
       css: ['assets/public.css'],
     },
-    'src/AuthenticatedApp.tsx': {
+    [authKey]: {
       file: 'assets/authenticated-app.js',
-      src: 'src/AuthenticatedApp.tsx',
+      ...(virtualAuth ? {} : { src: 'src/AuthenticatedApp.tsx' }),
       isDynamicEntry: true,
       imports: ['_clerk-auth.js'],
        dynamicImports: [workspaceKey],
@@ -99,6 +101,28 @@ test('accepts an auth-only virtual workspace chunk emitted by Vite', async () =>
     cssBudgetBytes: 100,
   });
   assert.deepEqual(result.workspaceChunks, ['assets/workspace.js', 'assets/workspace.css']);
+});
+
+test('accepts a hashed authenticated chunk only when the public entry dynamically imports it', async () => {
+  const result = await checkPublicBundleBoundary({
+    outDir: await fixture({ virtualAuth: true, virtualWorkspace: true }),
+    budgetBytes: 100,
+    cssBudgetBytes: 100,
+  });
+  assert.equal(result.publicEntry, 'assets/public.js');
+  assert.ok(result.privateChunks.includes('assets/authenticated-app.js'));
+  assert.ok(result.workspaceChunks.includes('assets/workspace.js'));
+});
+
+test('rejects a hashed authenticated chunk eagerly reachable from the public entry', async () => {
+  await assert.rejects(
+    checkPublicBundleBoundary({
+      outDir: await fixture({ virtualAuth: true, eagerPrivateChunk: '_AuthenticatedApp-hash.js' }),
+      budgetBytes: 100,
+      cssBudgetBytes: 100,
+    }),
+    /eagerly reachable/,
+  );
 });
 
 test('rejects Clerk modules bundled into the public entry itself', async () => {

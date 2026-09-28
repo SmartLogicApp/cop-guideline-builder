@@ -19,6 +19,7 @@ type AffiliateReport = {
   companyName: string;
   contact: { email: string; phone: string | null; company: string };
   referralCode: string;
+  status: string;
   currentRate: number;
   nextRateChangeDate: string | null;
   newRate: number | null;
@@ -34,6 +35,7 @@ const headers = [
   { key: "name", label: "Name" },
   { key: "contact", label: "Contact (email, phone, company)" },
   { key: "referralCode", label: "Referral code" },
+  { key: "status", label: "Status" },
   { key: "currentRate", label: "Current rate" },
   { key: "nextRateChangeDate", label: "Next rate change date and new rate" },
   { key: "restorationDeadline", label: "Restoration deadline if at 0%" },
@@ -43,7 +45,7 @@ const headers = [
 
 const date = (value: string | null) => value ? new Date(value).toLocaleDateString() : "—";
 
-export default function AdminAffiliatesList() {
+export function AdminAffiliatesTable() {
   const { getToken } = useAuth();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: string; desc: boolean }>({ key: "name", desc: false });
@@ -100,7 +102,7 @@ export default function AdminAffiliatesList() {
   };
 
   return (
-    <AdminShell title="Affiliates" subtitle="Affiliate enrollment, commission rates, referred clients, and workspace access.">
+    <>
       <div className="mb-4 flex flex-col gap-3 rounded-lg border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
         <label className="relative w-full sm:max-w-md">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -138,12 +140,13 @@ export default function AdminAffiliatesList() {
                 </td>
                 <td className="whitespace-normal px-3 py-3">{[affiliate.contact.email, affiliate.contact.phone, affiliate.contact.company].filter(Boolean).join(" · ")}</td>
                 <td className="whitespace-nowrap px-3 py-3 font-mono">{affiliate.referralCode}</td>
+                <td className="whitespace-nowrap px-3 py-3 font-semibold">{affiliate.status}</td>
                 <td className="whitespace-nowrap px-3 py-3">{affiliate.currentRate}%</td>
                 <td className="min-w-[220px] whitespace-normal px-3 py-3">
-                  {affiliate.nextRateChangeDate && affiliate.newRate !== null
-                    ? `${date(affiliate.nextRateChangeDate)} → ${affiliate.newRate}%` : "No scheduled change"}
+                  {affiliate.status === "Active" && affiliate.nextRateChangeDate && affiliate.newRate !== null
+                    ? `${date(affiliate.nextRateChangeDate)} → ${affiliate.newRate}%` : "—"}
                 </td>
-                <td className="whitespace-nowrap px-3 py-3">{affiliate.restorationDeadline ? date(affiliate.restorationDeadline) : "—"}</td>
+                <td className="whitespace-nowrap px-3 py-3">{affiliate.status === "Active" && affiliate.restorationDeadline ? date(affiliate.restorationDeadline) : "—"}</td>
                 <td className="whitespace-nowrap px-3 py-3">{affiliate.activeClients} active / {affiliate.canceledClients} canceled</td>
                 <td className="min-w-[190px] whitespace-normal break-words px-3 py-3">
                   {affiliate.workspaceAccessStatus}{affiliate.workspaceAccessEndDate ? ` · ends ${date(affiliate.workspaceAccessEndDate)}` : ""}
@@ -179,10 +182,16 @@ export default function AdminAffiliatesList() {
                   </details>
                 </td>
               </tr>)}
-              {filtered.length === 0 && <tr><td colSpan={9} className="p-10 text-center text-slate-500">No affiliates found.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={10} className="p-10 text-center text-slate-500">No affiliates found.</td></tr>}
             </tbody>
           </table>
         </div>}
-    </AdminShell>
+    </>
   );
+}
+
+export default function AdminAffiliatesList() {
+  return <AdminShell title="Affiliates" subtitle="Affiliate enrollment, commission rates, referred clients, and workspace access.">
+    <AdminAffiliatesTable />
+  </AdminShell>;
 }

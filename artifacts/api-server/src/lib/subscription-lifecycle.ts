@@ -12,9 +12,9 @@ import { syncStripeSubscriptionById } from "../webhookHandlers.js";
 import {
   chooseCanonicalStripeSubscription,
   isStaleForStripeReconciliation,
-  preferredAccountEmail,
   type StripeSubscriptionSummary,
 } from "./subscription-lifecycle-rules.js";
+import { resolveAccountContact } from "./account-contact.js";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const STRIPE_PAGE_SIZE = 100;
@@ -173,7 +173,7 @@ async function sendTrialEndingReminderForAccount(
   const users = await db.select().from(accountUsers).where(
     eq(accountUsers.accountId, account.id),
   );
-  const recipient = preferredAccountEmail(users);
+  const recipient = (await resolveAccountContact(users)).email;
   if (!recipient) {
     const warning = "No email on file";
     logger.warn({ accountId }, "Trial reminder skipped: no email on file.");

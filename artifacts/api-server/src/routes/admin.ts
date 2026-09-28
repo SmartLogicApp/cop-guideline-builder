@@ -28,9 +28,8 @@ import {
   usageAlertEmailHtml,
   type UsageAlertRow,
 } from "../lib/usage-alert";
-import { activityWindow, nextRateDown } from "../lib/affiliate-commission.js";
-import { getAffiliateWorkspaceReport, type ConsultantWorkspaceLink } from "../lib/admin-affiliate-report.js";
-import { preferredAccountEmail } from "../lib/subscription-lifecycle-rules.js";
+import { affiliateReportRateFields, getAffiliateWorkspaceReport, type ConsultantWorkspaceLink } from "../lib/admin-affiliate-report.js";
+import { resolveAccountContact, resolveAccountContacts } from "../lib/account-contact.js";
 
 /**
  * Sender for transactional mail. Resend's onboarding@resend.dev is a shared
@@ -169,7 +168,7 @@ router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) =>
       : [];
     const usersByAccount = new Map<string, typeof users>();
     for (const user of users) {
-      if (!user.accountId || !user.email) continue;
+      if (!user.accountId) continue;
       const current = usersByAccount.get(user.accountId) ?? [];
       current.push(user);
       usersByAccount.set(user.accountId, current);
@@ -181,7 +180,13 @@ router.post("/cron/trial-warnings", requireCronOrSuperAdmin, async (req, res) =>
     const failed: Array<{ accountId: string; error: string }> = [];
 
     for (const account of candidates) {
-      const recipient = preferredAccountEmail(usersByAccount.get(account.id) ?? []);
+      let recipient: string | null;
+      try {
+        recipient = (await resolveAccountContact(usersByAccount.get(account.id) ?? [])).email;
+      } catch {
+        failed.push({ accountId: account.id, error: "Unable to resolve account contact from Clerk." });
+        continue;
+      }
       if (!recipient) {
         req.log.warn({ accountId: account.id }, "Trial reminder skipped: no email on file.");
         warningCount++;
@@ -346,6 +351,7 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
       current.push(u);
       usersByAccount.set(u.accountId, current);
     }
+    const contacts = await resolveAccountContacts(usersByAccount, allAccounts.map((account) => account.id));
 
     const clients = allAccounts.map((a) => {
       const tok = tokenByAccount.get(a.id) ?? {
@@ -368,7 +374,7 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
         termsVersion:        a.termsVersion,
         createdAt:           a.createdAt,
         userCount:           userCountByAccount.get(a.id) ?? 0,
-        contact: { name: null, email: preferredAccountEmail(usersByAccount.get(a.id) ?? []), phone: null },
+        contact: contacts.get(a.id),
         referredBy: a.referralCode ? affiliateByCode.get(a.referralCode) ?? a.referralCode : null,
         totalTokens: allTokensByAccount.get(a.id) ?? 0,
         thisMonth: {
@@ -413,7 +419,7 @@ const CLIENT_CSV_HEADERS = [
   "Next billing date", "Tokens this month", "Tokens total", "Referred by",
 ];
 const AFFILIATE_CSV_HEADERS = [
-  "Name", "Contact (email, phone, company)", "Referral code", "Current rate",
+  "Name", "Contact (email, phone, company)", "Referral code", "Status", "Current rate",
   "Next rate change date and new rate", "Restoration deadline if at 0%",
   "Clients active/canceled", "Workspace access status + end date",
 ];
@@ -450,6 +456,7 @@ router.get("/clients/download", requireAnyAdmin, async (req, res) => {
       group.push(user);
       usersByAccount.set(user.accountId, group);
     }
+    const contacts = await resolveAccountContacts(usersByAccount, allAccounts.map((account) => account.id));
     const monthTokens = new Map<string, number>();
     const totalTokens = new Map<string, number>();
     for (const [rows, target] of [[monthRows, monthTokens], [lifetimeRows, totalTokens]] as const) {
@@ -464,7 +471,7 @@ router.get("/clients/download", requireAnyAdmin, async (req, res) => {
         id: account.id, facilityName: account.facilityName, createdAt: account.createdAt,
         status: adminClientStatus(account.subscriptionStatus, account.subscriptionCancelAtPeriodEnd, account.subscriptionCurrentPeriodEnd),
         nextBillingDate: account.subscriptionCurrentPeriodEnd,
-        contact: { name: null, email: preferredAccountEmail(usersByAccount.get(account.id) ?? []), phone: null },
+        contact: contacts.get(account.id),
         referredBy: account.referralCode ? companyByCode.get(account.referralCode) ?? account.referralCode : null,
         thisMonth: { totalTokens: monthTokens.get(account.id) ?? 0 },
         totalTokens: totalTokens.get(account.id) ?? 0,
@@ -515,13 +522,7 @@ router.get("/affiliates", requireAnyAdmin, async (req, res) => {
     }
     return res.json(affiliateRows.map((affiliate) => {
       const referred = allAccounts.filter((account) => account.referralCode === affiliate.referralCode);
-      const anchor = affiliate.rateEffectiveAt ?? affiliate.createdAt ?? now;
-      const window = activityWindow({
-        currentRatePct: affiliate.commissionRatePct,
-        lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
-        rateEffectiveAt: anchor,
-      });
-      const nextRate = affiliate.commissionRatePct > 0 ? nextRateDown(affiliate.commissionRatePct) : null;
+      const rate = affiliateReportRateFields(affiliate, now);
       const workspaceReport = getAffiliateWorkspaceReport(
         affiliate,
         consultantWorkspaces as ConsultantWorkspaceLink[],
@@ -536,10 +537,11 @@ router.get("/affiliates", requireAnyAdmin, async (req, res) => {
         companyName: affiliate.companyName,
         contact: { email: affiliate.email, phone: affiliate.phone, company: affiliate.companyName },
         referralCode: affiliate.referralCode,
+        status: rate.status,
         currentRate: affiliate.commissionRatePct,
-        nextRateChangeDate: nextRate === null ? null : window.graceEndsAt,
-        newRate: nextRate,
-        restorationDeadline: workspaceReport.restorationDeadline,
+        nextRateChangeDate: rate.nextRateChangeDate,
+        newRate: rate.newRate,
+        restorationDeadline: rate.restorationDeadline,
         activeClients: clientStatuses.filter((status) => status === "Active" || status === "Trial").length,
         canceledClients: clientStatuses.filter((status) => status.startsWith("Canceled") || status === "Removed").length,
         workspaceAccessStatus: workspaceReport.workspaceAccessStatus,
@@ -609,12 +611,7 @@ router.get("/affiliates/download", requireAnyAdmin, async (req, res) => {
     const rows = selected.map((affiliate) => {
       const referred = allAccounts.filter((account) => account.referralCode === affiliate.referralCode);
       const now = new Date();
-      const window = activityWindow({
-        currentRatePct: affiliate.commissionRatePct,
-        lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
-        rateEffectiveAt: affiliate.rateEffectiveAt ?? affiliate.createdAt ?? now,
-      });
-      const nextRate = affiliate.commissionRatePct > 0 ? nextRateDown(affiliate.commissionRatePct) : null;
+      const rate = affiliateReportRateFields(affiliate, now);
       const workspaceReport = getAffiliateWorkspaceReport(
         affiliate,
         consultantWorkspaces as ConsultantWorkspaceLink[],
@@ -623,9 +620,10 @@ router.get("/affiliates/download", requireAnyAdmin, async (req, res) => {
       return [
         affiliate.contactName || affiliate.companyName,
         [affiliate.email, affiliate.phone, affiliate.companyName].filter(Boolean).join("; "),
-        affiliate.referralCode, `${affiliate.commissionRatePct}%`,
-        nextRate === null ? "" : `${new Date(window.graceEndsAt).toISOString().slice(0, 10)} → ${nextRate}%`,
-        workspaceReport.restorationDeadline ? new Date(workspaceReport.restorationDeadline).toISOString().slice(0, 10) : "",
+        affiliate.referralCode, rate.status, `${affiliate.commissionRatePct}%`,
+        rate.nextRateChangeDate && rate.newRate !== null
+          ? `${new Date(rate.nextRateChangeDate).toISOString().slice(0, 10)} → ${rate.newRate}%` : "—",
+        rate.restorationDeadline ? new Date(rate.restorationDeadline).toISOString().slice(0, 10) : "—",
         `${referred.filter((a) => ["Active", "Trial"].includes(adminClientStatus(a.subscriptionStatus, a.subscriptionCancelAtPeriodEnd, a.subscriptionCurrentPeriodEnd))).length} active / ${referred.filter((a) => {
           const status = adminClientStatus(a.subscriptionStatus, a.subscriptionCancelAtPeriodEnd, a.subscriptionCurrentPeriodEnd);
           return status.startsWith("Canceled") || status === "Removed";

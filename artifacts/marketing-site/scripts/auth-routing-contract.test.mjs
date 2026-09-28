@@ -12,6 +12,9 @@ const billingSource = await readFile(new URL('../src/pages/billing.tsx', import.
 const registerSource = await readFile(new URL('../src/pages/register.tsx', import.meta.url), 'utf8');
 const acceptTermsSource = await readFile(new URL('../src/pages/accept-terms.tsx', import.meta.url), 'utf8');
 const workspaceSource = await readFile(new URL('../../../index.jsx', import.meta.url), 'utf8');
+const workspaceEntrySource = await readFile(new URL('../src/workspace-entry.tsx', import.meta.url), 'utf8');
+const adminClientsSource = await readFile(new URL('../src/pages/affiliate-compliance/AdminClients.tsx', import.meta.url), 'utf8');
+const adminAffiliatesSource = await readFile(new URL('../src/pages/affiliate-compliance/AdminAffiliatesList.tsx', import.meta.url), 'utf8');
 
 function componentBody(source, functionName) {
   const start = source.indexOf(`function ${functionName}(`);
@@ -345,4 +348,24 @@ test('pending applications activate only after current published terms are accep
   assert.doesNotMatch(review, /Paid partner approvals are paused/);
   assert.doesNotMatch(review, /holdback|grace period/i);
   assert.match(componentBody(workspaceSource, 'AdminQuickPanel'), /id: "applications"/);
+});
+
+test('workspace Admin tabs reuse the report tables from the standalone Admin Console', () => {
+  assert.match(workspaceEntrySource, /import \{ AdminClientsTable \} from '\.\/pages\/affiliate-compliance\/AdminClients'/);
+  assert.match(workspaceEntrySource, /import \{ AdminAffiliatesTable \} from '\.\/pages\/affiliate-compliance\/AdminAffiliatesList'/);
+  assert.match(workspaceEntrySource, /<CoPGuidelineBuilder[^>]*AdminClientsTable=\{AdminClientsTable\}[\s\S]*?AdminAffiliatesTable=\{AdminAffiliatesTable\}/);
+  const workspace = componentBody(workspaceSource, 'CoPGuidelineBuilder');
+  assert.match(workspace, /<AdminQuickPanel[^>]*AdminClientsTable=\{AdminClientsTable\} AdminAffiliatesTable=\{AdminAffiliatesTable\}/);
+  const panel = componentBody(workspaceSource, 'AdminQuickPanel');
+  assert.match(panel, /section === "clients" && <div[^>]*><AdminClientsTable \/><\/div>/);
+  assert.match(panel, /section === "affiliates" && <div[^>]*><AdminAffiliatesTable \/><\/div>/);
+  assert.match(panel, /section === "access" && \(\s*<>/);
+  assert.match(panel, /section === "affiliate-tools" && <AffiliateAdminSection/);
+  assert.match(adminClientsSource, /export function AdminClientsTable\(\)/);
+  assert.match(adminAffiliatesSource, /export function AdminAffiliatesTable\(\)/);
+  assert.match(adminClientsSource, /<AdminClientsTable \/>/);
+  assert.match(adminAffiliatesSource, /<AdminAffiliatesTable \/>/);
+  assert.match(adminAffiliatesSource, /\{ key: "status", label: "Status" \}/);
+  assert.match(adminAffiliatesSource, /affiliate\.status === "Active" && affiliate\.nextRateChangeDate/);
+  assert.match(adminAffiliatesSource, /affiliate\.status === "Active" && affiliate\.restorationDeadline/);
 });

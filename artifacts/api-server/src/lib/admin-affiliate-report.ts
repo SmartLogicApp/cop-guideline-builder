@@ -1,3 +1,5 @@
+import { activityWindow, nextRateDown } from "./affiliate-commission.js";
+
 const ZERO_RATE_RESTORATION_DAYS = 60;
 
 export type ConsultantWorkspaceLink = {
@@ -19,6 +21,45 @@ type AffiliateIdentity = {
   commissionRatePct: number;
   rateEffectiveAt: Date | null;
 };
+
+export function affiliateReportStatus(affiliate: { status: string; applicationHeldAt: Date | null }): string {
+  if (affiliate.status === "pending" && affiliate.applicationHeldAt) return "Held";
+  const labels: Record<string, string> = {
+    active: "Active",
+    pending: "Pending",
+    rejected: "Rejected",
+    suspended: "Suspended",
+    terminated: "Terminated",
+  };
+  return labels[affiliate.status] ?? affiliate.status;
+}
+
+/** Application rows may have a default rate/date, but only active partners have a live schedule. */
+export function affiliateReportRateFields(affiliate: {
+  status: string;
+  applicationHeldAt: Date | null;
+  commissionRatePct: number;
+  rateEffectiveAt: Date | null;
+  createdAt: Date | null;
+  lastQualifyingReferralAt: Date | null;
+}, now = new Date()) {
+  const status = affiliateReportStatus(affiliate);
+  if (status !== "Active") {
+    return { status, nextRateChangeDate: null, newRate: null, restorationDeadline: null };
+  }
+  const nextRate = affiliate.commissionRatePct > 0 ? nextRateDown(affiliate.commissionRatePct) : null;
+  const window = nextRate === null ? null : activityWindow({
+    currentRatePct: affiliate.commissionRatePct,
+    lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
+    rateEffectiveAt: affiliate.rateEffectiveAt ?? affiliate.createdAt ?? now,
+  });
+  return {
+    status,
+    nextRateChangeDate: window?.graceEndsAt ?? null,
+    newRate: nextRate,
+    restorationDeadline: affiliateRestorationDeadline(affiliate.commissionRatePct, affiliate.rateEffectiveAt),
+  };
+}
 
 function normalizedEmail(email: string | null | undefined) {
   return email?.trim().toLocaleLowerCase("en-US") ?? "";

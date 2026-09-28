@@ -46,3 +46,4 @@
 - [Workspace preview browser fixtures](workspace-preview-browser-fixtures.md) — scanner browser tests need a test-only identity wrapper and matching active access response.
 - [Active signup source](active-signup-source.md) — use the current marketing-site flow rather than restoring the deleted standalone builder for signup changes.
 - [Native TypeScript test imports](native-ts-test-imports.md) — Node's native TS test runner does not remap .js import specifiers to .ts files; register resolution hooks before dynamic imports.
+- [Client contact authority](client-contact-authority.md) — account-user email may be blank despite Clerk signup; reports and reminders should resolve the verified primary Clerk contact first.

@@ -32,7 +32,7 @@ function date(value: string | null) {
   return value ? new Date(value).toLocaleDateString() : "—";
 }
 
-export default function AdminClients() {
+export function AdminClientsTable() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -118,7 +118,7 @@ export default function AdminClients() {
   };
 
   return (
-    <AdminShell title="Clients" subtitle="Search, sort, export, and manage client subscription access.">
+    <>
       <div className="mb-4 flex flex-col gap-3 rounded-lg border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
         <label className="relative w-full sm:max-w-md">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -173,6 +173,12 @@ export default function AdminClients() {
             </tbody>
           </table>
         </div>}
-    </AdminShell>
+    </>
   );
+}
+
+export default function AdminClients() {
+  return <AdminShell title="Clients" subtitle="Search, sort, export, and manage client subscription access.">
+    <AdminClientsTable />
+  </AdminShell>;
 }

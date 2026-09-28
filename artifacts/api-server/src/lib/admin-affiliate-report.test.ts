@@ -1,12 +1,23 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { registerHooks } from "node:module";
 import test from "node:test";
-import {
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.startsWith(".") && specifier.endsWith(".js")) {
+      return nextResolve(`${specifier.slice(0, -3)}.ts`, context);
+    }
+    return nextResolve(specifier, context);
+  },
+});
+const {
+  affiliateReportRateFields,
+  affiliateReportStatus,
   affiliateRestorationDeadline,
   findAffiliateConsultantWorkspace,
   getAffiliateWorkspaceReport,
-  type ConsultantWorkspaceLink,
-} from "./admin-affiliate-report.ts";
+} = await import("./admin-affiliate-report.ts");
+import type { ConsultantWorkspaceLink } from "./admin-affiliate-report.ts";
 
 const affiliate = {
   clerkUserId: "user_verified_123",
@@ -96,6 +107,34 @@ test("0% restoration deadline is rateEffectiveAt plus sixty days, independent of
   assert.equal(affiliateRestorationDeadline(0, null), null);
 });
 
+test("pending, held, rejected and inactive partners have no commission schedule in reports", () => {
+  const now = new Date("2026-05-01T12:00:00.000Z");
+  for (const status of ["pending", "rejected", "suspended", "terminated"]) {
+    const row = { ...affiliate, status, applicationHeldAt: null, lastQualifyingReferralAt: null };
+    const report = affiliateReportRateFields(row, now);
+    assert.equal(report.status, affiliateReportStatus(row));
+    assert.equal(report.nextRateChangeDate, null);
+    assert.equal(report.newRate, null);
+    assert.equal(report.restorationDeadline, null);
+  }
+  const held = affiliateReportRateFields({
+    ...affiliate, status: "pending", applicationHeldAt: now, lastQualifyingReferralAt: null,
+  }, now);
+  assert.equal(held.status, "Held");
+  assert.equal(held.restorationDeadline, null);
+  const activeZero = affiliateReportRateFields({
+    ...affiliate, status: "active", applicationHeldAt: null, lastQualifyingReferralAt: null,
+  }, now);
+  assert.equal(activeZero.status, "Active");
+  assert.equal(activeZero.restorationDeadline?.toISOString(), "2026-05-31T12:00:00.000Z");
+  const activeTwenty = affiliateReportRateFields({
+    ...affiliate, status: "active", applicationHeldAt: null, lastQualifyingReferralAt: null,
+    commissionRatePct: 20,
+  }, now);
+  assert.equal(activeTwenty.newRate, 10);
+  assert.ok(activeTwenty.nextRateChangeDate);
+});
+
 test("admin affiliate JSON and CSV routes both use the shared workspace and restoration derivation", () => {
   const routes = readFileSync(new URL("../routes/admin.ts", import.meta.url), "utf8");
   const jsonRoute = routes.slice(routes.indexOf('router.get("/affiliates"'), routes.indexOf('router.get("/affiliates/download"'));
@@ -103,9 +142,12 @@ test("admin affiliate JSON and CSV routes both use the shared workspace and rest
   assert.match(jsonRoute, /getAffiliateWorkspaceReport\(/);
   assert.match(jsonRoute, /workspaceReport\.workspaceAccessStatus/);
   assert.match(jsonRoute, /workspaceReport\.workspaceAccessEndDate/);
-  assert.match(jsonRoute, /workspaceReport\.restorationDeadline/);
+  assert.match(jsonRoute, /rate\.restorationDeadline/);
+  assert.match(jsonRoute, /status: rate\.status/);
+  assert.match(jsonRoute, /affiliateReportRateFields\(affiliate, now\)/);
   assert.match(csvRoute, /getAffiliateWorkspaceReport\(/);
   assert.match(csvRoute, /workspaceReport\.workspaceAccessStatus/);
   assert.match(csvRoute, /workspaceReport\.workspaceAccessEndDate/);
-  assert.match(csvRoute, /workspaceReport\.restorationDeadline/);
+  assert.match(csvRoute, /rate\.restorationDeadline/);
+  assert.match(csvRoute, /rate\.status/);
 });
