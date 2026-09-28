@@ -5,7 +5,8 @@ import { db, affiliates, affiliateAgreements, affiliateAgreementInvitations, aff
 import { and, eq, isNull } from "drizzle-orm";
 import { requireSuperAdmin } from "../lib/admin-guards.js";
 import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
-import { sendViaResend } from "../lib/resend-mailer.js";
+import { selectedTransport, sendViaResend } from "../lib/resend-mailer.js";
+import { invitationDeliveryOutcome } from "../lib/affiliate-invitation-delivery.js";
 import { getReturnBase } from "../lib/return-base.js";
 import { isSampleAgreementVersion } from "../lib/affiliate-sample-agreement.js";
 import {
@@ -157,20 +158,30 @@ router.post("/:affiliateId/invite", requireSuperAdmin, async (req, res) => {
   });
   if (!invitation) return res.status(409).json({ error: "Applicant status or acceptance changed. Refresh the application." });
   // The fragment is not sent to the web server in an HTTP request or referrer.
-  const result = await sendViaResend({
-    to: invitation.recipientEmail,
-    subject: "Review your CMS Compliance Suite affiliate agreement",
-    text: `Please review and accept the affiliate agreement using this private link (expires in 7 days): ${link}`,
-    html: `<p>Please review and accept the affiliate agreement using this private link (expires in 7 days): <a href="${link}">Review agreement</a></p>`,
-  });
-  if (!result.sent) {
-    await db.update(affiliateAgreementInvitations).set({ revokedAt: new Date() })
-      .where(eq(affiliateAgreementInvitations.id, invitation.id));
-    return res.status(502).json({ error: "The invitation could not be sent. Please retry." });
+  // A transport failure is recorded only as a fixed category, never as the
+  // raw provider error (which can echo the address, key, or private link).
+  let result: Awaited<ReturnType<typeof sendViaResend>>;
+  try {
+    result = await sendViaResend({
+      to: invitation.recipientEmail,
+      subject: "Review your CMS Compliance Suite affiliate agreement",
+      text: `Please review and accept the affiliate agreement using this private link (expires in 7 days): ${link}`,
+      html: `<p>Please review and accept the affiliate agreement using this private link (expires in 7 days): <a href="${link}">Review agreement</a></p>`,
+    });
+  } catch {
+    result = { sent: false, transport: selectedTransport(), error: "Unexpected mail transport failure" };
   }
-  await db.update(affiliateAgreementInvitations).set({ sentAt: new Date() })
-    .where(eq(affiliateAgreementInvitations.id, invitation.id));
-  return res.json({ sent: true, version, expiresAt: new Date(now.getTime() + 7 * 86_400_000) });
+  const outcome = invitationDeliveryOutcome(result, new Date());
+  await db.update(affiliateAgreementInvitations).set(outcome.update)
+      .where(eq(affiliateAgreementInvitations.id, invitation.id));
+  if (!outcome.sent) {
+    req.log.warn({ invitationId: invitation.id, category: outcome.category, transport: result.transport, status: outcome.update.deliveryHttpStatus },
+      "Affiliate agreement invitation email was not accepted");
+    return res.status(502).json(outcome.response);
+  }
+  req.log.info({ invitationId: invitation.id, transport: result.transport, deliveryStatus: "accepted" },
+    "Affiliate agreement invitation accepted by email provider");
+  return res.json({ sent: true, deliveryStatus: "accepted", version, expiresAt: new Date(now.getTime() + 7 * 86_400_000) });
 });
 
 const invitationFields = {

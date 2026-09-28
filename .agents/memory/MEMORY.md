@@ -44,3 +44,4 @@
 - [Local marketing build validation](local-marketing-build-validation.md) — local verification can use browser-test mode with dev Clerk credentials; never treat that bypass as a production publish check.
 - [Workspace preview browser fixtures](workspace-preview-browser-fixtures.md) — scanner browser tests need a test-only identity wrapper and matching active access response.
 - [Active signup source](active-signup-source.md) — use the current marketing-site flow rather than restoring the deleted standalone builder for signup changes.
+- [Native TypeScript test imports](native-ts-test-imports.md) — Node's native TS test runner does not remap .js import specifiers to .ts files; register resolution hooks before dynamic imports.

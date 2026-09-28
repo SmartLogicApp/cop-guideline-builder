@@ -6,6 +6,9 @@ import {
   selectedTransport,
   deliver,
   sendViaResend,
+  mailFailureCategory,
+  mailFailureExplanation,
+  safeMailMessageId,
 } from "./resend-mailer.ts";
 
 /**
@@ -287,5 +290,32 @@ test("a configured API key never falls back to the broken connector", async () =
     );
   } finally {
     fetchStub.restore();
+  }
+});
+
+test("invitation failure categories depend only on safe transport metadata", () => {
+  const privateDetail = "hector@example.com #token=abc re_secret";
+  const failures = [
+    [{ sent: false, transport: "none", error: privateDetail }, "sender_configuration"],
+    [{ sent: false, transport: "connector", status: 401, error: privateDetail }, "authentication"],
+    [{ sent: false, transport: "api_key", status: 403, error: privateDetail }, "sender_permission"],
+    [{ sent: false, transport: "api_key", status: 422, error: privateDetail }, "invalid_message"],
+    [{ sent: false, transport: "api_key", status: 429, error: privateDetail }, "rate_limited"],
+    [{ sent: false, transport: "connector", status: 503, error: privateDetail }, "provider_unavailable"],
+    [{ sent: false, transport: "api_key", error: privateDetail }, "network"],
+    [{ sent: false, transport: "api_key", status: 409, error: privateDetail }, "provider_rejected"],
+  ] as const;
+  for (const [result, category] of failures) {
+    assert.equal(mailFailureCategory(result), category);
+    assert.ok(mailFailureExplanation[category]);
+    assert.doesNotMatch(JSON.stringify({ category, explanation: mailFailureExplanation[category] }), /hector|token|re_secret/);
+  }
+});
+
+test("only UUID-shaped provider receipts can be stored", () => {
+  const id = "49a3999c-0ce1-4ea6-a6d7-e02d5bc0181c";
+  assert.equal(safeMailMessageId(id), id);
+  for (const untrusted of [undefined, "re_123", "hector@example.com", "a".repeat(64), `${id} #token=secret`]) {
+    assert.equal(safeMailMessageId(untrusted), null);
   }
 });

@@ -22,6 +22,12 @@ export const affiliateAgreementInvitations = pgTable("affiliate_agreement_invita
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   consumedAt: timestamp("consumed_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  // "accepted" means Resend accepted the request, not inbox delivery.
+  deliveryStatus: text("delivery_status"),
+  deliveryFailureCategory: text("delivery_failure_category"),
+  providerMessageId: text("provider_message_id"),
+  deliveryTransport: text("delivery_transport"),
+  deliveryHttpStatus: integer("delivery_http_status"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("affiliate_agreement_invitations_affiliate_idx").on(table.affiliateId),

@@ -4545,7 +4545,7 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "Could not send invitation");
-      setNotice(`Agreement invitation sent to ${row.email}. Acceptance is required before approval.`);
+      setNotice(`Email provider accepted the agreement invitation for ${row.email}; inbox delivery is not confirmed. Acceptance is required before approval.`);
     } catch (failure) {
       setActionError(failure.message || "Could not send invitation");
     } finally {

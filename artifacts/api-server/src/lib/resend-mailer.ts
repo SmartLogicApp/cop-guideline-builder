@@ -61,6 +61,41 @@ export type Transport = "api_key" | "connector";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
+// Deliberately classify by status and transport only. Provider response bodies
+// and thrown messages may echo recipients, private links, or credentials.
+export type MailFailureCategory =
+  | "sender_configuration" | "authentication" | "sender_permission"
+  | "invalid_message" | "rate_limited" | "provider_unavailable"
+  | "network" | "provider_rejected";
+
+export function mailFailureCategory(result: Extract<SendResult, { sent: false }>): MailFailureCategory {
+  if (result.transport === "none") return "sender_configuration";
+  if (result.status === undefined) return "network";
+  if (result.status === 401) return "authentication";
+  if (result.status === 403) return "sender_permission";
+  if (result.status === 429) return "rate_limited";
+  if (result.status === 400 || result.status === 422) return "invalid_message";
+  if (result.status >= 500) return "provider_unavailable";
+  return "provider_rejected";
+}
+
+export const mailFailureExplanation: Record<MailFailureCategory, string> = {
+  sender_configuration: "The sending address is not configured. Ask an administrator to configure a verified sender before retrying.",
+  authentication: "The email provider rejected the mail credentials. Check the mail integration before retrying.",
+  sender_permission: "The email provider did not permit this sender or account to send the message. Check sender verification and permissions.",
+  invalid_message: "The email provider rejected the invitation details. Check the sender configuration and retry.",
+  rate_limited: "The email provider is limiting requests. Wait before retrying.",
+  provider_unavailable: "The email provider is temporarily unavailable. Retry later.",
+  network: "The mail service could not be reached. Retry later.",
+  provider_rejected: "The email provider rejected the invitation. Check the mail integration before retrying.",
+};
+
+// Never persist arbitrary provider-controlled IDs; an unexpected response may
+// include private message content. Resend IDs consist of UUID-style characters.
+export function safeMailMessageId(id: string | undefined): string | null {
+  return typeof id === "string" && /^[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}$/.test(id) ? id : null;
+}
+
 /**
  * The address mail is sent from.
  *
