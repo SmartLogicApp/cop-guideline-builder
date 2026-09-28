@@ -148,20 +148,16 @@ test("the public application form cannot grant anything", () => {
   assert.doesNotMatch(apply, /status:\s*(body|req)\./);
 });
 
-test("the application form does not reveal who is already in the programme", () => {
-  // A distinct "already applied" response would let anyone probe whether a
-  // given company or email is an affiliate.
+test("the application form reports duplicates without creating a second record", () => {
   const apply = codeOnly(routes.slice(routes.indexOf('router.post("/apply"'), routes.indexOf('async function provisionalReferralCode')));
-  assert.doesNotMatch(apply, /already (applied|exists|enrolled)/i);
   assert.match(apply, /received:\s*true/);
-  // The duplicate-email branch specifically must return the same success shape
-  // as a new application. Scoped to that branch — a broader pattern would also
-  // match the input-validation 400s above it, which are fine and necessary.
+  assert.match(apply, /code:\s*"APPLICATION_ALREADY_EXISTS"/);
   assert.match(
     apply,
-    /if \(existing\) \{\s*outcome\("duplicate"\);\s*return res\.status\(200\)/,
-    "a duplicate application must answer 200, identically to a new one",
+    /if \(existing\) \{\s*return duplicate\(\)/,
+    "an existing email must take the explicit conflict path",
   );
+  assert.match(apply, /res\.status\(409\)/);
 });
 
 test("the public application endpoint is rate limited", () => {

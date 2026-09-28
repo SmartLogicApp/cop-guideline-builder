@@ -73,7 +73,7 @@ test("actual application handler rejects suffixed notes and unsafe email", async
   await rejects(apply, { ...application, email: "user-123456789-ref@example.org" });
 });
 
-test("application outcomes are traceable without leaking applicant fields or revealing duplicates", async () => {
+test("application outcomes are traceable without leaking applicant fields and duplicates are explicit", async () => {
   const apply = handler(affiliateRouter, "post", "/apply");
   const attemptId = "78f04526-2f18-41e5-a6f0-26b3268bf684";
   const previousVersion = process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
@@ -141,10 +141,12 @@ test("application outcomes are traceable without leaking applicant fields or rev
   const duplicate = await run(agreedApplication, [1]);
   const racedDuplicate = await run(agreedApplication, [3], { code: "23505", detail: application.about });
   assert.equal(inserted.status, 201);
-  assert.equal(duplicate.status, 200);
-  assert.equal(racedDuplicate.status, 200);
-  assert.deepEqual(inserted.payload, duplicate.payload);
-  assert.deepEqual(inserted.payload, racedDuplicate.payload);
+  assert.equal(duplicate.status, 409);
+  assert.equal(racedDuplicate.status, 409);
+  assert.equal(duplicate.payload.code, "APPLICATION_ALREADY_EXISTS");
+  assert.match(duplicate.payload.error, /an application with this email already exists/i);
+  assert.deepEqual(duplicate.payload, racedDuplicate.payload);
+  assert.notDeepEqual(inserted.payload, duplicate.payload);
   assert.equal(duplicate.inserts, 0);
 
   const failed = await run(agreedApplication, [], { code: "23505", detail: application.about });

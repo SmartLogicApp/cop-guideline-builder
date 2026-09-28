@@ -17,6 +17,12 @@ test('the form cannot submit until the published agreement is loaded and checked
   assert.match(form, /agreementSha256: agreement\.contentSha256/);
 });
 
+test('duplicate applications show an error instead of the received screen', () => {
+  const form = readFileSync(new URL('./affiliates.tsx', import.meta.url), 'utf8');
+  assert.match(form, /if \(conflict\?\.code === 'APPLICATION_ALREADY_EXISTS'\) \{[\s\S]*?setStatus\('error'\);[\s\S]*?setError\('An application with this email already exists\./);
+  assert.match(form, /if \(!response\.ok\) throw new Error\('Application submission failed'\);\s*setStatus\('sent'\)/);
+});
+
 test('older pending applications without acceptance retain the invitation button', () => {
   const admin = readFileSync(new URL('../../../../index.jsx', import.meta.url), 'utf8');
   const applications = admin.slice(admin.indexOf('function AffiliateApplicationsSection('), admin.indexOf('function AdminQuickPanel('));

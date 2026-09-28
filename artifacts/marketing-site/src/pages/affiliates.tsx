@@ -79,6 +79,12 @@ export default function AffiliatesPage() {
       const serverReference = response.headers.get('X-Application-Reference');
       if (serverReference) setReference(serverReference);
       if (response.status === 409) {
+        const conflict = await response.json().catch(() => null);
+        if (conflict?.code === 'APPLICATION_ALREADY_EXISTS') {
+          setStatus('error');
+          setError('An application with this email already exists. Contact support if you need to update it or reapply.');
+          return;
+        }
         setAgreed(false);
         setAgreementRefresh((value) => value + 1);
         throw new Error('The agreement changed. Review the current version and accept it again.');

@@ -141,6 +141,13 @@ router.post("/apply", async (req, res) => {
     outcome("validation_rejected");
     return res.status(400).json({ error: message });
   };
+  const duplicate = () => {
+    outcome("duplicate");
+    return res.status(409).json({
+      code: "APPLICATION_ALREADY_EXISTS",
+      error: "An application with this email already exists. Contact support if you need to update it or reapply.",
+    });
+  };
   outcome("received");
   const body = req.body ?? {};
   const companyName = typeof body.companyName === "string" ? body.companyName.trim() : "";
@@ -175,14 +182,12 @@ router.post("/apply", async (req, res) => {
   }
 
   try {
-    // One application per email. Returns the same 200 either way — an endpoint
-    // that said "already applied" would let anyone test whether a given company
-    // is in the programme.
+    // One application per email, regardless of the existing record's status.
+    // Report duplicates explicitly rather than implying a new application was created.
     const [existing] = await db.select({ id: affiliates.id })
       .from(affiliates).where(eq(affiliates.email, email)).limit(1);
     if (existing) {
-      outcome("duplicate");
-      return res.status(200).json({ ok: true, received: true });
+      return duplicate();
     }
 
     const assignedCode = await provisionalReferralCode(companyName);
@@ -238,8 +243,7 @@ router.post("/apply", async (req, res) => {
         const [existing] = await db.select({ id: affiliates.id })
           .from(affiliates).where(eq(affiliates.email, email)).limit(1);
         if (existing) {
-          outcome("duplicate");
-          return res.status(200).json({ ok: true, received: true });
+          return duplicate();
         }
       } catch {
         // The lookup failed as well; report failure, not a false success.
