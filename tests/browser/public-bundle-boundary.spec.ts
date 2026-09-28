@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, test, type Page, type Request } from "@playwright/test";
 import bundleBoundaryEntries from "../../artifacts/marketing-site/scripts/bundle-boundary-entries.cjs";
 
-const { findPublicBundleBoundaryEntries } = bundleBoundaryEntries;
+const { findChunk, findPublicBundleBoundaryEntries } = bundleBoundaryEntries;
 
 type ManifestChunk = {
   file: string;
@@ -77,9 +77,32 @@ async function privateBuildFiles(baseURL: string) {
   } = findPublicBundleBoundaryEntries(manifest);
 
   const publicFiles = collectFiles(manifest, publicEntry[0], false);
+  // Legal pages are public lazy routes. Their shared chunks can also appear
+  // in the authenticated graph without becoming private downloads.
+  for (const source of ["src/pages/terms.tsx", "src/pages/privacy.tsx"]) {
+    const [key] = findChunk(
+      manifest,
+      (key: string, chunk: ManifestChunk) =>
+        chunk.isDynamicEntry &&
+        (chunk.src ?? key).replaceAll("\\", "/").endsWith(source),
+      `public ${source} route`,
+    );
+    expect(publicEntry[1].dynamicImports).toContain(key);
+    for (const file of collectFiles(manifest, key, false)) publicFiles.add(file);
+  }
   const authFiles = collectFiles(manifest, authEntry[0], false);
   for (const clerkFile of authBoundary.clerkChunks) authFiles.add(clerkFile);
   const workspaceFiles = collectFiles(manifest, workspaceEntry[0], true);
+  for (const privateFile of [
+    authEntry[1].file,
+    workspaceEntry[1].file,
+    ...authBoundary.clerkChunks,
+  ]) {
+    expect(
+      publicFiles.has(privateFile),
+      `public routes must not import the private entry ${privateFile}`,
+    ).toBe(false);
+  }
   for (const publicFile of publicFiles) {
     authFiles.delete(publicFile);
     workspaceFiles.delete(publicFile);
@@ -123,7 +146,7 @@ test.describe("production browser bundle boundary", () => {
     for (const [route, heading] of [
       ["/", /^Navigate healthcare compliance with absolute confidence\.$/],
       ["/terms", /terms of service/i],
-      ["/privacy", /^Privacy Policy$/],
+      ["/privacy", /^PRIVACY POLICY$/],
     ] as const) {
       const response = await page.goto(routeUrl(baseURL!, route));
       expect(response?.status(), `${route} should load from production preview`).toBe(

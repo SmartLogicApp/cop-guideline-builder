@@ -4,6 +4,7 @@ import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { adminUsers } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
+import { isSuperAdminId } from "./super-admin-identities.js";
 
 /**
  * The admin authorization guards, in one place.
@@ -19,20 +20,13 @@ import { and, eq } from "drizzle-orm";
  * application. One implementation, imported by both.
  */
 
-// ─── Super-admin IDs (env var) ───────────────────────────────────────────────
-
-export function getSuperAdminIds(): string[] {
-  return (process.env.ADMIN_CLERK_USER_IDS ?? "")
-    .split(",").map((s) => s.trim()).filter(Boolean);
-}
-
 // ─── requireSuperAdmin — env-var only ────────────────────────────────────────
 
 export function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
   const auth = getAuth(req as any);
   const userId = auth?.userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  if (!getSuperAdminIds().includes(userId))
+  if (!isSuperAdminId(userId))
     return res.status(403).json({ error: "Super-admin access required" });
   (req as any).clerkUserId = userId;
   return next();
@@ -80,7 +74,7 @@ export async function requireAnyAdmin(req: Request, res: Response, next: NextFun
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   // Super-admin check first (no DB hit)
-  if (getSuperAdminIds().includes(userId)) {
+  if (isSuperAdminId(userId)) {
     (req as any).clerkUserId = userId;
     (req as any).isSuperAdmin = true;
     return next();

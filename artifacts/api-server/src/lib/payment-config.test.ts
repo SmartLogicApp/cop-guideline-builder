@@ -32,12 +32,89 @@ test("payment acceptance can only be enabled explicitly", () => {
 });
 
 test("new pending-payment accounts keep the 30-day direct checkout trial", () => {
-  assert.deepEqual(resolveCheckoutTrialPlan({
+  const plan = resolveCheckoutTrialPlan({
     subscriptionStatus: "pending_payment",
     trialEndsAt: null,
     hasStripeSubscriptionHistory: false,
     trialPeriodDays: 30,
-  }), { kind: "first-direct", trialPeriodDays: 30 });
+  });
+  assert.deepEqual(plan, { kind: "first-direct", trialPeriodDays: 30 });
+  const stripeNowSeconds = Math.floor(new Date("2026-06-01T12:00:00.000Z").getTime() / 1000);
+  assert.equal(resolveFirstDirectSetupTrialEnd({
+    trialPolicy: "first-direct-30",
+    trialPeriodDays: 30,
+    subscriptionStatus: "pending_payment",
+    hasStripeSubscriptionHistory: false,
+    stripeNowSeconds,
+  }), stripeNowSeconds + 30 * 24 * 60 * 60);
+});
+
+test("affiliate card setup uses only the active complimentary grant's remaining time", () => {
+  const now = new Date("2026-06-01T12:00:00.000Z");
+  const expiresAt = new Date("2026-06-10T12:00:00.000Z");
+  const stripeNowSeconds = Math.floor(now.getTime() / 1000);
+  const plan = resolveCheckoutTrialPlan({
+    subscriptionStatus: "pending_payment",
+    trialEndsAt: null,
+    affiliateAccessGrantedBy: "affiliate-self-service",
+    affiliateAccessEndsAt: expiresAt,
+    hasStripeSubscriptionHistory: false,
+    now,
+  });
+  assert.deepEqual(plan, {
+    kind: "affiliate-access",
+    trialEnd: Math.floor(expiresAt.getTime() / 1000),
+  });
+  assert.equal(resolveFirstDirectSetupTrialEnd({
+    trialPolicy: `affiliate-access-${Math.floor(expiresAt.getTime() / 1000)}`,
+    trialPeriodDays: 0,
+    subscriptionStatus: "pending_payment",
+    hasStripeSubscriptionHistory: false,
+    stripeNowSeconds,
+  }), Math.floor(expiresAt.getTime() / 1000));
+});
+
+test("near-expiry affiliate access collects the card without a Stripe trial", () => {
+  const now = new Date("2026-06-01T12:00:00.000Z");
+  const expiresAt = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+  const stripeNowSeconds = Math.floor(now.getTime() / 1000);
+  const trialEnd = Math.floor(expiresAt.getTime() / 1000);
+  const plan = resolveCheckoutTrialPlan({
+    subscriptionStatus: "pending_payment",
+    trialEndsAt: null,
+    affiliateAccessGrantedBy: "affiliate-self-service",
+    affiliateAccessEndsAt: expiresAt,
+    hasStripeSubscriptionHistory: false,
+    now,
+  });
+  assert.deepEqual(plan, { kind: "affiliate-expiring", trialEnd });
+  assert.equal(resolveFirstDirectSetupTrialEnd({
+    trialPolicy: `affiliate-expiring-${trialEnd}`,
+    trialPeriodDays: 0,
+    subscriptionStatus: "pending_payment",
+    hasStripeSubscriptionHistory: false,
+    stripeNowSeconds,
+  }), null);
+});
+
+test("expired affiliate complimentary access is immediate-charge, never a new 30-day trial", () => {
+  const now = new Date("2026-06-01T12:00:00.000Z");
+  const plan = resolveCheckoutTrialPlan({
+    subscriptionStatus: "pending_payment",
+    trialEndsAt: null,
+    affiliateAccessGrantedBy: "affiliate-self-service",
+    affiliateAccessEndsAt: new Date(now.getTime() - 1),
+    hasStripeSubscriptionHistory: false,
+    now,
+  });
+  assert.deepEqual(plan, { kind: "affiliate-expired" });
+  assert.equal(resolveFirstDirectSetupTrialEnd({
+    trialPolicy: "affiliate-expired",
+    trialPeriodDays: 0,
+    subscriptionStatus: "pending_payment",
+    hasStripeSubscriptionHistory: false,
+    stripeNowSeconds: Math.floor(now.getTime() / 1000),
+  }), null);
 });
 
 test("local trials use their remaining Stripe trial_end and never add another 30 days", () => {

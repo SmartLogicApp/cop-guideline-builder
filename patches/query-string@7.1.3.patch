@@ -1,0 +1,14 @@
+diff --git a/index.js b/index.js
+index 787b878..bb926cd 100644
+--- a/index.js
++++ b/index.js
+@@ -1,6 +1,8 @@
+ 'use strict';
+ const strictUriEncode = require('strict-uri-encode');
+-const decodeComponent = require('decode-uri-component');
++// The patched decoder is ESM-only; Node's require(esm) returns its namespace.
++const decoder = require('decode-uri-component');
++const decodeComponent = decoder.default || decoder;
+ const splitOnFirst = require('split-on-first');
+ const filterObject = require('filter-obj');
+ 

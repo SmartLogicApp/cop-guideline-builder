@@ -1,7 +1,6 @@
 import { Router, type IRouter } from "express";
 import { getReturnBase } from "../lib/return-base.js";
 import {
-  getSuperAdminIds,
   requireAnyAdmin,
   requireCronOrSuperAdmin,
   requireSuperAdmin,

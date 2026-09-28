@@ -178,7 +178,7 @@ router.post("/apply", async (req, res) => {
     // One application per email, regardless of the existing record's status.
     // Report duplicates explicitly rather than implying a new application was created.
     const [existing] = await db.select({ id: affiliates.id })
-      .from(affiliates).where(eq(affiliates.email, email)).limit(1);
+      .from(affiliates).where(eq(sql`lower(trim(${affiliates.email}))`, email)).limit(1);
     if (existing) {
       return duplicate();
     }
@@ -236,7 +236,7 @@ router.post("/apply", async (req, res) => {
     if (error && typeof error === "object" && "code" in error && error.code === "23505") {
       try {
         const [existing] = await db.select({ id: affiliates.id })
-          .from(affiliates).where(eq(affiliates.email, email)).limit(1);
+          .from(affiliates).where(eq(sql`lower(trim(${affiliates.email}))`, email)).limit(1);
         if (existing) {
           return duplicate();
         }
@@ -323,7 +323,7 @@ router.get("/", requireAnyAdmin, async (req, res) => {
           eq(affiliateAgreementAcceptances.contentSha256, affiliateAgreements.contentSha256),
         )).innerJoin(affiliates, and(
           eq(affiliateAgreementAcceptances.affiliateId, affiliates.id),
-          eq(affiliateAgreementAcceptances.signerEmail, sql`lower(${affiliates.email})`),
+          eq(affiliateAgreementAcceptances.signerEmail, sql`lower(trim(${affiliates.email}))`),
           eq(affiliateAgreementAcceptances.identityEpoch, affiliates.agreementIdentityEpoch),
         )).where(inArray(affiliateAgreementAcceptances.affiliateId, ids)),
     ]);
@@ -647,7 +647,8 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
     const [updated] = await db.update(affiliates).set(patch)
       .where(expectedStatus !== null && expectedEmail !== null && expectedEpoch !== null
         ? and(eq(affiliates.id, String(req.params.id)),
-          eq(affiliates.status, expectedStatus), eq(affiliates.email, expectedEmail),
+          eq(affiliates.status, expectedStatus),
+          eq(sql`lower(trim(${affiliates.email}))`, expectedEmail.trim().toLowerCase()),
           eq(affiliates.agreementIdentityEpoch, expectedEpoch),
           ...(body.status === "active" && expectedStatus !== "active"
             ? [currentReviewedAffiliateAcceptanceCondition(), isNull(affiliates.applicationHeldAt)] : []))
@@ -808,7 +809,8 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
             .where(and(
               eq(affiliates.id, row.id), eq(affiliates.status, "pending"),
               isNull(affiliates.applicationHeldAt),
-              eq(affiliates.email, row.email), eq(affiliates.agreementIdentityEpoch, row.agreementIdentityEpoch),
+              eq(sql`lower(trim(${affiliates.email}))`, row.email.trim().toLowerCase()),
+              eq(affiliates.agreementIdentityEpoch, row.agreementIdentityEpoch),
               currentReviewedAffiliateAcceptanceCondition(),
             ))
             .returning();

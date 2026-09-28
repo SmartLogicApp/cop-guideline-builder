@@ -59,7 +59,7 @@ async function requireAffiliate(req: any, res: any, next: any): Promise<void> {
     let [affiliate] = await db.select().from(affiliates).where(eq(affiliates.clerkUserId, auth.userId)).limit(1);
     if (!affiliate) {
       const candidates = await db.select().from(affiliates)
-        .where(eq(sql`lower(${affiliates.email})`, email)).limit(2);
+        .where(eq(sql`lower(trim(${affiliates.email}))`, email.trim().toLowerCase())).limit(2);
       if (candidates.length > 1) {
         res.status(403).json({ error: "Affiliate portal access is unavailable for this account." });
         return;
@@ -67,7 +67,11 @@ async function requireAffiliate(req: any, res: any, next: any): Promise<void> {
       const candidate = candidates[0];
       if (candidate && !candidate.clerkUserId) {
         const [bound] = await db.update(affiliates).set({ clerkUserId: auth.userId, updatedAt: new Date() })
-          .where(and(eq(affiliates.id, candidate.id), isNull(affiliates.clerkUserId), eq(sql`lower(${affiliates.email})`, email)))
+          .where(and(
+            eq(affiliates.id, candidate.id),
+            isNull(affiliates.clerkUserId),
+            eq(sql`lower(trim(${affiliates.email}))`, email.trim().toLowerCase()),
+          ))
           .returning();
         affiliate = bound;
       }
@@ -243,7 +247,7 @@ router.post("/portal/agreement-accept", requireAffiliate, async (req: any, res) 
         eq(affiliateAgreementAcceptances.agreementVersion, affiliateAgreements.version),
         eq(affiliateAgreementAcceptances.contentSha256, affiliateAgreements.contentSha256),
         eq(affiliateAgreementAcceptances.affiliateId, affiliate.id),
-        eq(affiliateAgreementAcceptances.signerEmail, sql`lower(${affiliate.email})`),
+        eq(affiliateAgreementAcceptances.signerEmail, sql`lower(trim(${affiliate.email}))`),
         eq(affiliateAgreementAcceptances.identityEpoch, affiliate.agreementIdentityEpoch),
       )).where(eq(affiliateAgreements.version, currentVersion)).limit(1);
     if (alreadyAccepted) return "already_accepted";

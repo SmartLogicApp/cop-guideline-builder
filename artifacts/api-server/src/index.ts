@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { db, pool } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { getSuperAdminIds } from "./lib/super-admin-identities.js";
 import Stripe from "stripe";
 import { reconcileTestWebhookEndpointForDevelopment } from "./lib/stripe-test-webhook.js";
 import { validateProductionClerkCredentials } from "./lib/production-clerk-credentials.js";
@@ -59,13 +60,10 @@ if (!readinessSmokeTest && process.env.NODE_ENV === "development") {
 
 // ── Bootstrap super-admins into the DB on every startup ──────────────────────
 // Reads valid Clerk user IDs from ADMIN_CLERK_USER_IDS (comma-separated) and
-// upserts them into admin_users so the button works even if the secret is stale.
-// Also includes a hardcoded fallback so production never loses access.
+// upserts them into admin_users for ordinary admin access. This does not grant
+// owner permissions: owner routes always compare the current Clerk ID to config.
 async function bootstrapSuperAdmins() {
-  const ids = (process.env.ADMIN_CLERK_USER_IDS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.startsWith("user_")); // only real Clerk IDs
+  const ids = getSuperAdminIds();
 
   for (const clerkUserId of ids) {
     await db.execute(sql`

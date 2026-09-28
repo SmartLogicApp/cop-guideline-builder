@@ -282,6 +282,12 @@ function checkoutTrialPolicy(trialPlan: ReturnType<typeof resolveCheckoutTrialPl
   switch (trialPlan.kind) {
     case "first-direct":
       return `first-direct-${trialPlan.trialPeriodDays}`;
+    case "affiliate-access":
+      return `affiliate-access-${trialPlan.trialEnd}`;
+    case "affiliate-expiring":
+      return `affiliate-expiring-${trialPlan.trialEnd}`;
+    case "affiliate-expired":
+      return "affiliate-expired";
     case "existing-local":
       return `existing-local-${trialPlan.trialEnd}`;
     case "local-trial-active":
@@ -793,6 +799,19 @@ router.post("/checkout", requireAuth, async (req, res) => {
       return { kind: "account-removal-changed" as const };
     }
 
+    const [lockedAccountUser] = await tx.select({
+      hasComplimentaryAccess: accountUsers.hasComplimentaryAccess,
+      complimentaryAccessGrantedBy: accountUsers.complimentaryAccessGrantedBy,
+      complimentaryAccessEndsAt: accountUsers.complimentaryAccessEndsAt,
+    }).from(accountUsers)
+      .where(and(
+        eq(accountUsers.id, accountUser.id),
+        eq(accountUsers.accountId, account.id),
+      ))
+      .for("update")
+      .limit(1);
+    if (!lockedAccountUser) return { kind: "account-membership-missing" as const };
+
     const lockedCustomerId = currentAccount.stripeCustomerId ?? customerId;
     let subscriptionStatuses: string[];
     try {
@@ -825,6 +844,13 @@ router.post("/checkout", requireAuth, async (req, res) => {
     let trialPlan = resolveCheckoutTrialPlan({
       subscriptionStatus: currentAccount.subscriptionStatus,
       trialEndsAt: currentAccount.trialEndsAt,
+      affiliateAccessGrantedBy: currentAccount.identifierType !== "consultant" &&
+        lockedAccountUser?.complimentaryAccessGrantedBy === "affiliate-self-service"
+        ? "affiliate-self-service"
+        : null,
+      affiliateAccessEndsAt: lockedAccountUser?.hasComplimentaryAccess
+        ? lockedAccountUser.complimentaryAccessEndsAt
+        : null,
       hasStripeSubscriptionHistory,
       now: checkoutNow,
     });
@@ -859,6 +885,26 @@ router.post("/checkout", requireAuth, async (req, res) => {
       return { kind: "checkout-sessions-unavailable" as const };
     }
 
+    if (trialPlan.kind === "affiliate-expiring") {
+      // Do not collect a card inside the final 49 hours of complimentary
+      // access: setup completion would otherwise charge immediately. Expire
+      // any previously created session for this account before instructing
+      // the customer to return after the affiliate access period ends.
+      try {
+        for (const existingSession of existingSessions) {
+          if (existingSession.client_reference_id !== account.id) continue;
+          await stripe.request(
+            `/v1/checkout/sessions/${encodeURIComponent(existingSession.id)}/expire`,
+            { method: "POST" },
+          );
+        }
+      } catch (error) {
+        req.log.error({ err: error, accountId: account.id }, "A near-expiry affiliate Checkout session could not be expired.");
+        return { kind: "checkout-sessions-unavailable" as const };
+      }
+      return { kind: "affiliate-trial-near-end" as const };
+    }
+
     let reusableSession: OpenCheckoutSession | null = null;
     try {
       for (const existingSession of existingSessions) {
@@ -891,6 +937,13 @@ router.post("/checkout", requireAuth, async (req, res) => {
     trialPlan = resolveCheckoutTrialPlan({
       subscriptionStatus: currentAccount.subscriptionStatus,
       trialEndsAt: currentAccount.trialEndsAt,
+      affiliateAccessGrantedBy: currentAccount.identifierType !== "consultant" &&
+        lockedAccountUser?.complimentaryAccessGrantedBy === "affiliate-self-service"
+        ? "affiliate-self-service"
+        : null,
+      affiliateAccessEndsAt: lockedAccountUser?.hasComplimentaryAccess
+        ? lockedAccountUser.complimentaryAccessEndsAt
+        : null,
       hasStripeSubscriptionHistory,
       now: checkoutNow,
     });
@@ -979,10 +1032,22 @@ router.post("/checkout", requireAuth, async (req, res) => {
   if (checkoutResult.kind === "account-missing") {
     return res.status(404).json({ error: "No facility account found" });
   }
+  if (checkoutResult.kind === "account-membership-missing") {
+    return res.status(409).json({
+      error: "Workspace membership changed while checkout was being prepared. Refresh and try again.",
+      code: "ACCOUNT_MEMBERSHIP_CHANGED",
+    });
+  }
   if (checkoutResult.kind === "account-removal-changed") {
     return res.status(409).json({
       error: "This account was removed while checkout was being prepared. Start a new authenticated checkout to restore billing.",
       code: "ACCOUNT_REMOVED",
+    });
+  }
+  if (checkoutResult.kind === "affiliate-trial-near-end") {
+    return res.status(409).json({
+      error: "Affiliate workspace access is close to ending. Wait until it expires before adding a card to avoid an early charge.",
+      code: "AFFILIATE_TRIAL_NEAR_END",
     });
   }
   if (checkoutResult.kind === "checkout-unavailable") {

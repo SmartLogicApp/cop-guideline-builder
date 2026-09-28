@@ -18,9 +18,15 @@ type Status = 'idle' | 'sending' | 'sent' | 'error';
 
 export default function AffiliatesPage() {
   const [form, setForm] = useState({
-    companyName: '',
+    companyName: (() => {
+      try { return new URLSearchParams(window.location.search).get('company')?.slice(0, 200) ?? ''; }
+      catch { return ''; }
+    })(),
     contactName: '',
-    email: '',
+    email: (() => {
+      try { return new URLSearchParams(window.location.search).get('email')?.slice(0, 200) ?? ''; }
+      catch { return ''; }
+    })(),
     phone: '',
     about: '',
   });
@@ -169,18 +175,22 @@ export default function AffiliatesPage() {
         <section id="apply" className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           {status === 'sent' ? (
             <div role="status" data-testid="status-success">
-              <h2 className="text-xl font-bold text-slate-950">Agreement accepted — continue to secure signup</h2>
+              <h2 className="text-xl font-bold text-slate-950">Agreement accepted — continue to your affiliate account</h2>
               <p className="mt-3 text-[15px] leading-7 text-slate-700">
-                Your agreement acceptance has been recorded. Create or sign in to your Clerk account using <strong>{form.email}</strong>. After verified signup and workspace registration, your affiliate account is active at 20% and your card-free 30-day workspace access starts.
+                Your agreement acceptance has been recorded. Use <strong>{form.email}</strong> to continue. New to CMS Compliance Suite? Create your secure login. Already have an account? Sign in and activate your affiliate enrollment without registering a second workspace.
               </p>
+              <div className="mt-5 flex flex-wrap gap-3">
               <a href={siteUrl(`/sign-up?${affiliateSignupQuery}`)}
-                className="mt-5 inline-flex rounded-lg bg-teal-800 px-6 py-3 text-[15px] font-bold text-white hover:bg-teal-900"
+                className="inline-flex rounded-lg bg-teal-800 px-6 py-3 text-[15px] font-bold text-white hover:bg-teal-900"
                 data-testid="link-create-affiliate-login">
-                Create your secure login
+                New user: Sign up
               </a>
-              <p className="mt-3 text-sm text-slate-600">
-                Already have an account? <a className="font-semibold text-teal-800 underline" href={siteUrl(`/sign-in?${affiliateSignupQuery}`)}>Sign in</a> to finish activating your affiliate workspace.
-              </p>
+              <a href={siteUrl(`/sign-in?${affiliateSignupQuery}`)}
+                className="inline-flex rounded-lg border border-teal-800 px-6 py-3 text-[15px] font-bold text-teal-900 hover:bg-teal-50"
+                data-testid="link-sign-in-affiliate">
+                Existing user: Sign in
+              </a>
+              </div>
               <p className="mt-3 text-[15px] leading-7 text-slate-700">
                 If you need to add any additional information, please reply to us at{' '}
                 <a className="font-semibold text-teal-800 underline underline-offset-4 hover:text-teal-950 transition-colors" href={`mailto:${CONTACT_EMAIL_SUPPORT}`}>
@@ -196,7 +206,7 @@ export default function AffiliatesPage() {
             <>
               <h2 className="text-xl font-bold text-slate-950">Affiliate signup</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Accept the current agreement below, then complete secure Clerk signup and workspace registration. The affiliate program is free to join. Affiliate workspace access is free for 30 days; keeping workspace access after that costs $299/month.
+              Accept the current agreement below, then sign up or sign in with the same email. If you already have a client workspace, you can activate your affiliate enrollment without registering another one. The affiliate program is free to join. Affiliate workspace access is free for 30 days; keeping workspace access after that costs $299/month.
               </p>
 
               <form onSubmit={submit} className="mt-6 space-y-5" data-testid="form-apply">

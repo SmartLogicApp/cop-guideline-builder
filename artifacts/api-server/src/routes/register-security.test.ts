@@ -142,10 +142,11 @@ test("consultant registration links a verified affiliate email and activates cur
 
   assert.match(gate, /clerkClient\.users\.getUser\(userId\)/);
   assert.match(gate, /primaryEmail\?\.verification\?\.status === "verified"/);
-  assert.match(gate, /lower\(\$\{affiliates\.email\}\)/);
+  assert.match(gate, /lower\(trim\(\$\{affiliates\.email\}\)\)/);
   assert.match(gate, /inArray\(affiliates\.status, \["active", "pending"\]\)/);
   assert.match(gate, /status\(403\)/);
   assert.match(gate, /CONSULTANT_REGISTRATION_REQUIRES_ACTIVE_AFFILIATE/);
+  assert.match(gate, /AFFILIATE_EMAIL_UNVERIFIED/);
   assert.doesNotMatch(gate, /referralCode/);
   assert.match(handler, /currentReviewedAffiliateAcceptanceCondition\(\)/);
   assert.match(handler, /commissionRatePct: 20/);

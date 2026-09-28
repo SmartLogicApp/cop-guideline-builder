@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { accountUsers, accounts, adminUsers, db } from "@workspace/db";
-import { hasEffectiveAccess } from "./subscriptionAccess";
+import { hasEffectiveAccess, hasUnexpiredComplimentaryAccess } from "./subscriptionAccess";
 import { runAccountSubscriptionLifecycle } from "../lib/subscription-lifecycle";
 
 export const PAYMENT_REQUIRED_RESPONSE = {
@@ -28,7 +28,7 @@ export async function getSubscriptionAccess(clerkUserId: string, now = new Date(
   ]);
 
   let account = membership[0]?.account ?? null;
-  const accountUser = membership[0]?.accountUser ?? null;
+  let accountUser = membership[0]?.accountUser ?? null;
   if (account) {
     await runAccountSubscriptionLifecycle(account);
     // Re-read the canonical state before computing access. Stripe may have
@@ -41,10 +41,14 @@ export async function getSubscriptionAccess(clerkUserId: string, now = new Date(
         .limit(1),
     ]);
     account = membership[0]?.account ?? null;
+    accountUser = membership[0]?.accountUser ?? null;
   }
   const isAdminUser = isConfiguredSuperAdmin || admin.length > 0;
-  const hasComplimentaryAccess = account?.subscriptionStatus !== "removed" &&
-    accountUser?.hasComplimentaryAccess === true;
+  const hasComplimentaryAccess = hasUnexpiredComplimentaryAccess(
+    accountUser,
+    account?.subscriptionStatus,
+    now,
+  );
 
   return {
     account,

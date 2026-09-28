@@ -14,3 +14,9 @@ New direct registrations must not receive workspace access before Stripe collect
 **Why:** The old shared local trial granted direct customers cardless access, but removing all local trials would also break the consultant offer and cut off existing customers. Self-declared consultant status would let direct customers bypass the corrected requirement.
 
 **How to apply:** Keep registration entitlement checks on the server, grandfather existing trial rows, and distinguish approved consultant affiliates from direct customers before granting a new local trial.
+
+An existing direct-client contact who independently qualifies as an affiliate is a narrow exception to the card-first rule: keep the client's account and Stripe state intact, and give that person a time-limited affiliate workspace grant. Do not issue a second direct-customer trial when the affiliate later adds a card.
+
+**Why:** One person can legitimately have both roles. Replacing their client subscription would lose billing identity, while stacking the two trials would silently extend the advertised card-free period.
+
+**How to apply:** Treat affiliate membership and workspace entitlement separately from client subscription ownership. Anchor any subsequent checkout trial to the original affiliate grant expiry; do not silently charge during the last short window before that expiry.

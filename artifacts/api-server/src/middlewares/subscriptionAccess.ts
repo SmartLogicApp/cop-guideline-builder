@@ -16,6 +16,19 @@
 export const APP_TRIAL_STATUS = "trial";
 export const STRIPE_TRIAL_STATUS = "trialing";
 
+export function hasUnexpiredComplimentaryAccess(
+  accountUser: {
+    hasComplimentaryAccess: boolean;
+    complimentaryAccessEndsAt: Date | null;
+  } | null,
+  accountStatus: string | null | undefined,
+  now = new Date(),
+): boolean {
+  return accountStatus !== "removed" &&
+    accountUser?.hasComplimentaryAccess === true &&
+    (accountUser.complimentaryAccessEndsAt == null || accountUser.complimentaryAccessEndsAt > now);
+}
+
 export function isTrialStatus(status: string | null | undefined): boolean {
   return status === APP_TRIAL_STATUS || status === STRIPE_TRIAL_STATUS;
 }

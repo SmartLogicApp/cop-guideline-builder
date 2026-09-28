@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useAuth } from '@clerk/react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useAuth, useUser } from '@clerk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation } from 'wouter';
 import { AlertCircle, Building2, LoaderCircle, ShieldCheck } from 'lucide-react';
 import { CLIENT_CURRENT_TERMS_VERSION, TermsDocument } from '@/components/terms-document';
@@ -72,6 +72,7 @@ const IDENTIFIER_CHOICES: ReadonlyArray<{
 
 export default function RegisterPage() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const [affiliateSignup] = useState(() => {
@@ -85,6 +86,10 @@ export default function RegisterPage() {
     } catch {
       return '';
     }
+  });
+  const [affiliateHandoffEmail] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('email')?.trim().toLowerCase() ?? ''; }
+    catch { return ''; }
   });
 
   const [identifierType, setIdentifierType] = useState<IdentifierType>(() => {
@@ -108,7 +113,28 @@ export default function RegisterPage() {
   const [termsVersion, setTermsVersion] = useState<string | null>(null);
   const [termsChecked, setTermsChecked] = useState(false);
   const [termsScrolled, setTermsScrolled] = useState(false);
+  const [verificationRequired, setVerificationRequired] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationSending, setVerificationSending] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
+  const [activationSuccess, setActivationSuccess] = useState(false);
+  const [activationTrialEndsAt, setActivationTrialEndsAt] = useState<string | null>(null);
   const termsRef = useRef<HTMLDivElement>(null);
+  const accountQuery = useQuery<{ accountUser: unknown | null }>({
+    queryKey: ['/api/accounts/me', user?.id],
+    enabled: affiliateSignup && isLoaded && isSignedIn,
+    staleTime: 0,
+    queryFn: async () => {
+      const token = await getToken();
+      if (!token) throw new Error('Your secure session is unavailable. Please sign in again.');
+      const response = await fetch('/api/accounts/me', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error('Could not check your existing account. Please refresh and try again.');
+      return response.json() as Promise<{ accountUser: unknown | null }>;
+    },
+  });
 
   // Captured once, on first render, before anything can rewrite the URL.
   const [referralCode] = useState<string | null>(() => {
@@ -121,7 +147,7 @@ export default function RegisterPage() {
   });
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!isLoaded || !isSignedIn || affiliateSignup) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -140,10 +166,11 @@ export default function RegisterPage() {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, getToken]);
+  }, [isLoaded, isSignedIn, getToken, affiliateSignup]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!isLoaded || !isSignedIn ||
+        (affiliateSignup && (!accountQuery.isSuccess || accountQuery.data.accountUser))) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -164,7 +191,7 @@ export default function RegisterPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [isLoaded, isSignedIn, getToken]);
+  }, [isLoaded, isSignedIn, getToken, affiliateSignup, accountQuery.isSuccess, accountQuery.data?.accountUser]);
 
   useEffect(() => {
     const element = termsRef.current;
@@ -187,7 +214,7 @@ export default function RegisterPage() {
 
   const needsIdentifier = identifierType !== 'consultant';
   const canSubmit =
-    facilityName.trim().length > 0 &&
+    (identifierType === 'consultant' || facilityName.trim().length > 0) &&
     (!needsIdentifier || identifier.trim().length > 0) &&
     termsVersion !== null && termsChecked && termsScrolled &&
     !submitting;
@@ -195,6 +222,113 @@ export default function RegisterPage() {
   const selectedProvider = providerTypes.find((type) => type.value === facilityType);
   const contentPending =
     selectedProvider?.contentStatus != null && selectedProvider.contentStatus !== 'verified';
+
+  const verifiedEmailAddress = user?.primaryEmailAddress?.verification?.status === 'verified'
+    ? user.primaryEmailAddress : null;
+  const emailVerifiedForRetry = verificationMessage?.startsWith('Your email is verified') === true;
+  const emailToVerify = user?.primaryEmailAddress ?? null;
+  const reapplyQuery = new URLSearchParams({
+    email: verifiedEmailAddress?.emailAddress ?? '',
+    company: affiliateCompany,
+  }).toString();
+  const reapplyUrl = `${import.meta.env.BASE_URL}affiliates?${reapplyQuery}#apply`;
+  const affiliateEmailMismatch = affiliateSignup && affiliateHandoffEmail &&
+    user?.primaryEmailAddress?.emailAddress &&
+    affiliateHandoffEmail !== user.primaryEmailAddress.emailAddress.trim().toLowerCase();
+  const correctedHandoff = new URLSearchParams({
+    affiliate: '1',
+    email: user?.primaryEmailAddress?.emailAddress ?? '',
+    company: affiliateCompany,
+  }).toString();
+
+  const sendVerificationCode = useCallback(async () => {
+    if (!emailToVerify) {
+      setError('Add an email address to your secure account before continuing.');
+      return;
+    }
+    setVerificationSending(true);
+    setVerificationMessage(null);
+    try {
+      await emailToVerify.prepareVerification({ strategy: 'email_code' });
+      setVerificationMessage(`A verification code was sent to ${emailToVerify.emailAddress}. Check your inbox and junk folder.`);
+    } catch {
+      setError('We could not send a verification code. Please try again or update your email in your secure account.');
+    } finally {
+      setVerificationSending(false);
+    }
+  }, [emailToVerify]);
+
+  const verifyEmailCode = useCallback(async () => {
+    if (!emailToVerify || !verificationCode.trim()) return;
+    setVerificationSending(true);
+    setError(null);
+    setVerificationMessage(null);
+    try {
+      const address = await emailToVerify.attemptVerification({ code: verificationCode.trim() });
+      if (address.verification?.status !== 'verified') {
+        throw new Error('The code has not verified this email yet.');
+      }
+      setVerificationRequired(false);
+      setVerificationCode('');
+      setVerificationMessage('Your email is verified. Continue to activate your affiliate workspace.');
+      await user?.reload();
+    } catch {
+      setError('That verification code could not be confirmed. Check the code and try again.');
+    } finally {
+      setVerificationSending(false);
+    }
+  }, [emailToVerify, verificationCode, user]);
+
+  const activateAffiliate = useCallback(async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    setVerificationMessage(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Your secure session is unavailable. Please sign in again.');
+      const response = await fetch('/api/accounts/affiliate/activate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        status?: string;
+        trialEndsAt?: string | null;
+        code?: string;
+        error?: string;
+      };
+      if (!response.ok) {
+        if (payload?.code === 'AFFILIATE_EMAIL_UNVERIFIED') {
+          setVerificationRequired(true);
+          setError('Verify your email address to continue. Check your inbox and junk folder for the Clerk verification message.');
+        } else if (payload?.code === 'AFFILIATE_APPLICATION_EMAIL_MISMATCH') {
+          setError('Your affiliate application uses a different email address. Reapply using your exact verified Clerk email to continue.');
+        } else if (response.status === 409) {
+          setError(payload?.error ?? 'This affiliate application is on hold or needs a current agreement acceptance. Contact support for help continuing.');
+        } else {
+          setError(payload?.error ?? 'We could not activate your affiliate workspace. Please try again.');
+        }
+        return;
+      }
+      if (payload.status !== 'active' || (payload.trialEndsAt !== null && typeof payload.trialEndsAt !== 'string')) {
+        setError('The server returned an unexpected activation response. Please try again or contact support.');
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['/api/accounts/me'] });
+      setActivationTrialEndsAt(payload.trialEndsAt ?? null);
+      setActivationSuccess(true);
+    } catch (failure) {
+      setError(failure instanceof Error
+        ? failure.message
+        : 'We could not reach the server. Please check your connection and try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [getToken, queryClient, submitting]);
 
   const submit = useCallback(async () => {
     if (!canSubmit || !termsVersion) return;
@@ -226,6 +360,11 @@ export default function RegisterPage() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (payload?.code === 'AFFILIATE_EMAIL_UNVERIFIED') {
+          setVerificationRequired(true);
+          setError('Verify your email address to continue. Check your inbox and junk folder for the Clerk verification message.');
+          return;
+        }
         setError(
           payload?.error ??
             'We could not complete your registration. Please check the details and try again.',
@@ -298,6 +437,112 @@ export default function RegisterPage() {
     return (
       <Shell>
         <p className="text-slate-700">Please sign in to register your organization.</p>
+      </Shell>
+    );
+  }
+
+  if (affiliateSignup && accountQuery.isLoading) {
+    return (
+      <Shell>
+        <div className="flex items-center gap-3 text-slate-600" role="status">
+          <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+          <span>Checking your existing account…</span>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (affiliateSignup && accountQuery.isError) {
+    return (
+      <Shell>
+        <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-5 text-sm leading-6 text-red-900">
+          {accountQuery.error instanceof Error ? accountQuery.error.message : 'Could not check your existing account.'}
+          <button type="button" data-testid="button-retry-account-check" onClick={() => void accountQuery.refetch()} className="ml-3 font-semibold underline">
+            Try again
+          </button>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (affiliateEmailMismatch) {
+    return (
+      <Shell>
+        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-6 shadow-sm sm:p-8" role="alert" data-testid="panel-affiliate-email-mismatch">
+          <h1 className="text-2xl font-bold text-slate-950">Your signed-in email is different</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-800">
+            This affiliate link was created for {affiliateHandoffEmail}, but your signed-in Clerk account uses {user?.primaryEmailAddress?.emailAddress}. We can only activate an application that matches your verified primary email exactly (ignoring capitalization). We will not link an application to a different account.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-4">
+            <a href={reapplyUrl} data-testid="link-reapply-verified-email" className="font-semibold text-teal-800 underline">
+              Apply again using {user?.primaryEmailAddress?.emailAddress}
+            </a>
+            <Link href={`/register?${correctedHandoff}`} className="font-semibold text-teal-800 underline">
+              I already applied with this signed-in email
+            </Link>
+          </div>
+          <p className="mt-4 text-sm text-slate-700">If the application email belongs to another account, sign out and sign in with that account instead.</p>
+        </section>
+      </Shell>
+    );
+  }
+
+  if (affiliateSignup && accountQuery.data?.accountUser) {
+    if (activationSuccess) {
+      return (
+        <Shell>
+          <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-6 shadow-sm sm:p-8" role="status" data-testid="status-affiliate-active">
+            <h1 className="text-2xl font-bold text-emerald-950">Your affiliate workspace is active</h1>
+            <p className="mt-2 text-sm leading-6 text-emerald-900">
+              Your affiliate account is activated{activationTrialEndsAt
+                ? ` and your workspace trial ends ${new Date(activationTrialEndsAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+                : ''}. Continue to your partner portal to manage your referrals.
+            </p>
+            <Link href="/partners/portal" data-testid="link-partner-portal" className="mt-5 inline-flex rounded-lg bg-teal-800 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-900">
+              Open partner portal
+            </Link>
+          </section>
+        </Shell>
+      );
+    }
+    return (
+      <Shell>
+        <section className="rounded-2xl border border-teal-300 bg-teal-50 p-6 shadow-sm sm:p-8" data-testid="panel-affiliate-continuation">
+          <h1 className="text-2xl font-bold text-slate-950">Continue your affiliate signup</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-700">
+            You already have a CMS Compliance Suite account. Activate the affiliate enrollment on this account to continue—no second workspace registration is needed.
+          </p>
+
+          {verificationRequired && (
+            <div className="mt-5 space-y-4 rounded-xl border border-amber-300 bg-amber-50 p-4" data-testid="panel-email-verification">
+              <p className="text-sm leading-6 text-amber-950">
+                Check your inbox and junk folder for a Clerk verification email. You can resend the code, then enter it here to verify the exact email on your account.
+              </p>
+              {verificationMessage && <p className="text-sm text-emerald-800" role="status" data-testid="status-verification">{verificationMessage}</p>}
+              <button type="button" data-testid="button-resend-verification" onClick={() => void sendVerificationCode()} disabled={verificationSending} className="rounded-lg border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-950 disabled:opacity-50">
+                {verificationSending ? 'Sending…' : 'Resend verification code'}
+              </button>
+              <label className="block text-sm font-semibold text-slate-900" htmlFor="affiliate-verification-code">Verification code</label>
+              <input id="affiliate-verification-code" data-testid="input-verification-code" value={verificationCode} onChange={(event) => setVerificationCode(event.target.value)} autoComplete="one-time-code" className="w-full rounded-lg border border-slate-300 px-3 py-2" />
+              <button type="button" data-testid="button-verify-email" onClick={() => void verifyEmailCode()} disabled={verificationSending || !verificationCode.trim()} className="rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                Verify email
+              </button>
+            </div>
+          )}
+
+          {error && <div role="alert" className="mt-5 rounded-lg border border-red-300 bg-red-50 p-4 text-sm leading-6 text-red-900" data-testid="error-affiliate-activation">{error}</div>}
+          {error?.includes('different email') && verifiedEmailAddress && (
+            <a href={reapplyUrl} data-testid="link-reapply-verified-email" className="mt-4 inline-flex font-semibold text-teal-800 underline">
+              Reapply using {verifiedEmailAddress.emailAddress}
+            </a>
+          )}
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button type="button" data-testid="button-activate-affiliate" onClick={() => void activateAffiliate()} disabled={submitting || verificationRequired} className="inline-flex items-center gap-2 rounded-lg bg-teal-800 px-6 py-2.5 text-sm font-semibold text-white hover:bg-teal-900 disabled:cursor-not-allowed disabled:bg-slate-300">
+              {submitting && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              {submitting ? 'Activating…' : emailVerifiedForRetry ? 'Retry affiliate activation' : 'Activate affiliate account'}
+            </button>
+          </div>
+        </section>
       </Shell>
     );
   }
@@ -488,6 +733,22 @@ export default function RegisterPage() {
             <span>{error}</span>
           </div>
         ) : null}
+
+        {verificationRequired && (
+          <section className="space-y-4 rounded-xl border border-amber-300 bg-amber-50 p-4" data-testid="panel-email-verification">
+            <p className="text-sm leading-6 text-amber-950">
+              Check your inbox and junk folder for a Clerk verification email. Resend a code if needed, then verify your email before retrying registration.
+            </p>
+            {verificationMessage && <p role="status" className="text-sm text-emerald-800" data-testid="status-verification">{verificationMessage}</p>}
+            <button type="button" data-testid="button-resend-verification" onClick={() => void sendVerificationCode()} disabled={verificationSending} className="rounded-lg border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-950 disabled:opacity-50">
+              {verificationSending ? 'Sending…' : 'Resend verification code'}
+            </button>
+            <Field id="registration-verification-code" label="Verification code" value={verificationCode} onChange={setVerificationCode} autoComplete="one-time-code" />
+            <button type="button" data-testid="button-verify-email" onClick={() => void verifyEmailCode()} disabled={verificationSending || !verificationCode.trim()} className="rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              Verify email
+            </button>
+          </section>
+        )}
 
         <div className="flex flex-wrap items-center gap-4">
           <button

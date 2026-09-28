@@ -59,7 +59,7 @@ export async function calculateAffiliatePayoutEligibility(affiliateId: string, e
     .where(and(
       eq(affiliateAgreementAcceptances.affiliateId, affiliateId),
       eq(affiliateAgreementAcceptances.agreementVersion, currentAgreement),
-      eq(affiliateAgreementAcceptances.signerEmail, sql`lower(${affiliate.email})`),
+      eq(affiliateAgreementAcceptances.signerEmail, sql`lower(trim(${affiliate.email}))`),
       eq(affiliateAgreementAcceptances.identityEpoch, affiliate.agreementIdentityEpoch),
     )).limit(1) : [];
   const documentAcceptance = Object.fromEntries(requiredDocumentTypes.map((type) => {

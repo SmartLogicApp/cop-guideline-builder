@@ -26,7 +26,7 @@ export async function hasReviewedAffiliateAcceptance(affiliateId: string): Promi
     ))
     .innerJoin(affiliates, and(
       eq(affiliateAgreementAcceptances.affiliateId, affiliates.id),
-      eq(affiliateAgreementAcceptances.signerEmail, sql`lower(${affiliates.email})`),
+       eq(affiliateAgreementAcceptances.signerEmail, sql`lower(trim(${affiliates.email}))`),
       eq(affiliateAgreementAcceptances.identityEpoch, affiliates.agreementIdentityEpoch),
     ))
     .where(and(
@@ -51,7 +51,7 @@ export function currentReviewedAffiliateAcceptanceCondition() {
       and ${affiliateAgreementAcceptances.contentSha256} = ${affiliateAgreements.contentSha256}
     where ${affiliateAgreementAcceptances.affiliateId} = ${affiliates.id}
       and ${affiliateAgreementAcceptances.agreementVersion} = ${version}
-      and ${affiliateAgreementAcceptances.signerEmail} = lower(${affiliates.email})
+       and ${affiliateAgreementAcceptances.signerEmail} = lower(trim(${affiliates.email}))
       and ${affiliateAgreementAcceptances.identityEpoch} = ${affiliates.agreementIdentityEpoch}
   )`;
 }

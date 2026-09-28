@@ -375,7 +375,7 @@ async function hasCurrentV4Acceptance(
       eq(affiliateAgreementAcceptances.affiliateId, affiliate.id),
       eq(affiliateAgreementAcceptances.agreementVersion, agreement.version),
       eq(affiliateAgreementAcceptances.contentSha256, agreement.contentSha256),
-      eq(affiliateAgreementAcceptances.signerEmail, sql`lower(${affiliate.email})`),
+      eq(affiliateAgreementAcceptances.signerEmail, sql`lower(trim(${affiliate.email}))`),
       eq(affiliateAgreementAcceptances.identityEpoch, affiliate.agreementIdentityEpoch),
     ))
     .limit(1);

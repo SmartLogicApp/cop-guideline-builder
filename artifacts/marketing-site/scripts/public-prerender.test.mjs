@@ -13,7 +13,7 @@ test('affiliate route ships its own crawlable, pre-rendered HTML', () => {
   assert.match(html, /Join the referral partnership instantly\. Create a secure login to receive 30 days of full workspace access with no card required, while your affiliate commissions stay active independently of a paid workspace plan\./);
   assert.match(html, /<section\b[^>]*\bid="apply"/);
   assert.match(html, /Affiliate signup/);
-  assert.match(html, /Accept the current agreement below, then complete secure Clerk signup and workspace registration\./);
+  assert.match(html, /Accept the current agreement below, then sign up or sign in with the same email\./);
   assert.match(html, /<button\b[^>]*type="submit"[^>]*disabled=""[^>]*>Accept and continue<\/button>/);
   assert.doesNotMatch(html, /Navigate healthcare compliance with absolute confidence/);
 });

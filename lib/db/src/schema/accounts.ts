@@ -51,6 +51,7 @@ export const accountUsers = pgTable("account_users", {
   hasComplimentaryAccess:     boolean("has_complimentary_access").default(false).notNull(),
   complimentaryAccessGrantedBy: text("complimentary_access_granted_by"),
   complimentaryAccessGrantedAt: timestamp("complimentary_access_granted_at", { withTimezone: true }),
+  complimentaryAccessEndsAt:   timestamp("complimentary_access_ends_at", { withTimezone: true }),
   createdAt:                  timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 

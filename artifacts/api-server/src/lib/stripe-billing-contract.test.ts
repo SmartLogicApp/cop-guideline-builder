@@ -42,7 +42,7 @@ test("checkout validates the configured recurring price before creating Stripe o
   const checkout = billing.slice(checkoutStart);
   const validation = checkout.indexOf("isExpectedCheckoutPrice(configuredPrice");
   const customerCreation = checkout.indexOf('"/v1/customers"');
-  const sessionCreation = checkout.indexOf('"/v1/checkout/sessions"');
+  const sessionCreation = checkout.indexOf('session = await stripe.request<{ url: string | null }>("/v1/checkout/sessions"');
   assert.ok(validation >= 0 && validation < customerCreation);
   assert.ok(validation < sessionCreation);
 });
@@ -89,6 +89,38 @@ test("checkout preserves the production 30-day trial and uses setup mode for a n
   assert.doesNotMatch(checkout, /"setup_intent_data\[usage\]":/);
   assert.match(checkout, /"metadata\[setupPolicy\]":\s*LOCAL_TRIAL_SETUP_POLICY/);
   assert.match(checkout, /LOCAL_TRIAL_SETUP_POLICY/);
+});
+
+test("checkout uses a locked affiliate grant's expiry instead of issuing a second direct trial", () => {
+  const checkout = billing.slice(
+    billing.indexOf('router.post("/checkout"'),
+    billing.indexOf('router.post("/checkout/confirm"'),
+  );
+  assert.match(checkout, /complimentaryAccessGrantedBy:\s*accountUsers\.complimentaryAccessGrantedBy/);
+  assert.match(checkout, /complimentaryAccessEndsAt:\s*accountUsers\.complimentaryAccessEndsAt/);
+  assert.match(checkout, /eq\(accountUsers\.accountId, account\.id\)[\s\S]*?\.for\("update"\)/);
+  assert.match(checkout, /affiliateAccessGrantedBy:\s*currentAccount\.identifierType !== "consultant"/);
+  assert.match(checkout, /"affiliate-self-service"/);
+  assert.match(billing, /affiliate-access-\$\{trialPlan\.trialEnd\}/);
+  assert.match(billing, /affiliate-expiring-\$\{trialPlan\.trialEnd\}/);
+  assert.match(billing, /case "affiliate-expired":[\s\S]*?return "affiliate-expired"/);
+  assert.match(checkout, /"metadata\[trialPeriodDays\]":\s*trialPlan\.kind === "first-direct"[\s\S]*?:\s*"0"/);
+});
+
+test("near-end affiliate access blocks checkout before session creation and expires stale open sessions", () => {
+  const checkout = billing.slice(
+    billing.indexOf('router.post("/checkout"'),
+    billing.indexOf('router.post("/checkout/confirm"'),
+  );
+  const nearEndGate = checkout.indexOf('if (trialPlan.kind === "affiliate-expiring")');
+  const existingSessions = checkout.indexOf("loadAllOpenCheckoutSessions(stripe, lockedCustomerId)");
+  const sessionCreation = checkout.indexOf('"/v1/checkout/sessions"');
+  assert.ok(existingSessions >= 0 && nearEndGate > existingSessions);
+  assert.ok(sessionCreation > nearEndGate, "near-end affiliate access must refuse before creating Checkout");
+  assert.match(checkout.slice(nearEndGate, sessionCreation), /checkout\/sessions\/\$\{encodeURIComponent\(existingSession\.id\)\}\/expire/);
+  assert.match(checkout, /kind: "affiliate-trial-near-end"/);
+  assert.match(billing, /checkoutResult\.kind === "affiliate-trial-near-end"[\s\S]*?status\(409\)[\s\S]*?AFFILIATE_TRIAL_NEAR_END/);
+  assert.match(billing, /Wait until it expires before adding a card to avoid an early charge/);
 });
 
 test("near-expiry setup completion is authenticated, idempotent, and preserves or omits trial_end safely", () => {

@@ -17,6 +17,7 @@ test('the form cannot submit until the published agreement is loaded and checked
   assert.match(form, /agreementSha256: agreement\.contentSha256/);
 });
 
+
 test('duplicate affiliate email points the applicant to sign in instead of creating a second application', () => {
   const form = readFileSync(new URL('./affiliates.tsx', import.meta.url), 'utf8');
   assert.match(form, /if \(conflict\?\.code === 'APPLICATION_ALREADY_EXISTS'\) \{[\s\S]*?setStatus\('error'\);[\s\S]*?setSignInAfterDuplicate\(true\);[\s\S]*?Sign in to continue/);
@@ -52,4 +53,37 @@ test('application review exposes hold and release while approval generates its c
   assert.match(applications, /row\.agreementAcceptance\?\.version === agreementStatus\.version && !row\.applicationHeldAt/);
   assert.match(applications, /body: JSON\.stringify\(\{ commissionRatePct: ratesById\[row\.id\] \?\? 20 \}\)/);
   assert.doesNotMatch(applications.slice(applications.indexOf('async function approve('), applications.indexOf('async function hold(')), /window\.prompt/);
+});
+
+test('affiliate register continues existing accounts instead of creating a second workspace', () => {
+  const page = readFileSync(new URL('./register.tsx', import.meta.url), 'utf8');
+  assert.match(page, /enabled: affiliateSignup && isLoaded && isSignedIn/);
+  assert.match(page, /accountQuery\.data\?\.accountUser/);
+  assert.match(page, /data-testid="panel-affiliate-continuation"/);
+  assert.match(page, /\/api\/accounts\/affiliate\/activate/);
+  assert.match(page, /data-testid="link-partner-portal"/);
+  assert.match(page, /queryClient\.invalidateQueries\(\{ queryKey: \['\/api\/accounts\/me'\] \}\)/);
+  assert.match(page, /\/api\/accounts\/register/);
+});
+
+test('affiliate recovery handles Clerk verification and exact-email mismatch without fuzzy linking', () => {
+  const page = readFileSync(new URL('./register.tsx', import.meta.url), 'utf8');
+  assert.match(page, /AFFILIATE_EMAIL_UNVERIFIED/);
+  assert.match(page, /Check your inbox and junk folder/);
+  assert.match(page, /prepareVerification\(\{ strategy: 'email_code' \}\)/);
+  assert.match(page, /attemptVerification\(\{ code: verificationCode\.trim\(\) \}\)/);
+  assert.match(page, /AFFILIATE_APPLICATION_EMAIL_MISMATCH/);
+  assert.match(page, /verifiedEmailAddress\?\.emailAddress/);
+  assert.match(page, /data-testid="link-reapply-verified-email"/);
+  assert.match(page, /affiliateHandoffEmail !== user\.primaryEmailAddress\.emailAddress\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(page, /data-testid="panel-affiliate-email-mismatch"/);
+});
+
+test('agreement success offers sign in and sign up with affiliate handoff preserved', () => {
+  const page = readFileSync(new URL('./affiliates.tsx', import.meta.url), 'utf8');
+  assert.match(page, /data-testid="link-create-affiliate-login"/);
+  assert.match(page, /data-testid="link-sign-in-affiliate"/);
+  assert.match(page, /siteUrl\(`\/sign-in\?\$\{affiliateSignupQuery\}`\)/);
+  assert.match(page, /siteUrl\(`\/sign-up\?\$\{affiliateSignupQuery\}`\)/);
+  assert.match(page, /affiliate: '1'/);
 });

@@ -24,6 +24,7 @@ import {
 import { LEGACY_INSTITUTION_TYPES } from "@workspace/cms-compliance-data";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription.js";
 import { currentReviewedAffiliateAcceptanceCondition } from "../lib/affiliate-agreement-state.js";
+import { getSuperAdminIds, isSuperAdminId } from "../lib/super-admin-identities.js";
 import { generateAffiliateReferralCode } from "../lib/affiliate-referral-code.js";
 
 import {
@@ -152,9 +153,8 @@ router.get("/validate-ccn", requireAuth, async (req, res) => {
 // GET /api/accounts/whoami — diagnostic: returns clerk ID + super-admin match result
 router.get("/whoami", requireAuth, (req, res) => {
   const userId = (req as any).clerkUserId as string;
-  const rawEnv = process.env.ADMIN_CLERK_USER_IDS ?? "";
-  const ids = rawEnv.split(",").map((s) => s.trim()).filter(Boolean);
-  const isSuperAdmin = ids.includes(userId);
+  const ids = getSuperAdminIds();
+  const isSuperAdmin = isSuperAdminId(userId);
   return res.json({
     clerkUserId: userId,
     isSuperAdmin,
@@ -170,11 +170,7 @@ router.get("/me", requireAuth, async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.setHeader("Pragma", "no-cache");
   const userId = (req as any).clerkUserId as string;
-  const superAdminIds = (process.env.ADMIN_CLERK_USER_IDS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.startsWith("user_"));
-  const isSuperAdmin = superAdminIds.includes(userId);
+  const isSuperAdmin = isSuperAdminId(userId);
   const access = await getSubscriptionAccess(userId);
   const isAdminUser = isSuperAdmin || access.isAdminUser;
   const isActive = isAdminUser || access.isActive;
@@ -358,6 +354,192 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
   return res.json({ ...record, recorded: false });
 });
 
+// POST /api/accounts/affiliate/activate
+// Recover affiliate access for an authenticated user who already owns a direct
+// client workspace. This only updates the affiliate and that user's membership;
+// it never creates or relinks an account, nor changes its Stripe state.
+router.post("/affiliate/activate", requireAuth, async (req, res) => {
+  const userId = (req as any).clerkUserId as string;
+  const clerkUser = await clerkClient.users.getUser(userId);
+  const primaryEmail = clerkUser.emailAddresses.find((entry) => entry.id === clerkUser.primaryEmailAddressId);
+  if (primaryEmail?.verification?.status !== "verified") {
+    return res.status(403).json({
+      error: "Verify your primary Clerk email before activating an affiliate application.",
+      code: "AFFILIATE_EMAIL_UNVERIFIED",
+    });
+  }
+  const verifiedEmail = primaryEmail.emailAddress.trim().toLowerCase();
+
+  const [linked] = await db.select({
+    accountId: accountUsers.accountId,
+    identifierType: accounts.identifierType,
+    subscriptionStatus: accounts.subscriptionStatus,
+  }).from(accountUsers)
+    .innerJoin(accounts, eq(accountUsers.accountId, accounts.id))
+    .where(eq(accountUsers.clerkUserId, userId))
+    .limit(1);
+  if (!linked || linked.identifierType === "consultant" || linked.subscriptionStatus === "removed") {
+    return res.status(409).json({
+      error: "Complete direct-client workspace registration before activating an affiliate.",
+      code: "AFFILIATE_WORKSPACE_REGISTRATION_REQUIRED",
+    });
+  }
+
+  const failure = (error: unknown) => {
+    if (!(error instanceof Error)) return null;
+    switch (error.message) {
+      case "AFFILIATE_APPLICATION_EMAIL_MISMATCH":
+        return res.status(404).json({
+          error: "No affiliate application matches your verified primary email.",
+          code: "AFFILIATE_APPLICATION_EMAIL_MISMATCH",
+        });
+      case "AFFILIATE_APPLICATION_ON_HOLD":
+        return res.status(409).json({
+          error: "This affiliate application is on hold. Contact support before activating it.",
+          code: "AFFILIATE_APPLICATION_ON_HOLD",
+        });
+      case "AFFILIATE_FOREIGN_CLERK_BINDING":
+        return res.status(409).json({
+          error: "This affiliate application is linked to another Clerk account.",
+          code: "AFFILIATE_APPLICATION_ALREADY_BOUND",
+        });
+      case "AFFILIATE_CURRENT_AGREEMENT_ACCEPTANCE_REQUIRED":
+        return res.status(409).json({
+          error: "Accept the current published affiliate agreement before activation.",
+          code: "AFFILIATE_AGREEMENT_ACCEPTANCE_REQUIRED",
+        });
+      case "AFFILIATE_WORKSPACE_REGISTRATION_REQUIRED":
+        return res.status(409).json({
+          error: "Complete direct-client workspace registration before activating an affiliate.",
+          code: "AFFILIATE_WORKSPACE_REGISTRATION_REQUIRED",
+        });
+      default:
+        return null;
+    }
+  };
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      // Lock both records that determine eligibility and idempotency. The
+      // workspace is revalidated under lock; its account is never modified.
+      const [accountUser] = await tx.select().from(accountUsers)
+        .where(eq(accountUsers.clerkUserId, userId))
+        .for("update")
+        .limit(1);
+      if (!accountUser?.accountId || accountUser.accountId !== linked.accountId) {
+        throw new Error("AFFILIATE_WORKSPACE_REGISTRATION_REQUIRED");
+      }
+      const [account] = await tx.select({
+        identifierType: accounts.identifierType,
+        subscriptionStatus: accounts.subscriptionStatus,
+      })
+        .from(accounts).where(eq(accounts.id, accountUser.accountId)).limit(1);
+      if (!account || account.identifierType === "consultant" || account.subscriptionStatus === "removed") {
+        throw new Error("AFFILIATE_WORKSPACE_REGISTRATION_REQUIRED");
+      }
+
+      const matchingApplications = await tx.select().from(affiliates)
+        .where(eq(sql`lower(trim(${affiliates.email}))`, verifiedEmail))
+        .for("update")
+        .limit(2);
+      if (matchingApplications.length !== 1) {
+        throw new Error("AFFILIATE_APPLICATION_EMAIL_MISMATCH");
+      }
+      const affiliate = matchingApplications[0];
+      if (affiliate.clerkUserId && affiliate.clerkUserId !== userId) {
+        throw new Error("AFFILIATE_FOREIGN_CLERK_BINDING");
+      }
+
+      if (affiliate.status === "active" && affiliate.clerkUserId === userId) {
+        // An already bound partner may have joined before this self-service
+        // entitlement existed. Grant it once, never renew it after expiry or
+        // after an administrator revokes the affiliate grant.
+        if (!accountUser.hasComplimentaryAccess &&
+            accountUser.complimentaryAccessGrantedBy !== "affiliate-self-service") {
+          const now = new Date();
+          const trialEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+          await tx.update(accountUsers).set({
+            hasComplimentaryAccess: true,
+            complimentaryAccessGrantedBy: "affiliate-self-service",
+            complimentaryAccessGrantedAt: now,
+            complimentaryAccessEndsAt: trialEndsAt,
+          }).where(eq(accountUsers.id, accountUser.id));
+          return { status: "active", trialEndsAt };
+        }
+        return {
+          status: "active",
+          trialEndsAt: accountUser.complimentaryAccessGrantedBy === "affiliate-self-service"
+            ? accountUser.complimentaryAccessEndsAt
+            : null,
+        };
+      }
+      if (affiliate.status !== "pending") {
+        throw new Error("AFFILIATE_APPLICATION_EMAIL_MISMATCH");
+      }
+      if (affiliate.applicationHeldAt) {
+        throw new Error("AFFILIATE_APPLICATION_ON_HOLD");
+      }
+
+      const now = new Date();
+      const referralCode = generateAffiliateReferralCode();
+      const [activated] = await tx.update(affiliates).set({
+        clerkUserId: userId,
+        referralCode,
+        status: "active",
+        commissionRatePct: 20,
+        rateEffectiveAt: now,
+        updatedAt: now,
+      }).where(and(
+        eq(affiliates.id, affiliate.id),
+        eq(affiliates.status, "pending"),
+        eq(sql`lower(trim(${affiliates.email}))`, verifiedEmail),
+        isNull(affiliates.applicationHeldAt),
+        currentReviewedAffiliateAcceptanceCondition(),
+      )).returning({ id: affiliates.id });
+      if (!activated) {
+        throw new Error("AFFILIATE_CURRENT_AGREEMENT_ACCEPTANCE_REQUIRED");
+      }
+      await tx.insert(affiliateRateChanges).values({
+        affiliateId: affiliate.id,
+        fromPct: affiliate.commissionRatePct,
+        toPct: 20,
+        reason: "enrollment",
+        note: "Affiliate self-service activation with current agreement acceptance.",
+        changedBy: userId,
+        effectiveAt: now,
+      });
+
+      // An existing complimentary grant is left untouched (including legacy
+      // indefinite grants). A fresh grant is written only once.
+      let trialEndsAt = accountUser.complimentaryAccessGrantedBy === "affiliate-self-service"
+        ? accountUser.complimentaryAccessEndsAt
+        : null;
+      if (!accountUser.hasComplimentaryAccess &&
+          accountUser.complimentaryAccessGrantedBy !== "affiliate-self-service") {
+        trialEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        await tx.update(accountUsers).set({
+          hasComplimentaryAccess: true,
+          complimentaryAccessGrantedBy: "affiliate-self-service",
+          complimentaryAccessGrantedAt: now,
+          complimentaryAccessEndsAt: trialEndsAt,
+        }).where(and(
+          eq(accountUsers.id, accountUser.id),
+          eq(accountUsers.clerkUserId, userId),
+        ));
+      }
+      return { status: "active", trialEndsAt };
+    });
+    return res.json({
+      status: result.status,
+      trialEndsAt: result.trialEndsAt?.toISOString() ?? null,
+    });
+  } catch (error) {
+    const response = failure(error);
+    if (response) return response;
+    throw error;
+  }
+});
+
 // POST /api/accounts/register — register an account and link the current user.
 //
 // The identifier may be a CCN (certified facilities), an NPI (practices and
@@ -420,13 +602,19 @@ router.post("/register", requireAuth, async (req, res) => {
     consultantAffiliateEmail = primaryEmail?.verification?.status === "verified"
       ? primaryEmail.emailAddress.trim().toLowerCase()
       : null;
+    if (!consultantAffiliateEmail) {
+      return res.status(403).json({
+        error: "Verify your primary Clerk email before completing consultant registration.",
+        code: "AFFILIATE_EMAIL_UNVERIFIED",
+      });
+    }
     const [activeAffiliate] = consultantAffiliateEmail
       ? await db.select({
         id: affiliates.id, clerkUserId: affiliates.clerkUserId, companyName: affiliates.companyName,
         status: affiliates.status, applicationHeldAt: affiliates.applicationHeldAt,
       }).from(affiliates)
         .where(and(
-          eq(sql`lower(${affiliates.email})`, consultantAffiliateEmail),
+          eq(sql`lower(trim(${affiliates.email}))`, consultantAffiliateEmail),
           inArray(affiliates.status, ["active", "pending"]),
         ))
         .limit(1)
@@ -532,7 +720,7 @@ router.post("/register", requireAuth, async (req, res) => {
     let workspaceName = values.facilityName;
     if (idType === "consultant" && consultantAffiliateEmail) {
       const [affiliate] = await tx.select().from(affiliates)
-        .where(eq(sql`lower(${affiliates.email})`, consultantAffiliateEmail))
+        .where(eq(sql`lower(trim(${affiliates.email}))`, consultantAffiliateEmail))
         .for("update")
         .limit(1);
       if (!affiliate || !["active", "pending"].includes(affiliate.status)
@@ -556,7 +744,7 @@ router.post("/register", requireAuth, async (req, res) => {
         }).where(and(
           eq(affiliates.id, affiliate.id),
           eq(affiliates.status, "pending"),
-          eq(sql`lower(${affiliates.email})`, consultantAffiliateEmail),
+          eq(sql`lower(trim(${affiliates.email}))`, consultantAffiliateEmail),
           isNull(affiliates.applicationHeldAt),
           currentReviewedAffiliateAcceptanceCondition(),
         )).returning({ id: affiliates.id });
@@ -578,7 +766,7 @@ router.post("/register", requireAuth, async (req, res) => {
           updatedAt: receiptTime,
         }).where(and(
           eq(affiliates.id, affiliate.id),
-          eq(sql`lower(${affiliates.email})`, consultantAffiliateEmail),
+          eq(sql`lower(trim(${affiliates.email}))`, consultantAffiliateEmail),
           isNull(affiliates.clerkUserId),
         )).returning({ id: affiliates.id });
         if (!bound) throw new Error("AFFILIATE_SIGNUP_NOT_AVAILABLE");

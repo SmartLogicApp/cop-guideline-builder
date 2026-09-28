@@ -60,6 +60,41 @@ export function resolveFirstDirectSetupTrialEnd({
   hasStripeSubscriptionHistory: boolean;
   stripeNowSeconds: number;
 }): number | null {
+  const affiliateTrial = trialPolicy?.match(/^affiliate-access-(\d+)$/) ??
+    trialPolicy?.match(/^affiliate-expiring-(\d+)$/);
+  if (trialPolicy === "affiliate-expired") {
+    if (
+      subscriptionStatus !== "pending_payment" ||
+      hasStripeSubscriptionHistory ||
+      trialPeriodDays !== 0 ||
+      !Number.isSafeInteger(stripeNowSeconds)
+    ) {
+      throw new Error("The affiliate access Checkout policy is no longer valid.");
+    }
+    return null;
+  }
+  if (affiliateTrial) {
+    const trialEnd = Number(affiliateTrial[1]);
+    const remainingSeconds = trialEnd - stripeNowSeconds;
+    const isLongEnough = remainingSeconds >=
+      LOCAL_TRIAL_CHECKOUT_MIN_REMAINING_MS / 1000 - 1;
+    const policyAllowsTrial = trialPolicy?.startsWith("affiliate-access-") === true;
+    if (
+      !Number.isSafeInteger(trialEnd) ||
+      subscriptionStatus !== "pending_payment" ||
+      hasStripeSubscriptionHistory ||
+      trialPeriodDays !== 0 ||
+      !Number.isSafeInteger(stripeNowSeconds)
+    ) {
+      throw new Error("The affiliate access Checkout policy is no longer valid.");
+    }
+    if (remainingSeconds <= 0) return null;
+    if (policyAllowsTrial && !isLongEnough) return null;
+    if (!policyAllowsTrial && isLongEnough) {
+      throw new Error("The affiliate access Checkout policy is no longer valid.");
+    }
+    return policyAllowsTrial ? trialEnd : null;
+  }
   if (!trialPolicy?.startsWith("first-direct-")) {
     if (subscriptionStatus === "pending_payment" && !hasStripeSubscriptionHistory) {
       throw new Error("The first-direct Checkout is missing its required 30-day trial policy.");
@@ -101,6 +136,9 @@ export function isProductionTrialPeriodExactly30(
 
 export type CheckoutTrialPlan =
   | { kind: "first-direct"; trialPeriodDays: number }
+  | { kind: "affiliate-access"; trialEnd: number }
+  | { kind: "affiliate-expiring"; trialEnd: number }
+  | { kind: "affiliate-expired" }
   | { kind: "existing-local"; trialEnd: number }
   | { kind: "local-trial-active"; trialEnd: number }
   | { kind: "none" };
@@ -108,17 +146,35 @@ export type CheckoutTrialPlan =
 export function resolveCheckoutTrialPlan({
   subscriptionStatus,
   trialEndsAt,
+  affiliateAccessGrantedBy,
+  affiliateAccessEndsAt,
   hasStripeSubscriptionHistory,
   now = new Date(),
   trialPeriodDays = getTrialPeriodDays(),
 }: {
   subscriptionStatus: string | null;
   trialEndsAt: Date | null;
+  affiliateAccessGrantedBy?: string | null;
+  affiliateAccessEndsAt?: Date | null;
   hasStripeSubscriptionHistory: boolean;
   now?: Date;
   trialPeriodDays?: number;
 }): CheckoutTrialPlan {
   if (hasStripeSubscriptionHistory) return { kind: "none" };
+
+  if (
+    subscriptionStatus === "pending_payment" &&
+    affiliateAccessGrantedBy === "affiliate-self-service"
+  ) {
+    if (!affiliateAccessEndsAt || affiliateAccessEndsAt.getTime() <= now.getTime()) {
+      return { kind: "affiliate-expired" };
+    }
+    const trialEnd = Math.floor(affiliateAccessEndsAt.getTime() / 1000);
+    const remainingMs = affiliateAccessEndsAt.getTime() - now.getTime();
+    return remainingMs >= LOCAL_TRIAL_CHECKOUT_MIN_REMAINING_MS
+      ? { kind: "affiliate-access", trialEnd }
+      : { kind: "affiliate-expiring", trialEnd };
+  }
 
   if (
     (subscriptionStatus === "trial" || subscriptionStatus === "trialing") &&
