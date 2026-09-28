@@ -36,7 +36,11 @@ test("write boundaries reject, and display boundaries redact, unsafe free text",
     source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start) + start.length));
 
   assert.match(section(routes, 'router.post("/apply"', "async function provisionalReferralCode"), /about\]\.some\(containsSensitiveFinancialNumber\)/);
-  assert.match(section(routes, 'router.post("\/", requireSuperAdmin', 'router.patch("/:id"'), /adminNotes, enrollmentVersion, agreementVersion\]/);
+  const adminCreate = section(routes, 'router.post("/", requireSuperAdmin', 'router.patch("/:id"');
+  assert.match(adminCreate, /containsSensitiveFinancialNumber\(value\)/);
+  assert.match(adminCreate, /req\.body\?\.agreementVersion/);
+  assert.match(adminCreate, /req\.body\?\.enrollmentVersion/);
+  assert.match(adminCreate, /hasSensitiveContact\(\{ email,/);
   assert.match(section(routes, 'router.post("/:id/rate"', 'router.post("/:id/commissions"'), /containsSensitiveFinancialNumber\(req\.body\.note\)/);
   assert.match(section(routes, 'router.post("/commissions/:commissionId/reverse"', 'router.post("/cron/maturity-sweep"'), /containsSensitiveFinancialNumber\(reason\)/);
   assert.match(section(routes, 'router.patch("/:id"', 'router.post("/:id/approve"'), /"adminNotes"\]\.some/);

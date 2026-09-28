@@ -3,6 +3,10 @@ export const TRIAL_ACCESS_VIEW: Readonly<{
   END_STATE: "end-state";
 }>;
 
+export function isPaymentSetupPending(
+  account: { subscriptionStatus?: string | null; trialEndsAt?: Date | null } | null | undefined,
+): boolean;
+
 export type TrialSubscription = {
   status?: string | null;
   isActive?: boolean;

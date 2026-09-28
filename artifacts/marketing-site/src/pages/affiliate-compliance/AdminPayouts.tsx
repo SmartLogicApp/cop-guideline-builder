@@ -168,7 +168,7 @@ export default function AdminPayouts() {
         </form>
       )}
 
-      <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-white border rounded-xl shadow-sm overflow-x-auto">
         <table className="w-full text-left text-sm text-slate-600">
           <thead className="bg-slate-50 text-slate-900 border-b">
             <tr>
@@ -248,8 +248,8 @@ function PayoutRow({ payout, affiliate }: { payout: any, affiliate: any }) {
           <div className="text-xs text-slate-500">{new Date(payout.payoutPeriodStart).toLocaleDateString()} - {new Date(payout.payoutPeriodEnd).toLocaleDateString()}</div>
         </td>
         <td className="px-4 py-4 font-semibold text-slate-900">${(Number(payout.netPayoutAmount)).toFixed(2)}</td>
-        <td className="px-4 py-4">
-          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium 
+        <td className="min-w-[180px] whitespace-normal px-4 py-4">
+          <span className={`inline-flex max-w-[180px] whitespace-normal break-words px-2 py-0.5 rounded text-xs font-medium
             ${payout.payoutStatus === 'paid' ? 'bg-emerald-100 text-emerald-800' : 
               payout.payoutStatus === 'voided' || payout.payoutStatus === 'failed' ? 'bg-red-100 text-red-800' : 
               payout.payoutStatus === 'reversal_review_required' ? 'bg-amber-100 text-amber-900' :

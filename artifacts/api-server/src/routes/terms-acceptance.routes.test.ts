@@ -29,6 +29,7 @@ const [{ default: accountRouter }, { default: billingRouter }, { default: adminR
     import("@workspace/db"),
     import("../lib/terms-versions.ts"),
   ]);
+const { clerkClient } = await import("@clerk/express");
 const { db, accounts, accountUsers, adminUsers, affiliates, tokenUsage, termsAcceptances } = schema;
 const { CURRENT_TERMS_VERSION } = terms;
 
@@ -223,6 +224,18 @@ test("Terms acceptance is authenticated, registered, server-timed and cannot be 
 
 test("interrupted signup cannot leave a consultant trial without an acceptance receipt", async () => {
   const userId = "synthetic-new-consultant";
+  const clerkUserLookup = mock.method(clerkClient.users, "getUser", async (requestedUserId: string) => {
+    assert.equal(requestedUserId, userId);
+    return {
+      id: userId,
+      primaryEmailAddressId: "synthetic-primary-email",
+      emailAddresses: [{
+        id: "synthetic-primary-email",
+        emailAddress: "affiliate@example.test",
+        verification: { status: "verified" },
+      }],
+    } as Awaited<ReturnType<typeof clerkClient.users.getUser>>;
+  });
   const body = {
     identifierType: "consultant",
     facilityName: "Example Consultant",
@@ -237,7 +250,15 @@ test("interrupted signup cannot leave a consultant trial without an acceptance r
       const builder: any = {
         where: () => builder,
         leftJoin: () => builder,
-        limit: async () => table === affiliates ? [{ id: "synthetic-active-affiliate" }]
+        then: (resolve: (rows: unknown[]) => unknown, reject?: (error: unknown) => unknown) =>
+          Promise.resolve([]).then(resolve, reject),
+        limit: async () => table === affiliates ? [{
+          id: "synthetic-active-affiliate",
+          companyName: "Example Partner",
+          status: "active",
+          clerkUserId: null,
+          applicationHeldAt: null,
+        }]
           : table === accountUsers && committed
           ? [{ accountUser: committed.accountUser, account: committed.account, accountId: committed.account.id }]
           : table === accounts && committed ? [committed.account] : [],
@@ -250,6 +271,35 @@ test("interrupted signup cannot leave a consultant trial without an acceptance r
     let pendingUser: Record<string, any> | null = null;
     let pendingReceipt: Record<string, any> | null = null;
     const tx = {
+      select() {
+        return {
+          from() {
+            const builder: any = {
+              where: () => builder,
+              for: () => builder,
+              limit: async () => [{
+                id: "synthetic-active-affiliate",
+                companyName: "Example Partner",
+                status: "active",
+                clerkUserId: null,
+                applicationHeldAt: null,
+              }],
+            };
+            return builder;
+          },
+        };
+      },
+      update() {
+        return {
+          set() {
+            return {
+              where() {
+                return { returning: async () => [{ id: "synthetic-active-affiliate" }] };
+              },
+            };
+          },
+        };
+      },
       insert(table: unknown) {
         return {
           values(value: Record<string, any>) {
@@ -307,5 +357,6 @@ test("interrupted signup cannot leave a consultant trial without an acceptance r
   } finally {
     selects.mock.restore();
     transactions.mock.restore();
+    clerkUserLookup.mock.restore();
   }
 });

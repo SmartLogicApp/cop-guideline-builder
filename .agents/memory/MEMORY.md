@@ -3,6 +3,7 @@
 - [CMS content verification boundary](cms-content-verification.md) — provider architecture may be scaffolded broadly, but official CMS requirements must stay unavailable until sourced and verified.
 - [Ephemeral customer policy handling](ephemeral-policy-handling.md) — proprietary policy text and derived results must remain session-scoped, user-bound, short-lived, and absent from permanent storage/logs.
 - [Autoscale cache persistence](autoscale-cache-persistence.md) — local files do not survive autoscale replacement; restart-safe shared caches must use a durable external store.
+- [Autoscale lifecycle scheduling](autoscale-lifecycle-scheduling.md) — in-process daily timers and on-login reconciliation cannot guarantee reminders for inactive accounts; require an external scheduled trigger.
 - [CCN verification sources](ccn-verification-sources.md) — Care Compare supports direct CCN queries for some provider types; FQHC and OPO require separate CMS enrollment-file integration.
 - [Clean checks after semantic merges](clean-checks-after-semantic-merges.md) — incremental TypeScript caches can hide merge corruption; completion checks after rebases must disable incremental mode.
 - [Vite optional peer alignment](vite-optional-peer-alignment.md) — unpeered Vite plugins must resolve the same optional-peer context as the consuming artifact to keep plugin types compatible.

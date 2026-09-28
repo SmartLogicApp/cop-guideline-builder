@@ -26,6 +26,7 @@ import PayoutReturnPage from '@/pages/affiliate-compliance/PayoutReturnPage';
 import PayoutRefreshPage from '@/pages/affiliate-compliance/PayoutRefreshPage';
 import MarketingGuidelinesPage from '@/pages/affiliate-compliance/MarketingGuidelinesPage';
 import AdminAffiliatesList from '@/pages/affiliate-compliance/AdminAffiliatesList';
+import AdminClients from '@/pages/affiliate-compliance/AdminClients';
 import AdminAffiliateDetail from '@/pages/affiliate-compliance/AdminAffiliateDetail';
 import AdminCompliance from '@/pages/affiliate-compliance/AdminCompliance';
 import AdminPayouts from '@/pages/affiliate-compliance/AdminPayouts';
@@ -118,29 +119,48 @@ function ClerkQueryClientCacheInvalidator() {
 }
 
 function SignInPage() {
+  const params = new URLSearchParams(window.location.search);
+  const affiliateSignup = params.get('affiliate') === '1';
+  const emailAddress = params.get('email') ?? undefined;
+  const handoffQuery = affiliateSignup ? buildAffiliateHandoffQuery(params) : '';
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-slate-50 px-4 py-12">
       <SignIn
         routing="path"
         path={`${basePath}/sign-in`}
-        signUpUrl={`${basePath}/sign-up`}
-        forceRedirectUrl={`${basePath}/app`}
+        signUpUrl={`${basePath}/sign-up${handoffQuery}`}
+        initialValues={emailAddress ? { emailAddress } : undefined}
+        forceRedirectUrl={affiliateSignup ? `${basePath}/register${handoffQuery}` : `${basePath}/app`}
       />
     </div>
   );
 }
 
 function SignUpPage() {
+  const params = new URLSearchParams(window.location.search);
+  const affiliateSignup = params.get('affiliate') === '1';
+  const emailAddress = params.get('email') ?? undefined;
+  const handoffQuery = affiliateSignup ? buildAffiliateHandoffQuery(params) : '';
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-slate-50 px-4 py-12">
       <SignUp
         routing="path"
         path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-        forceRedirectUrl={`${basePath}/app`}
+        signInUrl={`${basePath}/sign-in${handoffQuery}`}
+        initialValues={emailAddress ? { emailAddress } : undefined}
+        forceRedirectUrl={affiliateSignup ? `${basePath}/register${handoffQuery}` : `${basePath}/app`}
       />
     </div>
   );
+}
+
+function buildAffiliateHandoffQuery(params: URLSearchParams): string {
+  const handoff = new URLSearchParams({ affiliate: '1' });
+  const email = params.get('email')?.trim();
+  const company = params.get('company')?.trim();
+  if (email && email.length <= 200) handoff.set('email', email);
+  if (company && company.length <= 200) handoff.set('company', company);
+  return `?${handoff.toString()}`;
 }
 
 function WorkspaceLoading() {
@@ -246,6 +266,7 @@ function Router() {
       <Route path="/partners/marketing-guidelines" component={MarketingGuidelinesPage} />
 
       <Route path="/admin/affiliates" component={AdminAffiliatesList} />
+      <Route path="/admin/clients" component={AdminClients} />
       <Route path="/admin/affiliates/:id" component={AdminAffiliateDetail} />
       <Route path="/admin/affiliate-compliance" component={AdminCompliance} />
       <Route path="/admin/affiliate-payouts" component={AdminPayouts} />

@@ -10,7 +10,6 @@ export default function AdminAffiliateDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: affiliate, isLoading, error } = useAdminAffiliateDetail(id || '');
   const [reason, setReason] = useState('');
-  const [commissionRatePct, setCommissionRatePct] = useState(20);
   const [decisionReason, setDecisionReason] = useState('');
   const [holdReason, setHoldReason] = useState('');
   const action = useAdminAction(id || '');
@@ -54,7 +53,7 @@ export default function AdminAffiliateDetail() {
     }
     try {
       const result = await decision.mutateAsync(type === 'approve'
-        ? { action: 'approve', commissionRatePct }
+        ? { action: 'approve', commissionRatePct: 20 }
         : type === 'release-hold' ? { action: 'release-hold' }
           : { action: type, reason: type === 'hold' ? holdReason.trim() : decisionReason.trim() });
       if (result.status !== (type === 'approve' ? 'active' : type === 'reject' ? 'rejected' : 'pending')
@@ -154,24 +153,16 @@ export default function AdminAffiliateDetail() {
             <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
               <h3 className="font-bold text-slate-900 text-lg">Pending application</h3>
               <p className="text-sm text-slate-600">
-                Approval activates a paid affiliate and sends an email. It requires the owner-enabled reviewed
-                agreement and this applicant’s acceptance; the server refuses approval otherwise.
-                Disapproval keeps the application for audit but does not activate the affiliate.
+                Activation starts affiliate commission enrollment at 20% and sends a secure create-login link.
+                The applicant must have accepted the current published agreement; the server refuses activation otherwise.
+                Workspace billing remains separate from affiliate commission status.
               </p>
               <p className="text-sm text-slate-600">A permanent referral code is generated automatically on approval.</p>
               {affiliate.affiliate.applicationHeldAt && <p role="status" className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
                 On hold: {affiliate.affiliate.applicationHoldReason}
               </p>}
-              <label className="block text-sm font-medium text-slate-700">
-                Commission rate
-                <select data-testid="select-commission-rate" value={commissionRatePct}
-                  onChange={e => setCommissionRatePct(Number(e.target.value))}
-                  className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2">
-                  <option value={20}>20%</option><option value={10}>10%</option>
-                </select>
-              </label>
               <Button data-testid="button-approve-application" disabled={decision.isPending || !!affiliate.affiliate.applicationHeldAt}
-                onClick={() => decideApplication('approve')}>Approve paid application</Button>
+                onClick={() => decideApplication('approve')}>Activate at 20%</Button>
               {affiliate.affiliate.applicationHeldAt ? (
                 <Button data-testid="button-release-application-hold" variant="outline" disabled={decision.isPending}
                   onClick={() => decideApplication('release-hold')}>Release hold</Button>

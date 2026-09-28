@@ -1,8 +1,8 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { getAuth } from "@clerk/express";
+import { clerkClient, getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
-import { accounts, accountUsers, affiliates, termsAcceptances } from "@workspace/db";
-import { eq, and, or, ne, isNull } from "drizzle-orm";
+import { accounts, accountUsers, affiliates, affiliateRateChanges, termsAcceptances } from "@workspace/db";
+import { eq, and, or, ne, isNull, inArray, sql } from "drizzle-orm";
 import { normalizeReferralCode } from "../lib/affiliate-commission.js";
 import {
   lookupCCN,
@@ -23,6 +23,8 @@ import {
 } from "../lib/provider-identifier.js";
 import { LEGACY_INSTITUTION_TYPES } from "@workspace/cms-compliance-data";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription.js";
+import { currentReviewedAffiliateAcceptanceCondition } from "../lib/affiliate-agreement-state.js";
+import { generateAffiliateReferralCode } from "../lib/affiliate-referral-code.js";
 
 import {
   CURRENT_TERMS_VERSION,
@@ -359,8 +361,10 @@ router.post("/terms-acceptance", requireAuth, async (req, res) => {
 // POST /api/accounts/register — register an account and link the current user.
 //
 // The identifier may be a CCN (certified facilities), an NPI (practices and
-// individual providers), a CLIA number (labs), or — for an approved active
-// affiliate consultant who has none of those — one this endpoint issues.
+// individual providers), a CLIA number (labs), or — for an affiliate consultant
+// who has none of those — one this endpoint issues. A pending public enrollment
+// becomes active here only after the verified Clerk email matches and the
+// current published affiliate agreement acceptance is confirmed.
 // Whichever it is, the account gets exactly one, and it is unique, so one
 // organisation means one subscription.
 //
@@ -372,7 +376,7 @@ router.post("/register", requireAuth, async (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const email  = (req as any).clerkEmail as string | null;
   const { ccn, identifierType, facilityName, facilityType, state, city, referralCode, termsVersion, acceptedAt, acceptsTerms } = req.body as {
-    ccn?: string; identifierType?: string; facilityName: string;
+    ccn?: string; identifierType?: string; facilityName?: string;
     facilityType?: string; state?: string; city?: string; referralCode?: string;
     termsVersion?: string; acceptedAt?: string; acceptsTerms?: boolean;
   };
@@ -406,22 +410,49 @@ router.post("/register", requireAuth, async (req, res) => {
   }
   const idType: IdentifierType = identifierType ?? DEFAULT_IDENTIFIER_TYPE;
 
+  let consultantAffiliateEmail: string | null = null;
+  let consultantAffiliateCompanyName: string | null = null;
   if (idType === "consultant") {
-    const [activeAffiliate] = await db.select({ id: affiliates.id }).from(affiliates)
-      .where(and(
-        eq(affiliates.clerkUserId, userId),
-        eq(affiliates.status, "active"),
-      ))
-      .limit(1);
-    if (!activeAffiliate) {
+    // Never link an affiliate by a session email claim alone: resolve Clerk's
+    // verified primary email server-side, then bind only the matching row.
+    const clerkUser = await clerkClient.users.getUser(userId);
+    const primaryEmail = clerkUser.emailAddresses.find((entry) => entry.id === clerkUser.primaryEmailAddressId);
+    consultantAffiliateEmail = primaryEmail?.verification?.status === "verified"
+      ? primaryEmail.emailAddress.trim().toLowerCase()
+      : null;
+    const [activeAffiliate] = consultantAffiliateEmail
+      ? await db.select({
+        id: affiliates.id, clerkUserId: affiliates.clerkUserId, companyName: affiliates.companyName,
+        status: affiliates.status, applicationHeldAt: affiliates.applicationHeldAt,
+      }).from(affiliates)
+        .where(and(
+          eq(sql`lower(${affiliates.email})`, consultantAffiliateEmail),
+          inArray(affiliates.status, ["active", "pending"]),
+        ))
+        .limit(1)
+      : [];
+    if (!activeAffiliate || (activeAffiliate.clerkUserId && activeAffiliate.clerkUserId !== userId)) {
       return res.status(403).json({
-        error: "Consultant registration is reserved for approved, active affiliates.",
+        error: "Consultant registration requires the verified email address on an affiliate account.",
         code: "CONSULTANT_REGISTRATION_REQUIRES_ACTIVE_AFFILIATE",
+      });
+    }
+    if (activeAffiliate.status === "pending" && activeAffiliate.applicationHeldAt) {
+      return res.status(409).json({
+        error: "This affiliate application is on hold. Contact support before completing signup.",
+        code: "AFFILIATE_APPLICATION_ON_HOLD",
+      });
+    }
+    consultantAffiliateCompanyName = activeAffiliate.companyName.trim();
+    if (!consultantAffiliateCompanyName) {
+      return res.status(409).json({
+        error: "The affiliate application needs a company or practice name before workspace activation.",
+        code: "CONSULTANT_WORKSPACE_NAME_REQUIRED",
       });
     }
   }
 
-  if (!facilityName?.trim()) {
+  if (idType !== "consultant" && !facilityName?.trim()) {
     return res.status(400).json({ error: "facilityName is required" });
   }
 
@@ -481,7 +512,9 @@ router.post("/register", requireAuth, async (req, res) => {
   if (trialEnds) trialEnds.setDate(trialEnds.getDate() + 30);
 
   const values = {
-    facilityName:       facilityName.trim(),
+    facilityName:       idType === "consultant"
+      ? consultantAffiliateCompanyName!
+      : facilityName!.trim(),
     facilityType:       facilityType ?? null,
     state:              state ?? null,
     city:               city ?? null,
@@ -496,8 +529,64 @@ router.post("/register", requireAuth, async (req, res) => {
 
   const createWithAcceptance = async (identifier: string) => db.transaction(async (tx) => {
     const receiptTime = new Date();
+    let workspaceName = values.facilityName;
+    if (idType === "consultant" && consultantAffiliateEmail) {
+      const [affiliate] = await tx.select().from(affiliates)
+        .where(eq(sql`lower(${affiliates.email})`, consultantAffiliateEmail))
+        .for("update")
+        .limit(1);
+      if (!affiliate || !["active", "pending"].includes(affiliate.status)
+          || (affiliate.clerkUserId && affiliate.clerkUserId !== userId)) {
+        throw new Error("AFFILIATE_SIGNUP_NOT_AVAILABLE");
+      }
+      if (affiliate.status === "pending" && affiliate.applicationHeldAt) {
+        throw new Error("AFFILIATE_APPLICATION_ON_HOLD");
+      }
+      workspaceName = affiliate.companyName.trim();
+      if (!workspaceName) throw new Error("AFFILIATE_WORKSPACE_NAME_REQUIRED");
+
+      if (affiliate.status === "pending") {
+        const [activated] = await tx.update(affiliates).set({
+          clerkUserId: userId,
+          referralCode: generateAffiliateReferralCode(),
+          status: "active",
+          commissionRatePct: 20,
+          rateEffectiveAt: receiptTime,
+          updatedAt: receiptTime,
+        }).where(and(
+          eq(affiliates.id, affiliate.id),
+          eq(affiliates.status, "pending"),
+          eq(sql`lower(${affiliates.email})`, consultantAffiliateEmail),
+          isNull(affiliates.applicationHeldAt),
+          currentReviewedAffiliateAcceptanceCondition(),
+        )).returning({ id: affiliates.id });
+        if (!activated) {
+          throw new Error("AFFILIATE_CURRENT_AGREEMENT_ACCEPTANCE_REQUIRED");
+        }
+        await tx.insert(affiliateRateChanges).values({
+          affiliateId: affiliate.id,
+          fromPct: affiliate.commissionRatePct,
+          toPct: 20,
+          reason: "enrollment",
+          note: "Affiliate self-service signup and current agreement acceptance.",
+          changedBy: userId,
+          effectiveAt: receiptTime,
+        });
+      } else if (!affiliate.clerkUserId) {
+        const [bound] = await tx.update(affiliates).set({
+          clerkUserId: userId,
+          updatedAt: receiptTime,
+        }).where(and(
+          eq(affiliates.id, affiliate.id),
+          eq(sql`lower(${affiliates.email})`, consultantAffiliateEmail),
+          isNull(affiliates.clerkUserId),
+        )).returning({ id: affiliates.id });
+        if (!bound) throw new Error("AFFILIATE_SIGNUP_NOT_AVAILABLE");
+      }
+    }
     const [created] = await tx.insert(accounts).values({
       ...values,
+      facilityName: workspaceName,
       ccn: identifier,
       termsAcceptedAt: receiptTime,
     }).returning();
@@ -505,7 +594,7 @@ router.post("/register", requireAuth, async (req, res) => {
       clerkUserId: userId,
       accountId: created.id,
       role: "admin",
-      email: email ?? null,
+      email: consultantAffiliateEmail ?? email ?? null,
     }).returning();
     await tx.insert(termsAcceptances).values({
       accountId: created.id,
@@ -525,6 +614,30 @@ router.post("/register", requireAuth, async (req, res) => {
       try {
         registration = await createWithAcceptance(normalIdentifier);
       } catch (error) {
+        if (error instanceof Error && error.message === "AFFILIATE_SIGNUP_NOT_AVAILABLE") {
+          return res.status(403).json({
+            error: "This affiliate signup is already linked to another account or is no longer active.",
+            code: "CONSULTANT_REGISTRATION_REQUIRES_ACTIVE_AFFILIATE",
+          });
+        }
+        if (error instanceof Error && error.message === "AFFILIATE_APPLICATION_ON_HOLD") {
+          return res.status(409).json({
+            error: "This affiliate application is on hold. Contact support before completing signup.",
+            code: "AFFILIATE_APPLICATION_ON_HOLD",
+          });
+        }
+        if (error instanceof Error && error.message === "AFFILIATE_CURRENT_AGREEMENT_ACCEPTANCE_REQUIRED") {
+          return res.status(409).json({
+            error: "Accept the current published affiliate agreement before completing signup.",
+            code: "AFFILIATE_AGREEMENT_ACCEPTANCE_REQUIRED",
+          });
+        }
+        if (error instanceof Error && error.message === "AFFILIATE_WORKSPACE_NAME_REQUIRED") {
+          return res.status(409).json({
+            error: "The affiliate application needs a company or practice name before workspace activation.",
+            code: "CONSULTANT_WORKSPACE_NAME_REQUIRED",
+          });
+        }
         if (!isUniqueViolation(error) || attempt === 4) throw error;
         normalIdentifier = generateConsultantIdentifier();
       }

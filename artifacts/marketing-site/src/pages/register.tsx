@@ -65,7 +65,7 @@ const IDENTIFIER_CHOICES: ReadonlyArray<{
   {
     value: 'consultant',
     label: 'None of these — I am a consultant or advisory firm',
-    hint: 'For approved, active affiliates only. We will issue you an account identifier.',
+    hint: 'For affiliates who accepted the current agreement. We will issue an account identifier.',
     placeholder: '',
   },
 ];
@@ -74,10 +74,30 @@ export default function RegisterPage() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const [affiliateSignup] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('affiliate') === '1'; }
+    catch { return false; }
+  });
+  const [affiliateCompany] = useState(() => {
+    try {
+      const company = new URLSearchParams(window.location.search).get('company')?.trim();
+      return company && company.length <= 200 ? company : '';
+    } catch {
+      return '';
+    }
+  });
 
-  const [identifierType, setIdentifierType] = useState<IdentifierType>('ccn');
+  const [identifierType, setIdentifierType] = useState<IdentifierType>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('affiliate') === '1'
+        ? 'consultant'
+        : 'ccn';
+    } catch {
+      return 'ccn';
+    }
+  });
   const [identifier, setIdentifier] = useState('');
-  const [facilityName, setFacilityName] = useState('');
+  const [facilityName, setFacilityName] = useState(affiliateCompany);
   const [facilityType, setFacilityType] = useState('');
   const [state, setState] = useState('');
   const [city, setCity] = useState('');
@@ -288,12 +308,18 @@ export default function RegisterPage() {
         <div className="flex items-start gap-3">
           <Building2 className="mt-0.5 h-5 w-5 flex-none text-teal-800" aria-hidden="true" />
           <div className="text-sm leading-6 text-teal-950">
-            <p className="font-semibold">Register your organization</p>
+            <p className="font-semibold">{affiliateSignup ? 'Finish your affiliate workspace setup' : identifierType === 'consultant' ? 'Activate your affiliate workspace' : 'Register your organization'}</p>
             <p className="mt-1">
-              {identifierType === 'consultant' ? (
+              {affiliateSignup ? (
                 <>
-                  Approved, active affiliates can create a consultant account with a 30-day trial
-                   and no payment method. Consultant registration is verified by our server.
+                  Your current affiliate agreement acceptance is recorded. Confirm the workspace name and accept
+                  the current Terms of Service to activate your affiliate membership at 20% and start the 30-day,
+                  no-card workspace trial. This creates your workspace in the same secure signup flow.
+                </>
+              ) : identifierType === 'consultant' ? (
+                <>
+                  Affiliates who accepted the current agreement can activate with a 30-day workspace
+                  trial and no payment method. We verify your Clerk email against the affiliate enrollment.
                 </>
               ) : (
                 <>
@@ -308,7 +334,7 @@ export default function RegisterPage() {
       </div>
 
       <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <fieldset>
+        {!affiliateSignup && <fieldset>
           <legend className="text-sm font-semibold text-slate-900">
             Which identifier does your organization hold?
           </legend>
@@ -337,7 +363,7 @@ export default function RegisterPage() {
               </label>
             ))}
           </div>
-        </fieldset>
+        </fieldset>}
 
         {needsIdentifier ? (
           <Field

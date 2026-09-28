@@ -4,22 +4,86 @@ import { db } from "@workspace/db";
 import { accounts, accountUsers, tokenUsage } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
 import { requireAuth } from "./accounts";
+import { requireAnyAdmin, requireCronOrSuperAdmin } from "../lib/admin-guards.js";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription";
 import { isTrialStatus } from "../middlewares/subscriptionAccess";
 import {
   isPaymentAcceptanceEnabled,
   isProductionTrialPeriodExactly30,
-  isRecoverableStripeSubscriptionStatus,
+  hasCheckoutBlockingSubscription,
   resolveCheckoutTrialPlan,
 } from "../lib/payment-config";
 import { getReturnBase } from "../lib/return-base.js";
+import {
+  isFacilityBillingAdmin,
+  subscriptionLifecycleHttpStatus,
+} from "../lib/subscription-lifecycle-rules.js";
+import { runDailySubscriptionLifecycle } from "../lib/subscription-lifecycle.js";
 import { CURRENT_TERMS_VERSION, needsAcceptance } from "../lib/terms-versions";
 import { getConfiguredStripePriceId, isStripeConfigured, stripeRequest } from "../stripeClient";
-import { syncStripeSubscriptionById } from "../webhookHandlers";
+import {
+  createSubscriptionFromSetupCheckout,
+  syncStripeSubscriptionById,
+} from "../webhookHandlers";
 
 const router: IRouter = Router();
 const EXPECTED_MONTHLY_PRICE_CENTS = 29_900;
 const MAX_STRIPE_SUBSCRIPTION_HISTORY_PAGES = 100;
+const LOCAL_TRIAL_SETUP_POLICY = "local-trial-card-setup-v1";
+const TERMINAL_STRIPE_STATUSES = new Set(["canceled", "incomplete_expired"]);
+
+// POST /api/billing/admin/cron/subscription-lifecycle
+// External daily schedulers use the same CRON_SECRET guard as the other cron
+// endpoints. Partial account failures are explicitly reported as HTTP 207.
+router.post("/admin/cron/subscription-lifecycle", requireCronOrSuperAdmin, async (req, res) => {
+  try {
+    const result = await runDailySubscriptionLifecycle();
+    const failedAccountCount = new Set(
+      result.failures.map((failure) => failure.accountId),
+    ).size;
+    return res.status(subscriptionLifecycleHttpStatus(failedAccountCount)).json({
+      ok: failedAccountCount === 0,
+      accountsScanned: result.accountsScanned,
+      stripeAccountsProcessed: result.stripeAccountsProcessed,
+      trialReminderAccountsScanned: result.trialReminderAccountsScanned,
+      trialRemindersSent: result.trialRemindersSent,
+      failedAccountCount,
+      failures: result.failures,
+      ...(failedAccountCount > 0
+        ? { error: "Subscription lifecycle completed with account failures." }
+        : {}),
+    });
+  } catch (error) {
+    req.log.error({ err: error }, "Subscription lifecycle cron run failed.");
+    return res.status(502).json({
+      ok: false,
+      error: "Subscription lifecycle could not complete.",
+      failedAccountCount: null,
+    });
+  }
+});
+
+async function cancelStripeSubscriptionIdempotently(
+  subscriptionId: string,
+): Promise<{ alreadyCanceled: boolean }> {
+  let current = await stripeRequest<{ status: string }>(
+    `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
+  );
+  if (TERMINAL_STRIPE_STATUSES.has(current.status)) return { alreadyCanceled: true };
+  try {
+    await stripeRequest(
+      `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
+      { method: "DELETE" },
+    );
+    return { alreadyCanceled: false };
+  } catch (deleteError) {
+    current = await stripeRequest<{ status: string }>(
+      `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    );
+    if (TERMINAL_STRIPE_STATUSES.has(current.status)) return { alreadyCanceled: true };
+    throw deleteError;
+  }
+}
 
 type CheckoutPrice = {
   livemode?: boolean;
@@ -33,6 +97,20 @@ type CheckoutPrice = {
     usage_type?: string;
   } | null;
   product?: string | { active?: boolean } | null;
+};
+
+type OpenCheckoutSession = {
+  id: string;
+  url: string | null;
+  mode: string | null;
+  status: string | null;
+  client_reference_id: string | null;
+  metadata: Record<string, string> | null;
+};
+
+type StripeSubscriptionRef = {
+  id: string;
+  status: string;
 };
 
 /**
@@ -109,6 +187,95 @@ async function loadStripeSubscriptionHistory(
   throw new Error("Stripe subscription history exceeded the pagination safety limit.");
 }
 
+async function loadAllStripeSubscriptionRefs(
+  stripe: { request<T>(path: string): Promise<T> },
+  customerId: string,
+): Promise<StripeSubscriptionRef[]> {
+  const subscriptions: StripeSubscriptionRef[] = [];
+  const seen = new Set<string>();
+  let startingAfter: string | undefined;
+  for (let pageNumber = 0; pageNumber < MAX_STRIPE_SUBSCRIPTION_HISTORY_PAGES; pageNumber += 1) {
+    const params = new URLSearchParams({ customer: customerId, status: "all", limit: "100" });
+    if (startingAfter) params.set("starting_after", startingAfter);
+    const page = await stripe.request<{
+      data: StripeSubscriptionRef[];
+      has_more: boolean;
+    }>(`/v1/subscriptions?${params.toString()}`);
+    if (!page || !Array.isArray(page.data) || typeof page.has_more !== "boolean") {
+      throw new Error("Stripe returned an invalid subscription cancellation page.");
+    }
+    for (const subscription of page.data) {
+      if (!subscription?.id || !subscription.status || seen.has(subscription.id)) {
+        throw new Error("Stripe returned incomplete or repeated subscription cancellation data.");
+      }
+      seen.add(subscription.id);
+      subscriptions.push(subscription);
+    }
+    if (!page.has_more) return subscriptions;
+    const cursor = page.data.at(-1)?.id;
+    if (!cursor || cursor === startingAfter) {
+      throw new Error("Stripe subscription cancellation pagination did not advance.");
+    }
+    startingAfter = cursor;
+  }
+  throw new Error("Stripe subscription cancellation history exceeded its pagination safety limit.");
+}
+
+async function loadAllOpenCheckoutSessions(
+  stripe: { request<T>(path: string): Promise<T> },
+  customerId: string,
+): Promise<OpenCheckoutSession[]> {
+  const sessions: OpenCheckoutSession[] = [];
+  const seen = new Set<string>();
+  let startingAfter: string | undefined;
+  for (let pageNumber = 0; pageNumber < MAX_STRIPE_SUBSCRIPTION_HISTORY_PAGES; pageNumber += 1) {
+    const params = new URLSearchParams({ customer: customerId, status: "open", limit: "100" });
+    if (startingAfter) params.set("starting_after", startingAfter);
+    const page = await stripe.request<{
+      data: OpenCheckoutSession[];
+      has_more: boolean;
+    }>(`/v1/checkout/sessions?${params.toString()}`);
+    if (!page || !Array.isArray(page.data) || typeof page.has_more !== "boolean") {
+      throw new Error("Stripe returned an invalid open Checkout session page.");
+    }
+    for (const session of page.data) {
+      if (!session?.id || session.status !== "open" || seen.has(session.id)) {
+        throw new Error("Stripe returned incomplete or repeated open Checkout session data.");
+      }
+      seen.add(session.id);
+      sessions.push(session);
+    }
+    if (!page.has_more) return sessions;
+    const cursor = page.data.at(-1)?.id;
+    if (!cursor || cursor === startingAfter) {
+      throw new Error("Stripe Checkout session pagination did not advance.");
+    }
+    startingAfter = cursor;
+  }
+  throw new Error("Stripe open Checkout session history exceeded its pagination safety limit.");
+}
+
+async function getStripeCustomerCurrentTime(
+  stripe: { request<T>(path: string): Promise<T> },
+  customerId: string,
+): Promise<Date> {
+  const customer = await stripe.request<{
+    test_clock?: string | { id: string } | null;
+  }>(`/v1/customers/${encodeURIComponent(customerId)}`);
+  const testClockId = typeof customer.test_clock === "string"
+    ? customer.test_clock
+    : customer.test_clock?.id;
+  if (!testClockId) return new Date();
+
+  const clock = await stripe.request<{ status: string; frozen_time: number }>(
+    `/v1/test_helpers/test_clocks/${encodeURIComponent(testClockId)}`,
+  );
+  if (clock.status !== "ready") {
+    throw new Error("The Stripe test clock must finish advancing before checkout can continue.");
+  }
+  return new Date(clock.frozen_time * 1000);
+}
+
 function checkoutTrialPolicy(trialPlan: ReturnType<typeof resolveCheckoutTrialPlan>): string {
   switch (trialPlan.kind) {
     case "first-direct":
@@ -135,6 +302,60 @@ function checkoutTrialPolicy(trialPlan: ReturnType<typeof resolveCheckoutTrialPl
  */
 function getStripeOptional() {
   return isStripeConfigured() ? { request: stripeRequest } : null;
+}
+
+const MANAGED_PORTAL_CONFIGURATION = "cms_period_end_no_proration_v1";
+
+/**
+ * Always use a Billing Portal configuration that cannot immediately terminate
+ * or prorate a customer's subscription. An explicitly configured portal ID is
+ * brought into policy; without one, a uniquely marked configuration is found
+ * or created (idempotent across API restarts).
+ */
+async function getPeriodEndOnlyPortalConfigurationId(): Promise<string> {
+  const configuredId = process.env.STRIPE_PORTAL_CONFIGURATION_ID?.trim();
+  let configurationId = configuredId || null;
+  if (!configurationId) {
+    let startingAfter: string | undefined;
+    for (let pageNumber = 0; pageNumber < 5; pageNumber += 1) {
+      const params = new URLSearchParams({ limit: "100" });
+      if (startingAfter) params.set("starting_after", startingAfter);
+      const page = await stripeRequest<{
+        data: { id: string; metadata?: Record<string, string> }[];
+        has_more: boolean;
+      }>(`/v1/billing_portal/configurations?${params.toString()}`);
+      const managed = page.data.find((item) =>
+        item.metadata?.cms_cancellation_policy === MANAGED_PORTAL_CONFIGURATION
+      );
+      if (managed) {
+        configurationId = managed.id;
+        break;
+      }
+      if (!page.has_more) break;
+      startingAfter = page.data.at(-1)?.id;
+      if (!startingAfter) break;
+    }
+  }
+
+  const params = new URLSearchParams({
+    "features[subscription_cancel][enabled]": "true",
+    "features[subscription_cancel][mode]": "at_period_end",
+    "features[subscription_cancel][proration_behavior]": "none",
+    "features[payment_method_update][enabled]": "true",
+    "metadata[cms_cancellation_policy]": MANAGED_PORTAL_CONFIGURATION,
+  });
+  if (configurationId) {
+    const updated = await stripeRequest<{ id: string }>(
+      `/v1/billing_portal/configurations/${encodeURIComponent(configurationId)}`,
+      { method: "POST", body: params },
+    );
+    return updated.id;
+  }
+  const created = await stripeRequest<{ id: string }>(
+    "/v1/billing_portal/configurations",
+    { method: "POST", body: params },
+  );
+  return created.id;
 }
 
 // Helper: get the user's account
@@ -189,6 +410,9 @@ router.get("/subscription", requireAuth, async (req, res) => {
       daysLeftInTrial: trialActive
         ? Math.ceil((account.trialEndsAt!.getTime() - now.getTime()) / 86_400_000)
         : 0,
+      accessEndsAt: account.subscriptionCancelAtPeriodEnd
+        ? account.subscriptionCurrentPeriodEnd
+        : null,
     },
     paymentAcceptanceEnabled,
     plan: paymentAcceptanceEnabled
@@ -196,6 +420,218 @@ router.get("/subscription", requireAuth, async (req, res) => {
       : null,
     canManageBilling: Boolean(account.stripeCustomerId),
   });
+});
+
+// POST /api/billing/subscription/cancel — retain access to the paid-through date.
+router.post("/subscription/cancel", requireAuth, async (req, res) => {
+  const membership = await getUserAccount((req as any).clerkUserId);
+  if (!membership) return res.status(404).json({ error: "No facility account found." });
+  if (!isFacilityBillingAdmin(membership.accountUser.role)) {
+    return res.status(403).json({ error: "Only a facility administrator can change billing." });
+  }
+  const account = membership.account;
+  if (!account?.stripeSubscriptionId) {
+    return res.status(404).json({ error: "No active Stripe subscription was found." });
+  }
+  if (!isStripeConfigured()) {
+    return res.status(503).json({ error: "Stripe billing is not configured." });
+  }
+  if (account.subscriptionCancelAtPeriodEnd) {
+    return res.json({
+      cancelAtPeriodEnd: true,
+      accessEndsAt: account.subscriptionCurrentPeriodEnd,
+    });
+  }
+
+  const params = new URLSearchParams({
+    cancel_at_period_end: "true",
+    proration_behavior: "none",
+  });
+  let updated: {
+    id: string;
+    status: string;
+    cancel_at_period_end: boolean;
+    cancel_at?: number | null;
+    current_period_end?: number;
+    items?: { data?: { current_period_end?: number }[] };
+  };
+  try {
+    updated = await stripeRequest<{
+      id: string;
+      status: string;
+      cancel_at_period_end: boolean;
+      cancel_at?: number | null;
+      current_period_end?: number;
+      items?: { data?: { current_period_end?: number }[] };
+    }>(
+      `/v1/subscriptions/${encodeURIComponent(account.stripeSubscriptionId)}`,
+      { method: "POST", body: params },
+    );
+  } catch (error) {
+    req.log.error({ err: error, accountId: account.id }, "Stripe could not schedule subscription cancellation.");
+    return res.status(502).json({ error: "Cancellation could not be scheduled with Stripe. Please try again." });
+  }
+  await syncStripeSubscriptionById(updated.id);
+  const periodEnd = updated.items?.data?.[0]?.current_period_end ??
+    updated.current_period_end ?? updated.cancel_at ?? null;
+  return res.json({
+    cancelAtPeriodEnd: updated.cancel_at_period_end,
+    accessEndsAt: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+  });
+});
+
+// POST /api/billing/subscription/undo-cancellation — available until expiry.
+router.post("/subscription/undo-cancellation", requireAuth, async (req, res) => {
+  const membership = await getUserAccount((req as any).clerkUserId);
+  if (!membership) return res.status(404).json({ error: "No facility account found." });
+  if (!isFacilityBillingAdmin(membership.accountUser.role)) {
+    return res.status(403).json({ error: "Only a facility administrator can change billing." });
+  }
+  const account = membership.account;
+  if (!account?.stripeSubscriptionId || !account.subscriptionCancelAtPeriodEnd) {
+    return res.status(409).json({ error: "There is no scheduled cancellation to undo." });
+  }
+  if (
+    !account.subscriptionCurrentPeriodEnd ||
+    account.subscriptionCurrentPeriodEnd <= new Date()
+  ) {
+    return res.status(409).json({ error: "The subscription access period has ended." });
+  }
+  const params = new URLSearchParams({
+    cancel_at_period_end: "false",
+    proration_behavior: "none",
+  });
+  try {
+    const updated = await stripeRequest<{ id: string }>(
+      `/v1/subscriptions/${encodeURIComponent(account.stripeSubscriptionId)}`,
+      { method: "POST", body: params },
+    );
+    await syncStripeSubscriptionById(updated.id);
+  } catch (error) {
+    req.log.error({ err: error, accountId: account.id }, "Stripe could not undo scheduled subscription cancellation.");
+    return res.status(502).json({ error: "Cancellation could not be undone with Stripe. Please try again." });
+  }
+  return res.json({ cancelAtPeriodEnd: false });
+});
+
+// POST /api/billing/admin/accounts/:id/remove — permanent local revocation and
+// immediate Stripe cancellation. DELETE does not issue refunds.
+router.post("/admin/accounts/:id/remove", requireAnyAdmin, async (req, res) => {
+  const accountId = typeof req.params.id === "string" ? req.params.id : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(accountId)) {
+    return res.status(400).json({ error: "A valid client account ID is required." });
+  }
+  const [account] = await db.select({
+    id: accounts.id,
+  }).from(accounts).where(eq(accounts.id, accountId)).limit(1);
+  if (!account) return res.status(404).json({ error: "Client account not found." });
+
+  const removedAt = new Date();
+  const stripeIdentifiers = await db.transaction(async (tx) => {
+    const [currentAccount] = await tx.select({
+      stripeSubscriptionId: accounts.stripeSubscriptionId,
+      stripeCustomerId: accounts.stripeCustomerId,
+    }).from(accounts).where(eq(accounts.id, account.id)).for("update").limit(1);
+    if (!currentAccount) return null;
+    await tx.update(accounts).set({
+      subscriptionStatus: "removed",
+      subscriptionCancelAtPeriodEnd: false,
+      subscriptionCanceledAt: removedAt,
+      trialEndsAt: null,
+      updatedAt: removedAt,
+    }).where(eq(accounts.id, account.id));
+    await tx.update(accountUsers).set({
+      hasComplimentaryAccess: false,
+      complimentaryAccessGrantedAt: null,
+      complimentaryAccessGrantedBy: null,
+    }).where(eq(accountUsers.accountId, account.id));
+    return currentAccount;
+  });
+
+  if (!stripeIdentifiers?.stripeCustomerId && !stripeIdentifiers?.stripeSubscriptionId) {
+    return res.json({ status: "Removed", accessRemoved: true, stripeCanceled: true });
+  }
+  if (!isStripeConfigured()) {
+    return res.status(503).json({
+      status: "Removed",
+      accessRemoved: true,
+      stripeCanceled: false,
+      stripeCancellation: "not_configured",
+      error: "Local access was removed, but Stripe is not configured so cancellation could not be attempted.",
+    });
+  }
+  try {
+    const failures: string[] = [];
+    if (stripeIdentifiers?.stripeCustomerId) {
+      try {
+        const openSessions = await loadAllOpenCheckoutSessions(
+          { request: stripeRequest },
+          stripeIdentifiers.stripeCustomerId,
+        );
+        for (const session of openSessions) {
+          try {
+            await stripeRequest(
+              `/v1/checkout/sessions/${encodeURIComponent(session.id)}/expire`,
+              { method: "POST" },
+            );
+          } catch {
+            failures.push(`checkout:${session.id}`);
+          }
+        }
+      } catch {
+        failures.push("checkout-session-history");
+      }
+
+      try {
+        const subscriptions = await loadAllStripeSubscriptionRefs(
+          { request: stripeRequest },
+          stripeIdentifiers.stripeCustomerId,
+        );
+        if (
+          stripeIdentifiers.stripeSubscriptionId &&
+          !subscriptions.some((subscription) => subscription.id === stripeIdentifiers.stripeSubscriptionId)
+        ) {
+          subscriptions.push({
+            id: stripeIdentifiers.stripeSubscriptionId,
+            status: "unknown",
+          });
+        }
+        for (const subscription of subscriptions) {
+          try {
+            await cancelStripeSubscriptionIdempotently(subscription.id);
+          } catch {
+            failures.push(`subscription:${subscription.id}`);
+          }
+        }
+      } catch {
+        failures.push("subscription-history");
+      }
+    } else if (stripeIdentifiers?.stripeSubscriptionId) {
+      try {
+        await cancelStripeSubscriptionIdempotently(stripeIdentifiers.stripeSubscriptionId);
+      } catch {
+        failures.push(`subscription:${stripeIdentifiers.stripeSubscriptionId}`);
+      }
+    }
+    if (failures.length > 0) {
+      throw new Error(`Stripe removal cleanup failed: ${failures.join(",")}`);
+    }
+    return res.json({
+      status: "Removed",
+      accessRemoved: true,
+      stripeCanceled: true,
+      checkoutSessionsExpired: true,
+    });
+  } catch (error) {
+    req.log.error({ err: error, accountId: account.id }, "Client access was removed but Stripe cancellation failed.");
+    return res.status(502).json({
+      status: "Removed",
+      accessRemoved: true,
+      stripeCanceled: false,
+      stripeCancellation: "failed",
+      error: "Client access was removed, but Stripe could not cancel the subscription. Retry removal or cancel it in Stripe.",
+    });
+  }
 });
 
 // POST /api/billing/checkout
@@ -215,6 +651,13 @@ router.post("/checkout", requireAuth, async (req, res) => {
   const membership = await getUserAccount((req as any).clerkUserId);
   if (!membership) return res.status(404).json({ error: "No facility account found" });
   const { account, accountUser } = membership;
+  const checkoutAuthenticatedAt = Date.now();
+  const removalAtAtRequest = account.subscriptionStatus === "removed"
+    ? account.subscriptionCanceledAt
+    : null;
+  const removalMarkerAtRequest = removalAtAtRequest
+    ? removalAtAtRequest.getTime()
+    : null;
 
   // The gate. Terms 1.0 told customers that updated billing terms would be
   // presented and affirmatively accepted before any charging begins. This is
@@ -333,9 +776,20 @@ router.post("/checkout", requireAuth, async (req, res) => {
       stripeCustomerId: accounts.stripeCustomerId,
       stripeSubscriptionId: accounts.stripeSubscriptionId,
       subscriptionStatus: accounts.subscriptionStatus,
+      subscriptionCanceledAt: accounts.subscriptionCanceledAt,
       trialEndsAt: accounts.trialEndsAt,
     }).from(accounts).where(eq(accounts.id, account.id)).for("update").limit(1);
     if (!currentAccount) return { kind: "account-missing" as const };
+    if (
+      currentAccount.subscriptionStatus === "removed" &&
+      (
+        removalMarkerAtRequest === null ||
+        (currentAccount.subscriptionCanceledAt?.getTime() ?? 0) !==
+          removalMarkerAtRequest
+      )
+    ) {
+      return { kind: "account-removal-changed" as const };
+    }
 
     const lockedCustomerId = currentAccount.stripeCustomerId ?? customerId;
     let subscriptionStatuses: string[];
@@ -349,26 +803,30 @@ router.post("/checkout", requireAuth, async (req, res) => {
       return { kind: "subscription-history-unavailable" as const };
     }
 
-    if (
-      (currentAccount.stripeSubscriptionId &&
-        isRecoverableStripeSubscriptionStatus(currentAccount.subscriptionStatus ?? "")) ||
-      subscriptionStatuses.some(isRecoverableStripeSubscriptionStatus)
-    ) {
+    if (hasCheckoutBlockingSubscription({
+      accountSubscriptionStatus: currentAccount.subscriptionStatus,
+      stripeSubscriptionId: currentAccount.stripeSubscriptionId,
+      stripeSubscriptionStatuses: subscriptionStatuses,
+    })) {
       return { kind: "already-subscribed" as const };
     }
 
+    let checkoutNow: Date;
+    try {
+      checkoutNow = await getStripeCustomerCurrentTime(stripe, lockedCustomerId);
+    } catch (error) {
+      req.log.error({ err: error, accountId: account.id }, "Stripe customer billing clock could not be verified.");
+      return { kind: "subscription-history-unavailable" as const };
+    }
     const hasStripeSubscriptionHistory = Boolean(currentAccount.stripeSubscriptionId) ||
       subscriptionStatuses.length > 0;
     let trialPlan = resolveCheckoutTrialPlan({
       subscriptionStatus: currentAccount.subscriptionStatus,
       trialEndsAt: currentAccount.trialEndsAt,
       hasStripeSubscriptionHistory,
+      now: checkoutNow,
     });
-    if (trialPlan.kind === "local-trial-active") {
-      return { kind: "local-trial-active" as const, trialEnd: trialPlan.trialEnd };
-    }
     if (
-      process.env.NODE_ENV === "production" &&
       trialPlan.kind === "first-direct" &&
       (
         trialPlan.trialPeriodDays !== 30 ||
@@ -377,43 +835,41 @@ router.post("/checkout", requireAuth, async (req, res) => {
     ) {
       req.log.error(
         { accountId: account.id, configuredTrialDays: process.env.STRIPE_TRIAL_PERIOD_DAYS },
-        "Production direct-checkout trial must be configured for exactly 30 days.",
+        "First-direct setup Checkout must be configured for exactly 30 days.",
       );
       return { kind: "trial-configuration-invalid" as const };
     }
 
+    // All new payment-method collection uses setup mode. The subscription is
+    // created only after a single account-locked completion path, so an old
+    // subscription-mode session cannot race a setup session into two charges.
+    const expectedSessionMode = "setup";
+    const expectedCheckoutPolicy = LOCAL_TRIAL_SETUP_POLICY;
+    const currentRemovalMarker = currentAccount.subscriptionStatus === "removed"
+      ? String(currentAccount.subscriptionCanceledAt?.getTime() ?? 0)
+      : null;
     const trialPolicy = checkoutTrialPolicy(trialPlan);
-    let existingSessions: {
-      data: {
-        id: string;
-        url: string | null;
-        mode: string | null;
-        status: string | null;
-        client_reference_id: string | null;
-        metadata: Record<string, string> | null;
-      }[];
-    };
+    let existingSessions: OpenCheckoutSession[];
     try {
-      existingSessions = await stripe.request(
-        `/v1/checkout/sessions?customer=${encodeURIComponent(lockedCustomerId)}&status=open&limit=100`,
-      );
+      existingSessions = await loadAllOpenCheckoutSessions(stripe, lockedCustomerId);
     } catch (error) {
       req.log.error({ err: error, accountId: account.id }, "Open Stripe Checkout sessions could not be verified.");
       return { kind: "checkout-sessions-unavailable" as const };
     }
 
-    let reusableSession: (typeof existingSessions.data)[number] | null = null;
+    let reusableSession: OpenCheckoutSession | null = null;
     try {
-      for (const existingSession of existingSessions.data) {
-        if (
-          existingSession.client_reference_id !== account.id ||
-          existingSession.mode !== "subscription"
-        ) continue;
-
+      for (const existingSession of existingSessions) {
         const matchesCurrentPolicy =
-          existingSession.metadata?.checkoutPolicy === "facility-trial-v2" &&
+          existingSession.client_reference_id === account.id &&
+          existingSession.mode === expectedSessionMode &&
+          existingSession.metadata?.checkoutPolicy === expectedCheckoutPolicy &&
           existingSession.metadata?.trialPolicy === trialPolicy &&
-          existingSession.metadata?.priceId === priceId;
+          existingSession.metadata?.priceId === priceId &&
+          (currentRemovalMarker === null
+            ? existingSession.metadata?.removalResubscribe !== "true"
+            : existingSession.metadata?.removalResubscribe === "true" &&
+              existingSession.metadata?.removedAt === currentRemovalMarker);
         if (!reusableSession && matchesCurrentPolicy && existingSession.url) {
           reusableSession = existingSession;
           continue;
@@ -434,23 +890,9 @@ router.post("/checkout", requireAuth, async (req, res) => {
       subscriptionStatus: currentAccount.subscriptionStatus,
       trialEndsAt: currentAccount.trialEndsAt,
       hasStripeSubscriptionHistory,
+      now: checkoutNow,
     });
-    if (trialPlan.kind === "local-trial-active") {
-      if (reusableSession) {
-        try {
-          await stripe.request(
-            `/v1/checkout/sessions/${encodeURIComponent(reusableSession.id)}/expire`,
-            { method: "POST" },
-          );
-        } catch (error) {
-          req.log.error({ err: error, accountId: account.id }, "A soon-to-expire trial Checkout session could not be expired.");
-          return { kind: "checkout-sessions-unavailable" as const };
-        }
-      }
-      return { kind: "local-trial-active" as const, trialEnd: trialPlan.trialEnd };
-    }
     if (
-      process.env.NODE_ENV === "production" &&
       trialPlan.kind === "first-direct" &&
       (
         trialPlan.trialPeriodDays !== 30 ||
@@ -459,7 +901,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
     ) {
       req.log.error(
         { accountId: account.id, configuredTrialDays: process.env.STRIPE_TRIAL_PERIOD_DAYS },
-        "Production direct-checkout trial must be configured for exactly 30 days.",
+        "First-direct setup Checkout must be configured for exactly 30 days.",
       );
       return { kind: "trial-configuration-invalid" as const };
     }
@@ -487,14 +929,11 @@ router.post("/checkout", requireAuth, async (req, res) => {
       return { kind: "checkout-url" as const, url: reusableSession.url };
     }
 
-    const checkoutParams = new URLSearchParams({
+    const setupParams = new URLSearchParams({
       customer: lockedCustomerId,
-      "line_items[0][price]": priceId,
-      "line_items[0][quantity]": "1",
-      mode: "subscription",
-      // The card is collected up front and the subscription charges
-      // automatically when its Stripe-owned trial ends.
-      payment_method_collection: "always",
+      mode: "setup",
+      "payment_method_types[0]": "card",
+      "setup_intent_data[usage]": "off_session",
       success_url: `${base}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${base}/billing?checkout=canceled`,
       client_reference_id: account.id,
@@ -502,32 +941,31 @@ router.post("/checkout", requireAuth, async (req, res) => {
       "metadata[ccn]": currentAccount.ccn,
       "metadata[identifierType]": currentAccount.identifierType,
       "metadata[clerkUserId]": clerkUserId,
-      "metadata[checkoutPolicy]": "facility-trial-v2",
+      "metadata[checkoutPolicy]": LOCAL_TRIAL_SETUP_POLICY,
+      "metadata[setupPolicy]": LOCAL_TRIAL_SETUP_POLICY,
       "metadata[trialPolicy]": finalTrialPolicy,
       "metadata[priceId]": priceId,
-      "subscription_data[metadata][accountId]": account.id,
-      "subscription_data[metadata][ccn]": currentAccount.ccn,
-      "subscription_data[metadata][identifierType]": currentAccount.identifierType,
-      "subscription_data[metadata][clerkUserId]": clerkUserId,
+      "metadata[trialPeriodDays]": trialPlan.kind === "first-direct"
+        ? String(trialPlan.trialPeriodDays)
+        : "0",
+      "setup_intent_data[metadata][accountId]": account.id,
+      "setup_intent_data[metadata][setupPolicy]": LOCAL_TRIAL_SETUP_POLICY,
     });
-    if (trialPlan.kind === "first-direct" && trialPlan.trialPeriodDays > 0) {
-      checkoutParams.set(
-        "subscription_data[trial_period_days]",
-        String(trialPlan.trialPeriodDays),
-      );
-    } else if (trialPlan.kind === "existing-local") {
-      checkoutParams.set("subscription_data[trial_end]", String(trialPlan.trialEnd));
+    if (currentAccount.subscriptionStatus === "removed") {
+      setupParams.set("metadata[removalResubscribe]", "true");
+      setupParams.set("metadata[removedAt]", String(removalMarkerAtRequest));
+      setupParams.set("metadata[authenticatedCheckoutAt]", String(checkoutAuthenticatedAt));
     }
 
     let session: { url: string | null };
     try {
       session = await stripe.request<{ url: string | null }>("/v1/checkout/sessions", {
         method: "POST",
-        body: checkoutParams,
-        idempotencyKey: `cms-checkout-${account.id}-${randomUUID()}`,
+        body: setupParams,
+        idempotencyKey: `cms-setup-checkout-${account.id}-${randomUUID()}`,
       });
     } catch (error) {
-      req.log.error({ err: error, accountId: account.id }, "Stripe Checkout session could not be created.");
+      req.log.error({ err: error, accountId: account.id }, "Stripe card setup Checkout could not be created.");
       return { kind: "checkout-unavailable" as const };
     }
     return { kind: "checkout-url" as const, url: session.url };
@@ -535,6 +973,12 @@ router.post("/checkout", requireAuth, async (req, res) => {
 
   if (checkoutResult.kind === "account-missing") {
     return res.status(404).json({ error: "No facility account found" });
+  }
+  if (checkoutResult.kind === "account-removal-changed") {
+    return res.status(409).json({
+      error: "This account was removed while checkout was being prepared. Start a new authenticated checkout to restore billing.",
+      code: "ACCOUNT_REMOVED",
+    });
   }
   if (checkoutResult.kind === "checkout-unavailable") {
     return res.status(503).json({
@@ -550,15 +994,8 @@ router.post("/checkout", requireAuth, async (req, res) => {
   }
   if (checkoutResult.kind === "trial-configuration-invalid") {
     return res.status(503).json({
-      error: "The production subscription trial must be configured for exactly 30 days.",
+      error: "The first-direct subscription trial must be configured for exactly 30 days.",
       code: "TRIAL_CONFIGURATION_INVALID",
-    });
-  }
-  if (checkoutResult.kind === "local-trial-active") {
-    return res.status(409).json({
-      error: "Your existing trial is still active and ends too soon for a Stripe trial. Please return after it ends.",
-      code: "LOCAL_TRIAL_STILL_ACTIVE",
-      trialEndsAt: new Date(checkoutResult.trialEnd * 1000).toISOString(),
     });
   }
   if (
@@ -591,6 +1028,10 @@ router.post("/checkout/confirm", requireAuth, async (req, res) => {
     client_reference_id: string | null;
     customer: string | { id: string } | null;
     subscription: string | { id: string } | null;
+    setup_intent: string | { id: string } | null;
+    created: number;
+    mode: string | null;
+    metadata: Record<string, string> | null;
     payment_status: string;
     status: string | null;
   }>(`/v1/checkout/sessions/${encodeURIComponent(sessionId)}`);
@@ -603,7 +1044,32 @@ router.post("/checkout/confirm", requireAuth, async (req, res) => {
   ) {
     return res.status(403).json({ error: "This Checkout session does not belong to this facility." });
   }
-  if (session.status !== "complete" || !session.subscription) {
+  if (
+    session.mode === "setup" &&
+    session.metadata?.setupPolicy === LOCAL_TRIAL_SETUP_POLICY
+  ) {
+    if (session.status !== "complete" || !session.setup_intent) {
+      return res.status(409).json({ error: "Card setup is not complete yet." });
+    }
+    const subscriptionId = await createSubscriptionFromSetupCheckout({
+      id: sessionId,
+      created: session.created,
+      mode: session.mode,
+      status: session.status,
+      client_reference_id: session.client_reference_id,
+      customer: session.customer,
+      setup_intent: session.setup_intent,
+      metadata: session.metadata,
+    });
+    if (!subscriptionId) {
+      return res.status(409).json({
+        error: "This account was removed after the setup session was created. Start a new authenticated checkout after removal.",
+        code: "ACCOUNT_REMOVED",
+      });
+    }
+    return res.json({ synchronized: true, subscriptionId });
+  }
+  if (session.status !== "complete" || !session.subscription || session.mode !== "subscription") {
     return res.status(409).json({ error: "Checkout is not complete yet." });
   }
   const subscriptionId = typeof session.subscription === "string"
@@ -635,12 +1101,19 @@ router.post("/portal", requireAuth, async (req, res) => {
 
   const base = getReturnBase(req);
 
+  let portalConfigurationId: string;
+  try {
+    portalConfigurationId = await getPeriodEndOnlyPortalConfigurationId();
+  } catch (error) {
+    req.log.error({ err: error }, "A safe Stripe Billing Portal configuration could not be prepared.");
+    return res.status(503).json({
+      error: "Secure billing management is temporarily unavailable. Please try again or contact support.",
+    });
+  }
   const portalParams = new URLSearchParams({
     customer: account.stripeCustomerId,
     return_url: `${base}/billing`,
-    ...(process.env.STRIPE_PORTAL_CONFIGURATION_ID
-      ? { configuration: process.env.STRIPE_PORTAL_CONFIGURATION_ID }
-      : {}),
+    configuration: portalConfigurationId,
   });
   const portalSession = await stripe.request<{ url: string }>("/v1/billing_portal/sessions", {
     method: "POST",

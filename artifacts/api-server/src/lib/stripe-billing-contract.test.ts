@@ -22,7 +22,8 @@ test("checkout uses the configured server-side price and authenticated identity 
   assert.match(billing, /\.\.\.\(email \? \{ email \}/);
   assert.match(billing, /clerkUserId/);
   assert.match(billing, /client_reference_id:\s+account\.id/);
-  assert.match(billing, /"subscription_data\[metadata\]\[accountId\]"/);
+  assert.match(billing, /"setup_intent_data\[metadata\]\[accountId\]"/);
+  assert.doesNotMatch(billing, /"subscription_data\[metadata\]\[accountId\]"/);
   assert.match(billing, /idempotencyKey:/);
 });
 
@@ -51,38 +52,106 @@ test("checkout uses a unique attempt key and serializes/reuses open sessions", (
   const checkout = billing.slice(checkoutStart, billing.indexOf('router.post("/checkout/confirm"'));
   assert.match(billing, /import \{ randomUUID \} from "node:crypto"/);
   assert.match(checkout, /\.for\("update"\)/);
-  assert.match(checkout, /status=open&limit=100/);
-  assert.match(checkout, /existingSession\.metadata\?\.checkoutPolicy === "facility-trial-v2"/);
+  assert.match(checkout, /loadAllOpenCheckoutSessions\(stripe, lockedCustomerId\)/);
+  assert.match(billing, /status: "open", limit: "100"/);
+  assert.match(checkout, /existingSession\.metadata\?\.checkoutPolicy === expectedCheckoutPolicy/);
+  assert.match(checkout, /existingSession\.mode === expectedSessionMode/);
   assert.match(checkout, /\/v1\/checkout\/sessions\/\$\{encodeURIComponent\(existingSession\.id\)\}\/expire/);
-  assert.match(checkout, /idempotencyKey:\s*`cms-checkout-\$\{account\.id\}-\$\{randomUUID\(\)\}`/);
-  assert.doesNotMatch(checkout, /idempotencyKey:\s*`cms-checkout-\$\{account\.id\}-\$\{priceId\}/);
+  assert.match(checkout, /idempotencyKey:\s*`cms-setup-checkout-\$\{account\.id\}-\$\{randomUUID\(\)\}`/);
+  assert.doesNotMatch(checkout, /mode:\s*"subscription"/);
   assert.match(billing, /starting_after/);
   assert.match(billing, /page\.has_more/);
   assert.match(billing, /MAX_STRIPE_SUBSCRIPTION_HISTORY_PAGES/);
-  assert.match(checkout, /subscriptionStatuses\.some\(isRecoverableStripeSubscriptionStatus\)/);
+  assert.match(checkout, /hasCheckoutBlockingSubscription\(\{/);
   assert.match(checkout, /code:\s*"ALREADY_SUBSCRIBED"/);
   assert.match(billing, /complete Stripe subscription history could not be verified/i);
   assert.match(checkout, /kind:\s*"subscription-history-unavailable"/);
   assert.ok(
-    checkout.indexOf("subscriptionStatuses.some") <
+    checkout.indexOf("hasCheckoutBlockingSubscription") <
       checkout.indexOf('"/v1/checkout/sessions"'),
     "Stripe subscription history must be inspected before creating a Checkout Session",
   );
 });
 
-test("checkout enforces the production 30-day first-trial policy and preserves existing local trial end", () => {
+test("checkout preserves the production 30-day trial and uses setup mode for a near-expiry local trial", () => {
   const checkoutStart = billing.indexOf('router.post("/checkout"');
   const checkout = billing.slice(checkoutStart, billing.indexOf('router.post("/checkout/confirm"'));
   assert.match(checkout, /trialPlan\.kind === "first-direct"/);
   assert.match(checkout, /trialPlan\.trialPeriodDays !== 30/);
   assert.match(checkout, /isProductionTrialPeriodExactly30\(\)/);
-  assert.match(checkout, /subscription_data\[trial_period_days\]/);
-  assert.match(checkout, /subscription_data\[trial_end\]/);
+  assert.match(checkout, /"metadata\[trialPeriodDays\]"/);
+  assert.match(checkout, /mode:\s*"setup"/);
   assert.match(checkout, /hasStripeSubscriptionHistory/);
-  assert.match(checkout, /trialPlan\.kind === "local-trial-active"/);
-  assert.match(checkout, /code:\s*"LOCAL_TRIAL_STILL_ACTIVE"/);
-  assert.match(checkout, /trialEndsAt:\s*new Date\(checkoutResult\.trialEnd \* 1000\)\.toISOString\(\)/);
-  assert.match(checkout, /return res\.status\(409\)\.json\(\{[\s\S]*?code:\s*"LOCAL_TRIAL_STILL_ACTIVE"/);
+  assert.match(checkout, /getStripeCustomerCurrentTime\(stripe, lockedCustomerId\)/);
+  assert.match(checkout, /now:\s*checkoutNow/);
+  assert.match(checkout, /mode:\s*"setup"/);
+  assert.match(checkout, /"setup_intent_data\[usage\]":\s*"off_session"/);
+  assert.match(checkout, /"metadata\[setupPolicy\]":\s*LOCAL_TRIAL_SETUP_POLICY/);
+  assert.match(checkout, /LOCAL_TRIAL_SETUP_POLICY/);
+});
+
+test("near-expiry setup completion is authenticated, idempotent, and preserves or omits trial_end safely", () => {
+  assert.match(billing, /router\.post\("\/checkout\/confirm", requireAuth/);
+  assert.match(billing, /session\.mode === "setup"/);
+  assert.match(billing, /session\.status !== "complete" \|\| !session\.setup_intent/);
+  assert.match(webhook, /createSubscriptionFromSetupCheckout\(session as SetupCheckoutSession\)/);
+  assert.match(webhook, /setupCheckoutSessionId/);
+  assert.match(webhook, /idempotencyKey:\s*`cms-setup-subscription-\$\{session\.id\}`/);
+  assert.match(webhook, /where\(eq\(accounts\.id, accountId\)\)\.for\("update"\)/);
+  assert.match(webhook, /localTrialEnd > stripeNowSeconds/);
+  assert.match(webhook, /resolveFirstDirectSetupTrialEnd\(/);
+  assert.match(webhook, /params\.set\("trial_end", String\(trialEnd\)\)/);
+  assert.match(webhook, /stripeCustomer\.test_clock/);
+  assert.match(webhook, /testClock\.frozen_time/);
+  assert.match(webhook, /test clock must finish advancing/);
+  assert.match(webhook, /params\.set\("trial_end", String\(trialEnd\)\)/);
+  assert.match(webhook, /\/v1\/subscriptions", \{\s*method: "POST"/);
+  assert.doesNotMatch(
+    webhook.slice(
+      webhook.indexOf("export async function createSubscriptionFromSetupCheckout"),
+      webhook.indexOf("export async function syncStripeSubscriptionById"),
+    ),
+    /trial_period_days/,
+  );
+  assert.match(webhook, /history\.find\(\(subscription\) =>\s*subscription\.metadata\?\.setupCheckoutSessionId === session\.id/);
+});
+
+test("legacy and setup completions reconcile to one account subscription", () => {
+  assert.match(webhook, /reconcileStripeSubscriptionSet\(\s*history,\s*account\.stripeSubscriptionId/);
+  assert.match(webhook, /for \(const duplicate of duplicates\)/);
+  assert.match(webhook, /cancelStripeSubscriptionIfNeeded\(duplicate\.id\)/);
+  assert.match(webhook, /await expireOpenCheckoutSessionsForCustomer\(expectedCustomerId\)/);
+  assert.match(webhook, /listCompletedSubscriptionCheckoutIds\(expectedCustomerId\)/);
+  assert.match(webhook, /subscriptionStatus === "removed" && !authorizedPostRemovalCheckout/);
+  assert.match(billing, /mode:\s*"setup"/);
+  assert.doesNotMatch(billing.slice(
+    billing.indexOf('router.post("/checkout"'),
+    billing.indexOf('router.post("/checkout/confirm"'),
+  ), /mode:\s*"subscription"/);
+});
+
+test("administrator removal is durable and cancellation is idempotent with distinct failures", () => {
+  assert.match(billing, /router\.post\("\/admin\/accounts\/:id\/remove"/);
+  assert.match(billing, /loadAllStripeSubscriptionRefs/);
+  assert.match(billing, /loadAllOpenCheckoutSessions/);
+  assert.match(billing, /stripeCancellation: "not_configured"/);
+  assert.match(billing, /stripeCancellation: "failed"/);
+  assert.match(billing, /TERMINAL_STRIPE_STATUSES\.has\(current\.status\)/);
+  assert.match(webhook, /if \(account\.subscriptionStatus === "removed"\) return;/);
+});
+
+test("subscription cancel and undo require a facility administrator", () => {
+  assert.match(billing, /isFacilityBillingAdmin\(membership\.accountUser\.role\)/);
+  const cancelRoute = billing.slice(
+    billing.indexOf('router.post("/subscription/cancel"'),
+    billing.indexOf('router.post("/subscription/undo-cancellation"'),
+  );
+  const undoRoute = billing.slice(
+    billing.indexOf('router.post("/subscription/undo-cancellation"'),
+    billing.indexOf('router.post("/admin/accounts/:id/remove"'),
+  );
+  assert.match(cancelRoute, /return res\.status\(403\)/);
+  assert.match(undoRoute, /return res\.status\(403\)/);
 });
 
 test("billing supports safe success, cancellation, duplicate subscription, and portal states", () => {
@@ -110,9 +179,9 @@ test("webhooks are raw-body verified and converge supported events to current St
   assert.match(webhook, /stripeRequest<SubscriptionLike>\(`\/v1\/subscriptions/);
   assert.match(webhook, /subscriptionCurrentPeriodEnd/);
   assert.match(webhook, /subscriptionCancelAtPeriodEnd/);
-  assert.match(webhook, /subscription\.cancel_at != null/);
-  assert.match(webhook, /subscription\.cancel_at <= periodEnd/);
-  assert.match(webhook, /subscriptionCancelAtPeriodEnd: subscription\.cancel_at_period_end \|\| cancelsByPeriodEnd/);
+  assert.match(webhook, /chosen\.cancel_at != null/);
+  assert.match(webhook, /chosen\.cancel_at <= periodEnd/);
+  assert.match(webhook, /subscriptionCancelAtPeriodEnd: chosen\.cancel_at_period_end \|\| cancelsByPeriodEnd/);
 });
 
 test("test webhook endpoint reconciliation runs only in development outside readiness smoke", () => {
@@ -123,9 +192,9 @@ test("test webhook endpoint reconciliation runs only in development outside read
 });
 
 test("Stripe trial end is mirrored and scheduled cancellation metadata is normalized", () => {
-  assert.match(webhook, /\.\.\.\(subscription\.trial_end\s*\?\s*\{\s*trialEndsAt:\s*timestamp\(subscription\.trial_end\)/);
-  assert.match(webhook, /subscriptionCancelAtPeriodEnd:\s*subscription\.cancel_at_period_end\s*\|\|\s*cancelsByPeriodEnd/);
-  assert.match(webhook, /subscription\.cancel_at\s*<=\s*periodEnd/);
+  assert.match(webhook, /\.\.\.\(chosen\.trial_end\s*\?\s*\{\s*trialEndsAt:\s*timestamp\(chosen\.trial_end\)/);
+  assert.match(webhook, /subscriptionCancelAtPeriodEnd:\s*chosen\.cancel_at_period_end\s*\|\|\s*cancelsByPeriodEnd/);
+  assert.match(webhook, /chosen\.cancel_at\s*<=\s*periodEnd/);
 });
 
 test("deletion revokes locally without requiring a successful Stripe retrieval", () => {

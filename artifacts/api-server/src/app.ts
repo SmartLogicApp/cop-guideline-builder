@@ -15,8 +15,11 @@ import { HealthCheckResponse } from "@workspace/api-zod";
 import { isPaymentAcceptanceEnabled } from "./lib/payment-config";
 import { processAffiliateConnectWebhook } from "./lib/affiliate-compliance-webhook.js";
 import { verifyAffiliateConnectWebhook } from "./lib/affiliate-compliance-webhook-signature.js";
+import { startSubscriptionLifecycleScheduler } from "./lib/subscription-lifecycle.js";
 
 const app: Express = express();
+
+startSubscriptionLifecycleScheduler();
 
 /** Express gives header values as string | string[]; take the first either way. */
 function firstHeader(value: string | string[] | undefined): string | undefined {

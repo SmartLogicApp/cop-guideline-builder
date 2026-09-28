@@ -144,7 +144,7 @@ test("application outcomes are traceable without leaking applicant fields and du
   assert.equal(duplicate.status, 409);
   assert.equal(racedDuplicate.status, 409);
   assert.equal(duplicate.payload.code, "APPLICATION_ALREADY_EXISTS");
-  assert.match(duplicate.payload.error, /an application with this email already exists/i);
+  assert.match(duplicate.payload.error, /email already has an affiliate application or account.*sign in to continue/i);
   assert.deepEqual(duplicate.payload, racedDuplicate.payload);
   assert.notDeepEqual(inserted.payload, duplicate.payload);
   assert.equal(duplicate.inserts, 0);
@@ -248,20 +248,11 @@ test("agreement publish handler rejects SAMPLE versions and missing explicit rev
   await rejects(publish, { version: "reviewed-test", body });
 });
 
-test("paid approval stays blocked while owner-reviewed terms are disabled", async () => {
-  const previousEnabled = process.env.AFFILIATE_ACTIVATION_ENABLED;
-  const previousVersion = process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
-  delete process.env.AFFILIATE_ACTIVATION_ENABLED;
-  delete process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
-  try {
-    await rejects(handler(affiliateRouter, "post", "/:id/approve"),
-      { referralCode: "TEST-PARTNER", commissionRatePct: 20 }, 403);
-  } finally {
-    if (previousEnabled === undefined) delete process.env.AFFILIATE_ACTIVATION_ENABLED;
-    else process.env.AFFILIATE_ACTIVATION_ENABLED = previousEnabled;
-    if (previousVersion === undefined) delete process.env.AFFILIATE_REVIEWED_TERMS_VERSION;
-    else process.env.AFFILIATE_REVIEWED_TERMS_VERSION = previousVersion;
-  }
+test("the affiliate routes contain no legacy activation pause", () => {
+  const source = readFileSync(new URL("./affiliates.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /AFFILIATE_ACTIVATION_ENABLED/);
+  assert.doesNotMatch(source, /activationBlocked/);
+  assert.match(source, /currentReviewedAffiliateAcceptanceCondition\(\)/);
 });
 
 test("application holds require an authorized safe reason before touching the database", async () => {

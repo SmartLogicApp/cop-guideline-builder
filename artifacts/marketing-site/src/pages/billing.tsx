@@ -17,6 +17,7 @@ import {
 type SubscriptionData = {
   subscription: null | {
     status: string | null;
+    stripeId: string | null;
     trialEndsAt: string | null;
     isActive: boolean;
     accessSource: 'admin' | 'complimentary' | 'subscription';
@@ -24,6 +25,7 @@ type SubscriptionData = {
     daysLeftInTrial: number;
     currentPeriodEnd: string | null;
     cancelAtPeriodEnd: boolean;
+    accessEndsAt?: string | null;
   };
   isActive?: boolean;
   accessSource?: 'admin' | 'complimentary' | 'subscription';
@@ -49,6 +51,7 @@ type AccountData = {
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const workspaceUrl = `${basePath}/app`;
 const supportEmail = CONTACT_EMAIL_SUPPORT;
+const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
 
 function formatNumber(value: number) {
   return value.toLocaleString('en-US');
@@ -65,6 +68,11 @@ function subscriptionLabel(data: SubscriptionData | null) {
     return 'Payment needs attention';
   }
   if (subscription?.status === 'pending_payment') return 'Payment method needed';
+  if (subscription?.cancelAtPeriodEnd && subscription.currentPeriodEnd) {
+    return `Canceled · access through ${new Date(subscription.currentPeriodEnd).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    })}`;
+  }
   if (subscription &&
       ['trial', 'trialing'].includes(subscription.status ?? '') &&
       subscription.daysLeftInTrial > 0) {
@@ -95,7 +103,9 @@ export default function BillingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<'checkout' | 'portal' | null>(null);
+  const [actionLoading, setActionLoading] = useState<
+    'checkout' | 'portal' | 'cancel' | 'undo-cancellation' | null
+  >(null);
   const [now, setNow] = useState(() => Date.now());
   const subscriptionStatus = subscription?.subscription?.status ?? '';
   const hasActiveStripeSubscription = ['active', 'trialing'].includes(
@@ -111,6 +121,14 @@ export default function BillingPage() {
     : null;
   const hasActiveLocalTrial =
     trialEndTime !== null && Number.isFinite(trialEndTime) && trialEndTime > now;
+  const isNoCardLocalTrial = hasActiveLocalTrial &&
+    subscriptionStatus === 'trial' &&
+    subscription?.subscription?.stripeId == null;
+  const localTrialMillisecondsLeft = trialEndTime === null ? 0 : trialEndTime - now;
+  const canAddCardDuringTrial = isNoCardLocalTrial;
+  const showTrialCardReminder = isNoCardLocalTrial &&
+    localTrialMillisecondsLeft > 0 &&
+    localTrialMillisecondsLeft <= FIVE_DAYS_MS;
   const localTrialEndLabel = trialEndTime !== null && Number.isFinite(trialEndTime)
     ? new Date(trialEndTime).toLocaleDateString('en-US', {
         month: 'long',
@@ -184,12 +202,16 @@ export default function BillingPage() {
     if (trialEndTime === null || !Number.isFinite(trialEndTime) || trialEndTime <= Date.now()) {
       return;
     }
+    const reminderThreshold = trialEndTime - FIVE_DAYS_MS;
+    const nextTransition = reminderThreshold > Date.now()
+      ? reminderThreshold
+      : trialEndTime;
     const timer = window.setTimeout(
       () => {
         setNow(Date.now());
         void loadBilling();
       },
-      trialEndTime - Date.now() + 1,
+      nextTransition - Date.now() + 1,
     );
     return () => window.clearTimeout(timer);
   }, [trialEndTime, loadBilling]);
@@ -248,6 +270,40 @@ export default function BillingPage() {
       setActionLoading(null);
     }
   }, [getToken, subscription]);
+
+  const changeCancellation = useCallback(async (
+    action: 'cancel' | 'undo-cancellation',
+  ) => {
+    if (
+      action === 'cancel' &&
+      !window.confirm(
+        'Cancel your subscription at the end of its current billing period? You will keep access until then and will not be charged again.',
+      )
+    ) return;
+
+    setActionLoading(action);
+    setActionError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Your secure session is unavailable. Please sign in again.');
+      const response = await fetch(`/api/billing/subscription/${action}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) {
+        throw new Error(body.error || 'Your subscription could not be updated. Please try again.');
+      }
+      await loadBilling();
+    } catch (failure) {
+      setActionError(failure instanceof Error
+        ? failure.message
+        : 'Your subscription could not be updated. Please try again.');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [getToken, loadBilling]);
 
   return (
     <main className="min-h-[100dvh] bg-slate-50 px-4 py-8 sm:px-6 sm:py-12">
@@ -331,6 +387,46 @@ export default function BillingPage() {
                 Checkout was canceled. No payment was made.
               </div>
             )}
+            {paymentAcceptanceEnabled && showTrialCardReminder && (
+              <section
+                className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-5"
+                role="status"
+                aria-live="polite"
+                data-trial-card-reminder="true"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="font-bold text-amber-950">Keep your workspace access</h2>
+                    <p className="mt-1 text-sm font-semibold text-amber-900">
+                      Add a card to keep access
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-amber-900">
+                      Your no-card trial ends on {localTrialEndLabel}. Add a payment method now
+                      and your first $299 charge will begin on day 31.
+                    </p>
+                  </div>
+                  {canAddCardDuringTrial ? (
+                    <button
+                      type="button"
+                      onClick={() => void openStripe('checkout')}
+                      disabled={actionLoading !== null}
+                      className="shrink-0 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {actionLoading === 'checkout' ? 'Opening secure checkout…' : 'Add a card to keep access'}
+                    </button>
+                  ) : (
+                    <p className="max-w-sm text-sm leading-6 text-amber-950" role="note">
+                      Secure checkout cannot schedule the remaining short trial period yet.
+                      It will be available after your trial ends; access continues until{' '}
+                      {localTrialEndLabel}.
+                    </p>
+                  )}
+                </div>
+                {actionError && (
+                  <p className="mt-3 text-sm text-red-800" role="alert">{actionError}</p>
+                )}
+              </section>
+            )}
             <section className="mt-8 grid gap-4 sm:grid-cols-3">
               <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <ShieldCheck className="size-5 text-teal-700" aria-hidden="true" />
@@ -409,7 +505,9 @@ export default function BillingPage() {
                         : subscriptionStatus === 'pending_payment'
                           ? 'Add a payment method through secure checkout to start your 30-day free trial. Your subscription will be charged on day 31 unless you cancel before then.'
                           : hasActiveLocalTrial
-                            ? `Your consultant trial remains active until ${localTrialEndLabel ?? 'its end date'}. Checkout will be available after it expires; no charge starts during the remaining free trial.`
+                            ? canAddCardDuringTrial
+                              ? `Your no-card trial remains active until ${localTrialEndLabel ?? 'its end date'}. You can add a card now; the first $299 charge is scheduled for day 31.`
+                              : `Your no-card trial remains active until ${localTrialEndLabel ?? 'its end date'}.`
                             : 'Full compliance workspace access for your registered facility, including guideline, policy, inspection-readiness, and policy-gap generation tools.'}
                     </p>
                     {hasRecoverableStripeSubscription ? (
@@ -432,6 +530,15 @@ export default function BillingPage() {
                         {new Date(subscription.subscription.currentPeriodEnd).toLocaleDateString()}
                       </p>
                     )}
+                    {subscription?.subscription?.cancelAtPeriodEnd &&
+                      subscription.subscription.currentPeriodEnd && (
+                        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950" role="status">
+                          Subscription canceled. You will not be charged again. Your access ends on{' '}
+                          {new Date(subscription.subscription.currentPeriodEnd).toLocaleDateString('en-US', {
+                            month: 'long', day: 'numeric', year: 'numeric',
+                          })}.
+                        </p>
+                      )}
                   </div>
                   <div className="min-w-56 rounded-xl bg-slate-50 p-5 text-center">
                     <p className="text-3xl font-bold text-slate-950">
@@ -440,14 +547,35 @@ export default function BillingPage() {
                     </p>
                     {hasManageableStripeSubscription ? (
                       subscription?.canManageBilling ? (
-                        <button
-                          type="button"
-                          onClick={() => void openStripe('portal')}
-                          disabled={actionLoading !== null}
-                          className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
-                        >
-                          {actionLoading === 'portal' ? 'Opening…' : 'Manage billing'}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void openStripe('portal')}
+                            disabled={actionLoading !== null}
+                            className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            {actionLoading === 'portal' ? 'Opening…' : 'Manage billing'}
+                          </button>
+                          {subscription?.subscription?.cancelAtPeriodEnd ? (
+                            <button
+                              type="button"
+                              onClick={() => void changeCancellation('undo-cancellation')}
+                              disabled={actionLoading !== null}
+                              className="mt-2 w-full rounded-lg border border-teal-700 bg-white px-4 py-2.5 text-sm font-bold text-teal-800 hover:bg-teal-50 disabled:cursor-wait disabled:opacity-60"
+                            >
+                              {actionLoading === 'undo-cancellation' ? 'Updating…' : 'Undo cancellation'}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => void changeCancellation('cancel')}
+                              disabled={actionLoading !== null}
+                              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 disabled:cursor-wait disabled:opacity-60"
+                            >
+                              {actionLoading === 'cancel' ? 'Canceling…' : 'Cancel subscription'}
+                            </button>
+                          )}
+                        </>
                       ) : (
                         <p className="mt-4 text-sm leading-5 text-amber-800" role="status">
                           We could not find the Stripe customer record for this subscription.
@@ -455,11 +583,27 @@ export default function BillingPage() {
                         </p>
                       )
                     ) : hasActiveLocalTrial ? (
-                      <p className="mt-4 text-sm leading-5 text-slate-700" role="status">
-                        Checkout will be available after your no-card trial ends
-                        {localTrialEndLabel ? ` on ${localTrialEndLabel}` : ''}. No checkout or
-                        subscription charge starts during the remaining free trial.
-                      </p>
+                      isNoCardLocalTrial && canAddCardDuringTrial ? (
+                        showTrialCardReminder ? (
+                          <p className="mt-4 text-sm leading-5 text-slate-700" role="status">
+                            Use the trial reminder above to add a card securely.
+                          </p>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void openStripe('checkout')}
+                            disabled={actionLoading !== null}
+                            className="mt-4 w-full rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            {actionLoading === 'checkout' ? 'Opening secure checkout…' : 'Add a card to keep access'}
+                          </button>
+                        )
+                      ) : (
+                        <p className="mt-4 text-sm leading-5 text-slate-700" role="status">
+                          Checkout will be available after your no-card trial ends
+                          {localTrialEndLabel ? ` on ${localTrialEndLabel}` : ''}.
+                        </p>
+                      )
                     ) : (
                       <>
                         <button

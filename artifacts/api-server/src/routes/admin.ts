@@ -6,10 +6,10 @@ import {
   requireCronOrSuperAdmin,
   requireSuperAdmin,
 } from "../lib/admin-guards.js";
-import { monthBounds, toCsv } from "../lib/report-format.js";
+import { monthBounds, toCsv, sendCsv } from "../lib/report-format.js";
 import { deliver } from "../lib/resend-mailer.js";
 import { db } from "@workspace/db";
-import { adminUsers, accounts, accountUsers, tokenUsage } from "@workspace/db";
+import { adminUsers, accounts, accountUsers, tokenUsage, affiliates } from "@workspace/db";
 import { eq, and, gte, lt, desc, isNull, inArray } from "drizzle-orm";
 import {
   TRIAL_WARNING_SUBJECT,
@@ -28,6 +28,8 @@ import {
   usageAlertEmailHtml,
   type UsageAlertRow,
 } from "../lib/usage-alert";
+import { activityWindow, nextRateDown } from "../lib/affiliate-commission.js";
+import { getAffiliateWorkspaceReport, type ConsultantWorkspaceLink } from "../lib/admin-affiliate-report.js";
 
 /**
  * Sender for transactional mail. Resend's onboarding@resend.dev is a shared
@@ -279,12 +281,14 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
   try {
     const { start, end } = monthBounds(req.query.month as string | undefined);
 
-    const [allAccounts, allUsers, allTokenRows] = await Promise.all([
+    const [allAccounts, allUsers, allTokenRows, lifetimeRows, affiliateRows] = await Promise.all([
       db.select().from(accounts).orderBy(desc(accounts.createdAt)),
       db.select().from(accountUsers),
       db.select().from(tokenUsage).where(
         and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))
       ),
+      db.select().from(tokenUsage),
+      db.select({ referralCode: affiliates.referralCode, companyName: affiliates.companyName }).from(affiliates),
     ]);
 
     // Alongside cost, count how many distinct facilities and provider types
@@ -301,6 +305,7 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
       institutions: Set<string>;
     };
     const tokenByAccount = new Map<string, AccountUsage>();
+    const tokenCountByAccount = new Map<string, number>();
     for (const row of allTokenRows) {
       if (!row.accountId) continue;
       const cur = tokenByAccount.get(row.accountId) ?? {
@@ -313,12 +318,25 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
       if (row.facilityLabel) cur.facilities.add(row.facilityLabel.toLowerCase());
       if (row.institution) cur.institutions.add(row.institution);
       tokenByAccount.set(row.accountId, cur);
+      tokenCountByAccount.set(row.accountId, (tokenCountByAccount.get(row.accountId) ?? 0)
+        + (row.inputTokens ?? 0) + (row.outputTokens ?? 0));
     }
 
     const userCountByAccount = new Map<string, number>();
+    const allTokensByAccount = new Map<string, number>();
+    for (const row of lifetimeRows) {
+      if (!row.accountId) continue;
+      allTokensByAccount.set(row.accountId, (allTokensByAccount.get(row.accountId) ?? 0)
+        + (row.inputTokens ?? 0) + (row.outputTokens ?? 0));
+    }
+    const affiliateByCode = new Map(affiliateRows.map((row) => [row.referralCode, row.companyName]));
+    const usersByAccount = new Map<string, typeof allUsers>();
     for (const u of allUsers) {
       if (!u.accountId) continue;
       userCountByAccount.set(u.accountId, (userCountByAccount.get(u.accountId) ?? 0) + 1);
+      const current = usersByAccount.get(u.accountId) ?? [];
+      current.push(u);
+      usersByAccount.set(u.accountId, current);
     }
 
     const clients = allAccounts.map((a) => {
@@ -328,19 +346,30 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
       };
       return {
         id:                  a.id,
+        uniqueId:            a.id,
         facilityName:        a.facilityName,
         ccn:                 a.ccn,
         identifierType:      a.identifierType,
         facilityType:        a.facilityType,
         state:               a.state,
         subscriptionStatus:  a.subscriptionStatus,
+        status:              adminClientStatus(a.subscriptionStatus, a.subscriptionCancelAtPeriodEnd, a.subscriptionCurrentPeriodEnd),
+        nextBillingDate:     a.subscriptionCurrentPeriodEnd,
         trialEndsAt:         a.trialEndsAt,
         termsAcceptedAt:     a.termsAcceptedAt,
         termsVersion:        a.termsVersion,
         createdAt:           a.createdAt,
         userCount:           userCountByAccount.get(a.id) ?? 0,
+        contact: (() => {
+          const contact = (usersByAccount.get(a.id) ?? []).slice().sort((x, y) =>
+            Number(y.role === "admin") - Number(x.role === "admin"))[0];
+          return { name: null, email: contact?.email ?? null, phone: null };
+        })(),
+        referredBy: a.referralCode ? affiliateByCode.get(a.referralCode) ?? a.referralCode : null,
+        totalTokens: allTokensByAccount.get(a.id) ?? 0,
         thisMonth: {
           requests:      tok.requests,
+          totalTokens: tokenCountByAccount.get(a.id) ?? 0,
           rawCostUsd:    Math.round(tok.rawCost    * 1e6) / 1e6,
           totalChargeUsd: Math.round(tok.totalCharge * 1e6) / 1e6,
           // Distinct facilities and provider types this account generated for.
@@ -359,6 +388,253 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
     return res.json(clients);
   } catch {
     return res.status(500).json({ error: "Failed to load clients" });
+  }
+});
+
+function adminClientStatus(status: string | null, cancelAtPeriodEnd: boolean, periodEnd: Date | null) {
+  const normalized = (status ?? "").toLowerCase();
+  if (normalized === "removed") return "Removed";
+  if (cancelAtPeriodEnd) {
+    return `Canceled${periodEnd ? ` - ends ${new Date(periodEnd).toLocaleDateString("en-US")}` : ""}`;
+  }
+  if (normalized === "trial" || normalized === "trialing") return "Trial";
+  if (normalized === "active") return "Active";
+  if (["incomplete", "incomplete_expired", "past_due", "unpaid", "payment_pending"].includes(normalized)) return "Payment pending";
+  if (["canceled", "cancelled", "expired"].includes(normalized)) return "Canceled";
+  return normalized ? normalized.replace(/_/g, " ") : "Payment pending";
+}
+
+const CLIENT_CSV_HEADERS = [
+  "Client name", "Unique ID", "Contact (name, email, phone)", "Sign-up date", "Status",
+  "Next billing date", "Tokens this month", "Tokens total", "Referred by",
+];
+const AFFILIATE_CSV_HEADERS = [
+  "Name", "Contact (email, phone, company)", "Referral code", "Current rate",
+  "Next rate change date and new rate", "Restoration deadline if at 0%",
+  "Clients active/canceled", "Workspace access status + end date",
+];
+const AFFILIATE_CLIENT_CSV_HEADERS = [
+  "Affiliate", "Client name", "Sign-up date", "Status", "Tokens this month", "Tokens total",
+];
+
+function adminClientCsvRows(clients: any[]) {
+  return clients.map((client) => [
+    client.facilityName, client.id,
+    [client.contact?.name, client.contact?.email, client.contact?.phone].filter(Boolean).join("; ") || "—",
+    client.createdAt ? new Date(client.createdAt).toISOString().slice(0, 10) : "",
+    client.status,
+    client.nextBillingDate ? new Date(client.nextBillingDate).toISOString().slice(0, 10) : "",
+    client.thisMonth.totalTokens, client.totalTokens, client.referredBy,
+  ]);
+}
+
+// The admin console's export deliberately uses the same fields/order as its table.
+router.get("/clients/download", requireAnyAdmin, async (req, res) => {
+  try {
+    const { start, end } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
+    const [allAccounts, allUsers, monthRows, lifetimeRows, affiliateRows] = await Promise.all([
+      db.select().from(accounts).orderBy(desc(accounts.createdAt)),
+      db.select().from(accountUsers),
+      db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
+      db.select().from(tokenUsage),
+      db.select({ referralCode: affiliates.referralCode, companyName: affiliates.companyName }).from(affiliates),
+    ]);
+    const usersByAccount = new Map<string, typeof allUsers>();
+    for (const user of allUsers) {
+      if (!user.accountId) continue;
+      const group = usersByAccount.get(user.accountId) ?? [];
+      group.push(user);
+      usersByAccount.set(user.accountId, group);
+    }
+    const monthTokens = new Map<string, number>();
+    const totalTokens = new Map<string, number>();
+    for (const [rows, target] of [[monthRows, monthTokens], [lifetimeRows, totalTokens]] as const) {
+      for (const row of rows) {
+        if (!row.accountId) continue;
+        target.set(row.accountId, (target.get(row.accountId) ?? 0) + (row.inputTokens ?? 0) + (row.outputTokens ?? 0));
+      }
+    }
+    const companyByCode = new Map(affiliateRows.map((row) => [row.referralCode, row.companyName]));
+    const clients = allAccounts.map((account) => {
+      const contact = (usersByAccount.get(account.id) ?? []).slice().sort((x, y) =>
+        Number(y.role === "admin") - Number(x.role === "admin"))[0];
+      return {
+        id: account.id, facilityName: account.facilityName, createdAt: account.createdAt,
+        status: adminClientStatus(account.subscriptionStatus, account.subscriptionCancelAtPeriodEnd, account.subscriptionCurrentPeriodEnd),
+        nextBillingDate: account.subscriptionCurrentPeriodEnd,
+        contact: { name: null, email: contact?.email ?? null, phone: null },
+        referredBy: account.referralCode ? companyByCode.get(account.referralCode) ?? account.referralCode : null,
+        thisMonth: { totalTokens: monthTokens.get(account.id) ?? 0 },
+        totalTokens: totalTokens.get(account.id) ?? 0,
+      };
+    });
+    return sendCsv(res, "admin-clients.csv", toCsv(CLIENT_CSV_HEADERS, adminClientCsvRows(clients)));
+  } catch (error: any) {
+    req.log.error({ err: error }, "Admin clients CSV failed");
+    return res.status(500).json({ error: "Failed to download clients CSV" });
+  }
+});
+
+// Affiliate reporting used by the admin dashboard; commission calculations remain
+// owned by the existing affiliate ladder and are not changed here.
+router.get("/affiliates", requireAnyAdmin, async (req, res) => {
+  try {
+    const now = new Date();
+    const { start, end } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
+    const [affiliateRows, allAccounts, users, monthRows, lifetimeRows, consultantWorkspaces] = await Promise.all([
+      db.select().from(affiliates).orderBy(desc(affiliates.createdAt)),
+      db.select().from(accounts).orderBy(desc(accounts.createdAt)),
+      db.select().from(accountUsers),
+      db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
+      db.select().from(tokenUsage),
+      db.select({
+        clerkUserId: accountUsers.clerkUserId,
+        email: accountUsers.email,
+        hasComplimentaryAccess: accountUsers.hasComplimentaryAccess,
+        accountId: accounts.id,
+        accountIdentifierType: accounts.identifierType,
+        subscriptionStatus: accounts.subscriptionStatus,
+        trialEndsAt: accounts.trialEndsAt,
+        subscriptionCurrentPeriodEnd: accounts.subscriptionCurrentPeriodEnd,
+        subscriptionCancelAtPeriodEnd: accounts.subscriptionCancelAtPeriodEnd,
+        subscriptionCanceledAt: accounts.subscriptionCanceledAt,
+      }).from(accountUsers)
+        .innerJoin(accounts, eq(accountUsers.accountId, accounts.id))
+        .where(eq(accounts.identifierType, "consultant")),
+    ]);
+    const usersByAccount = new Map(users.filter((user) => user.accountId).map((user) => [user.accountId!, user]));
+    const monthTokens = new Map<string, number>();
+    const totalTokens = new Map<string, number>();
+    for (const [rows, target] of [[monthRows, monthTokens], [lifetimeRows, totalTokens]] as const) {
+      for (const row of rows) {
+        if (!row.accountId) continue;
+        target.set(row.accountId, (target.get(row.accountId) ?? 0) + (row.inputTokens ?? 0) + (row.outputTokens ?? 0));
+      }
+    }
+    return res.json(affiliateRows.map((affiliate) => {
+      const referred = allAccounts.filter((account) => account.referralCode === affiliate.referralCode);
+      const anchor = affiliate.rateEffectiveAt ?? affiliate.createdAt ?? now;
+      const window = activityWindow({
+        currentRatePct: affiliate.commissionRatePct,
+        lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
+        rateEffectiveAt: anchor,
+      });
+      const nextRate = affiliate.commissionRatePct > 0 ? nextRateDown(affiliate.commissionRatePct) : null;
+      const workspaceReport = getAffiliateWorkspaceReport(
+        affiliate,
+        consultantWorkspaces as ConsultantWorkspaceLink[],
+        now,
+      );
+      const clientStatuses = referred.map((account) => adminClientStatus(
+        account.subscriptionStatus, account.subscriptionCancelAtPeriodEnd, account.subscriptionCurrentPeriodEnd,
+      ));
+      return {
+        id: affiliate.id,
+        name: affiliate.contactName || affiliate.companyName,
+        companyName: affiliate.companyName,
+        contact: { email: affiliate.email, phone: affiliate.phone, company: affiliate.companyName },
+        referralCode: affiliate.referralCode,
+        currentRate: affiliate.commissionRatePct,
+        nextRateChangeDate: nextRate === null ? null : window.graceEndsAt,
+        newRate: nextRate,
+        restorationDeadline: workspaceReport.restorationDeadline,
+        activeClients: clientStatuses.filter((status) => status === "Active" || status === "Trial").length,
+        canceledClients: clientStatuses.filter((status) => status.startsWith("Canceled") || status === "Removed").length,
+        workspaceAccessStatus: workspaceReport.workspaceAccessStatus,
+        workspaceAccessEndDate: workspaceReport.workspaceAccessEndDate,
+        clients: referred.map((account) => {
+          const user = usersByAccount.get(account.id);
+          const relevant = monthTokens.get(account.id) ?? 0;
+          return {
+            id: account.id, name: account.facilityName, createdAt: account.createdAt,
+            status: adminClientStatus(account.subscriptionStatus, account.subscriptionCancelAtPeriodEnd, account.subscriptionCurrentPeriodEnd),
+            tokensThisMonth: relevant, tokensTotal: totalTokens.get(account.id) ?? 0,
+            contact: { name: null, email: user?.email ?? null, phone: null },
+          };
+        }),
+      };
+    }));
+  } catch (error: any) {
+    req.log.error({ err: error }, "Admin affiliate report failed");
+    return res.status(500).json({ error: "Failed to load affiliate report" });
+  }
+});
+
+router.get("/affiliates/download", requireAnyAdmin, async (req, res) => {
+  try {
+    const { start, end } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
+    const [affiliateRows, allAccounts, monthRows, lifetimeRows, consultantWorkspaces] = await Promise.all([
+      db.select().from(affiliates).orderBy(desc(affiliates.createdAt)),
+      db.select().from(accounts).orderBy(desc(accounts.createdAt)),
+      db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
+      db.select().from(tokenUsage),
+      db.select({
+        clerkUserId: accountUsers.clerkUserId,
+        email: accountUsers.email,
+        hasComplimentaryAccess: accountUsers.hasComplimentaryAccess,
+        accountId: accounts.id,
+        accountIdentifierType: accounts.identifierType,
+        subscriptionStatus: accounts.subscriptionStatus,
+        trialEndsAt: accounts.trialEndsAt,
+        subscriptionCurrentPeriodEnd: accounts.subscriptionCurrentPeriodEnd,
+        subscriptionCancelAtPeriodEnd: accounts.subscriptionCancelAtPeriodEnd,
+        subscriptionCanceledAt: accounts.subscriptionCanceledAt,
+      }).from(accountUsers)
+        .innerJoin(accounts, eq(accountUsers.accountId, accounts.id))
+        .where(eq(accounts.identifierType, "consultant")),
+    ]);
+    const sumTokens = (rows: typeof monthRows) => {
+      const totals = new Map<string, number>();
+      for (const row of rows) if (row.accountId) totals.set(row.accountId, (totals.get(row.accountId) ?? 0) + (row.inputTokens ?? 0) + (row.outputTokens ?? 0));
+      return totals;
+    };
+    const monthTokens = sumTokens(monthRows);
+    const totalTokens = sumTokens(lifetimeRows);
+    const type = req.query.type === "clients" ? "clients" : "affiliates";
+    const affiliateId = typeof req.query.affiliateId === "string" ? req.query.affiliateId : null;
+    const selected = affiliateRows.filter((affiliate) => !affiliateId || affiliate.id === affiliateId);
+    if (type === "clients") {
+      const rows = selected.flatMap((affiliate) => allAccounts
+        .filter((account) => account.referralCode === affiliate.referralCode)
+        .map((account) => [
+          affiliate.contactName || affiliate.companyName, account.facilityName,
+          account.createdAt ? new Date(account.createdAt).toISOString().slice(0, 10) : "",
+          adminClientStatus(account.subscriptionStatus, account.subscriptionCancelAtPeriodEnd, account.subscriptionCurrentPeriodEnd),
+          monthTokens.get(account.id) ?? 0, totalTokens.get(account.id) ?? 0,
+        ]));
+      return sendCsv(res, "affiliate-clients.csv", toCsv(AFFILIATE_CLIENT_CSV_HEADERS, rows));
+    }
+    const rows = selected.map((affiliate) => {
+      const referred = allAccounts.filter((account) => account.referralCode === affiliate.referralCode);
+      const now = new Date();
+      const window = activityWindow({
+        currentRatePct: affiliate.commissionRatePct,
+        lastQualifyingReferralAt: affiliate.lastQualifyingReferralAt,
+        rateEffectiveAt: affiliate.rateEffectiveAt ?? affiliate.createdAt ?? now,
+      });
+      const nextRate = affiliate.commissionRatePct > 0 ? nextRateDown(affiliate.commissionRatePct) : null;
+      const workspaceReport = getAffiliateWorkspaceReport(
+        affiliate,
+        consultantWorkspaces as ConsultantWorkspaceLink[],
+        now,
+      );
+      return [
+        affiliate.contactName || affiliate.companyName,
+        [affiliate.email, affiliate.phone, affiliate.companyName].filter(Boolean).join("; "),
+        affiliate.referralCode, `${affiliate.commissionRatePct}%`,
+        nextRate === null ? "" : `${new Date(window.graceEndsAt).toISOString().slice(0, 10)} → ${nextRate}%`,
+        workspaceReport.restorationDeadline ? new Date(workspaceReport.restorationDeadline).toISOString().slice(0, 10) : "",
+        `${referred.filter((a) => ["Active", "Trial"].includes(adminClientStatus(a.subscriptionStatus, a.subscriptionCancelAtPeriodEnd, a.subscriptionCurrentPeriodEnd))).length} active / ${referred.filter((a) => {
+          const status = adminClientStatus(a.subscriptionStatus, a.subscriptionCancelAtPeriodEnd, a.subscriptionCurrentPeriodEnd);
+          return status.startsWith("Canceled") || status === "Removed";
+        }).length} canceled`,
+        `${workspaceReport.workspaceAccessStatus}${workspaceReport.workspaceAccessEndDate ? ` — ${new Date(workspaceReport.workspaceAccessEndDate).toISOString().slice(0, 10)}` : ""}`,
+      ];
+    });
+    return sendCsv(res, "admin-affiliates.csv", toCsv(AFFILIATE_CSV_HEADERS, rows));
+  } catch (error: any) {
+    req.log.error({ err: error }, "Admin affiliates CSV failed");
+    return res.status(500).json({ error: "Failed to download affiliates CSV" });
   }
 });
 

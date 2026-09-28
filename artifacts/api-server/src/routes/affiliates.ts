@@ -14,7 +14,6 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
-import { affiliateActivationEnabled, isBlockedAffiliateActivation } from "../lib/affiliate-activation.js";
 import { currentReviewedAffiliateAcceptanceCondition, hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementExists, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
 import { applicationAcceptanceEvidence } from "../lib/affiliate-application-acceptance.js";
 import { generateAffiliateReferralCode } from "../lib/affiliate-referral-code.js";
@@ -75,14 +74,6 @@ import affiliateAgreementV4Source from "../legal/affiliate-partner-agreement-v4-
 
 const router: IRouter = Router();
 
-function activationBlocked(res: Response): boolean {
-  if (affiliateActivationEnabled()) return false;
-  res.status(403).json({
-    code: "AFFILIATE_ACTIVATION_PAUSED",
-    error: "New paid affiliate activations are paused until the owner enables reviewed program terms.",
-  });
-  return true;
-}
 /** Statuses that represent money still owed, as opposed to settled or void. */
 const OUTSTANDING_STATUSES = ["pending", "payable"] as const;
 
@@ -125,8 +116,10 @@ function affiliateSummaryFields(row: typeof affiliates.$inferSelect, now: Date) 
  * attributes nothing, because a "pending" affiliate never accrues commission
  * (see lib/affiliate-accrual.ts).
  *
- * An application also grants NOTHING. It creates a pending row for the operator
- * to review. No portal access, no commission, no rate.
+ * The application records acceptance and remains pending only until the
+ * applicant completes real, verified Clerk signup and consultant workspace
+ * registration. That authenticated registration activates it at 20%; no
+ * operator approval or feature flag is involved.
  */
 router.post("/apply", async (req, res) => {
   // The browser supplies a random attempt ID so even a lost response can be
@@ -145,7 +138,7 @@ router.post("/apply", async (req, res) => {
     outcome("duplicate");
     return res.status(409).json({
       code: "APPLICATION_ALREADY_EXISTS",
-      error: "An application with this email already exists. Contact support if you need to update it or reapply.",
+      error: "This email already has an affiliate application or account. Sign in to continue or contact support if you need help.",
     });
   };
   outcome("received");
@@ -190,8 +183,6 @@ router.post("/apply", async (req, res) => {
       return duplicate();
     }
 
-    const assignedCode = await provisionalReferralCode(companyName);
-
     const accepted = await db.transaction(async (tx) => {
       const currentVersion = reviewedAffiliateAgreementVersion();
       if (!currentVersion || agreementVersion !== currentVersion) return false;
@@ -202,13 +193,12 @@ router.post("/apply", async (req, res) => {
       if (!agreement || agreement.contentSha256 !== agreementSha256) return false;
       const now = new Date();
       const [application] = await tx.insert(affiliates).values({
-        referralCode: assignedCode,
+        referralCode: await provisionalReferralCode(companyName),
         companyName,
         contactName,
         email,
         phone,
         status: "pending",
-        // No rate is in effect until a human approves this application.
         commissionRatePct: 0,
         rateEffectiveAt: now,
         createdAt: now,
@@ -234,7 +224,12 @@ router.post("/apply", async (req, res) => {
     }
 
     outcome("inserted");
-    return res.status(201).json({ ok: true, received: true });
+    return res.status(201).json({
+      ok: true,
+      received: true,
+      nextStep: "create_account",
+      message: "Agreement accepted. Create your secure account to activate your affiliate membership and start your 30-day workspace access.",
+    });
   } catch (error: unknown) {
     // A concurrent submission for the same email is a duplicate. A unique
     // collision on the provisional code is NOT a successful application.
@@ -429,7 +424,10 @@ router.get("/stats", requireAnyAdmin, async (req, res) => {
       totalAffiliates:   affiliateRows.length,
       activeAffiliates:  affiliateRows.filter((r) => r.status === "active").length,
       pendingAffiliates: affiliateRows.filter((r) => r.status === "pending").length,
-      activationEnabled: affiliateActivationEnabled() && await reviewedAffiliateAgreementExists(),
+      // Compatibility flag for the legacy admin screen: never report a
+      // feature-pause. Activation still independently requires the current
+      // published agreement and an applicant acceptance at the mutation edge.
+      activationEnabled: true,
       /** Affiliates inside the §11 grace period or already past it. */
       lapsingAffiliates: lapsing,
       thisMonth: {
@@ -621,14 +619,6 @@ router.patch("/:id", requireSuperAdmin, async (req, res) => {
       if (typeof patch.email === "string" && patch.email.toLowerCase() !== existing.email.toLowerCase()) {
         patch.agreementIdentityEpoch = sql`${affiliates.agreementIdentityEpoch} + 1`;
       }
-      // Preserve an existing active partner even while enrollment is paused.
-      // Reactivation, however, needs both the owner switch and acceptance.
-      if (isBlockedAffiliateActivation(existing.status, body.status)) {
-        return res.status(403).json({
-          code: "AFFILIATE_ACTIVATION_PAUSED",
-          error: "New paid affiliate activations are paused until the owner enables reviewed program terms.",
-        });
-      }
       if (existing.status !== "active" && existing.applicationHeldAt) {
         return res.status(409).json({ error: "Release the application hold before activating this applicant." });
       }
@@ -774,17 +764,12 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
       && (!legacyCode || !isValidReferralCode(legacyCode) || !isSafeAffiliateIdentifier(legacyCode))) {
     return res.status(400).json({ error: "Invalid referral code. Codes are now assigned automatically." });
   }
-  if (activationBlocked(res)) return;
   if (req.body?.referralCode !== undefined) {
     return res.status(400).json({ error: "Referral codes are assigned automatically at approval." });
   }
-  const ratePct = Number.isFinite(Number(req.body?.commissionRatePct))
-    ? Number(req.body.commissionRatePct)
-    : 20;
-
-  if (!COMMISSION_RATE_LADDER.includes(ratePct as any) || ratePct <= 0) {
-    return res.status(400).json({ error: "Approve at 20% or 10% (§14)." });
-  }
+  // Enrollment starts at 20%. Later changes continue through the existing
+  // 20-10-0 ladder; this route never edits earned commission rows.
+  const ratePct = 20;
   if (!(await reviewedAffiliateAgreementExists())) {
     return res.status(409).json({ code: "AGREEMENT_NOT_PUBLISHED",
       error: "Publish the reviewed agreement before approving applicants." });
@@ -857,9 +842,9 @@ router.post("/:id/approve", requireSuperAdmin, async (req, res) => {
     if (updated.email) {
       const emailResult = await sendViaResend({
         to: updated.email,
-        subject: "You are approved -- here is your CMS Compliance Suite referral link",
-        html: `<p>Hi ${updated.contactName || updated.companyName},</p><p>Your affiliate application for <strong>${updated.companyName}</strong> has been approved.</p><p>Your referral link is:</p><p><a href="${referralLink}">${referralLink}</a></p><p>Share this link with clients. Any signup through it is automatically attributed to you at a ${updated.commissionRatePct}% commission rate.</p><p>Your referral code is <strong>${updated.referralCode}</strong> if you ever need it on its own.</p>`,
-        text: `Hi ${updated.contactName || updated.companyName}, your affiliate application for ${updated.companyName} has been approved. Your referral link: ${referralLink} . Referral code: ${updated.referralCode}.`,
+        subject: "Your CMS Compliance Suite affiliate account is ready",
+        html: `<p>Hi ${updated.contactName || updated.companyName},</p><p>Your affiliate account for <strong>${updated.companyName}</strong> is active at a ${updated.commissionRatePct}% commission rate.</p><p>Create your secure login and start your 30-day workspace access here: <a href="${getReturnBase(req)}/sign-up?affiliate=1&amp;email=${encodeURIComponent(updated.email)}&amp;company=${encodeURIComponent(updated.companyName)}">Create your affiliate login</a>.</p><p>Your referral link is <a href="${referralLink}">${referralLink}</a> (code <strong>${updated.referralCode}</strong>). Your commission participation remains active whether or not you continue a paid workspace subscription.</p>`,
+        text: `Hi ${updated.contactName || updated.companyName}, your affiliate account is active at ${updated.commissionRatePct}%. Create your secure login and start your 30-day workspace access: ${getReturnBase(req)}/sign-up?affiliate=1&email=${encodeURIComponent(updated.email)}&company=${encodeURIComponent(updated.companyName)}. Referral link: ${referralLink}. Referral code: ${updated.referralCode}.`,
       });
       emailSent = emailResult.sent;
       if (!emailResult.sent) {

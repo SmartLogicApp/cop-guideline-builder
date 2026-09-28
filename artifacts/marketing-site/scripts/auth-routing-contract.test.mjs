@@ -94,7 +94,7 @@ test('billing is authenticated and gates Stripe actions on server availability',
   assert.match(billingSource, /hasManageableStripeSubscription/);
   assert.match(billingSource, /LOCAL_TRIAL_STILL_ACTIVE/);
   assert.match(billingSource, /Checkout will be available after your no-card trial ends/);
-  assert.match(billingSource, /Your consultant trial remains active until/);
+  assert.match(billingSource, /Your no-card trial is still active until/);
   assert.match(billingSource, /Contact support/);
   const planActionsStart = billingSource.indexOf('{hasManageableStripeSubscription ? (');
   const planActionsEnd = billingSource.indexOf(
@@ -145,7 +145,10 @@ test('registration is routed, authenticated, and reachable from the workspace', 
   assert.match(register, /<Show when="signed-in">\s*<RegisterPage \/>/);
   assert.match(register, /<Show when="signed-out"><RedirectToSignIn \/><\/Show>/);
   assert.match(registerPageSource, /identifierType === ['"]consultant['"]/);
-  assert.match(registerPageSource, /Approved, active affiliates can create a consultant account/);
+  assert.match(registerPageSource, /Affiliates who accepted the current agreement can activate with a 30-day workspace/);
+  assert.match(registerPageSource, /Finish your affiliate workspace setup/);
+  assert.match(registerPageSource, /!affiliateSignup && <fieldset>/);
+  assert.match(registerPageSource, /facilityName, setFacilityName\] = useState\(affiliateCompany\)/);
   assert.match(registerPageSource, /\/accept-terms\?registration=direct/);
   assert.match(registerPageSource, /Your subscription will be charged on\s+day 31/);
 
@@ -212,11 +215,12 @@ test('Clerk path routing keeps callback subpaths and post-auth app redirects val
   const signUpPage = componentBody(authenticatedAppSource, 'SignUpPage');
 
   assert.match(signInPage, /path=\{`\$\{basePath\}\/sign-in`\}/);
-  assert.match(signInPage, /signUpUrl=\{`\$\{basePath\}\/sign-up`\}/);
-  assert.match(signInPage, /forceRedirectUrl=\{`\$\{basePath\}\/app`\}/);
+  assert.match(signInPage, /signUpUrl=\{`\$\{basePath\}\/sign-up\$\{handoffQuery\}`\}/);
+  assert.match(signInPage, /forceRedirectUrl=\{affiliateSignup \? `\$\{basePath\}\/register\$\{handoffQuery\}` : `\$\{basePath\}\/app`\}/);
   assert.match(signUpPage, /path=\{`\$\{basePath\}\/sign-up`\}/);
-  assert.match(signUpPage, /signInUrl=\{`\$\{basePath\}\/sign-in`\}/);
-  assert.match(signUpPage, /forceRedirectUrl=\{`\$\{basePath\}\/app`\}/);
+  assert.match(signUpPage, /signInUrl=\{`\$\{basePath\}\/sign-in\$\{handoffQuery\}`\}/);
+  assert.match(signUpPage, /forceRedirectUrl=\{affiliateSignup \? `\$\{basePath\}\/register\$\{handoffQuery\}` : `\$\{basePath\}\/app`\}/);
+  assert.match(authenticatedAppSource, /handoff\.set\('company', company\)/);
 });
 
 test('signed-out visitors to the protected app are sent to sign-in', () => {
@@ -319,25 +323,26 @@ test('the affiliate application posts to the public apply endpoint', async () =>
     'the application form must not collect a referral code',
   );
 
-  // Commercial terms are still under review; the application must not
-  // promise or display rates, payout timing, or affiliate agreement clauses.
-  assert.doesNotMatch(affiliatesPage, /\b\d+(?:\.\d+)?\s*%|payouts?|holdback|grace period|affiliate program agreement/i);
-  assert.match(affiliatesPage, /commission details provided upon approval/i);
+  assert.doesNotMatch(affiliatesPage, /manual(?:ly)? review|commission details provided upon approval/i);
+  assert.match(affiliatesPage, /30 days of full workspace access/);
+  assert.match(affiliatesPage, /20-10-0 commission ladder/);
+  assert.match(affiliatesPage, /first \$299\/month charge is on day 31/);
+  assert.match(affiliatesPage, /new URLSearchParams\(\{\s*affiliate: ['"]1['"],\s*email: form\.email\.trim\(\)\.toLowerCase\(\),\s*company: form\.companyName\.trim\(\)/);
   for (const key of ['contactName', 'companyName', 'email', 'phone', 'about']) {
     assert.match(affiliatesPage, new RegExp(`\\b${key}\\b`), `missing application field ${key}`);
   }
 });
 
-test('pending applications have a separate admin review view with approval gated on reviewed terms', () => {
+test('pending applications activate only after current published terms are accepted and no hold remains', () => {
   const review = componentBody(workspaceSource, 'AffiliateApplicationsSection');
   assert.match(review, /load\("\/api\/affiliates"\)/);
   assert.match(review, /row\.status === "pending"/);
   assert.match(review, /row\.phone/);
   assert.match(review, /row\.referralPlan/);
-  assert.match(review, /setActivationEnabled\(stats\.activationEnabled === true\)/);
-  assert.match(review, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && !row\.applicationHeldAt && <>/);
+  assert.match(review, /isSuperAdmin && agreementStatus\?\.published && row\.agreementAcceptance\?\.version === agreementStatus\.version && !row\.applicationHeldAt && <>/);
+  assert.doesNotMatch(review, /activationEnabled|AFFILIATE_ACTIVATION_PAUSED/);
   assert.match(review, /\/approve`/);
-  assert.match(review, /Paid partner approvals are paused/);
+  assert.doesNotMatch(review, /Paid partner approvals are paused/);
   assert.doesNotMatch(review, /holdback|grace period/i);
   assert.match(componentBody(workspaceSource, 'AdminQuickPanel'), /id: "applications"/);
 });

@@ -930,7 +930,19 @@ router.get("/admin/payouts/quarterly-preview", requireAnyAdmin, async (req, res)
   res.json(redactSensitiveFinancialData({ quarter: bounds.label, rows }));
 });
 
+function stripeTestPayoutGuard(): void {
+  if (process.env.NODE_ENV !== "production" && getStripeConnectLivemode()) {
+    throw new Error("Refusing to prepare affiliate payouts with live Stripe Connect in development.");
+  }
+}
+
 router.post("/admin/payouts/quarterly-run", requireSuperAdmin, async (req: any, res) => {
+  try {
+    stripeTestPayoutGuard();
+  } catch {
+    res.status(503).json({ error: "Affiliate payout preparation is unavailable in this Stripe mode." });
+    return;
+  }
   const bounds = completedQuarter(req.body?.quarter);
   if (!bounds || req.body?.confirmed !== true) {
     res.status(400).json({ error: "Confirm a completed quarter before preparing payout drafts." }); return;

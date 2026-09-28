@@ -3,10 +3,12 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   getTrialPeriodDays,
+  hasCheckoutBlockingSubscription,
   isPaymentAcceptanceEnabled,
   isProductionTrialPeriodExactly30,
   isRecoverableStripeSubscriptionStatus,
   resolveCheckoutTrialPlan,
+  resolveFirstDirectSetupTrialEnd,
 } from "./payment-config.ts";
 
 const billingRouteSource = await readFile(
@@ -106,6 +108,70 @@ test("Stripe subscription statuses block checkout unless terminal", () => {
   assert.equal(isRecoverableStripeSubscriptionStatus("canceled"), false);
   assert.equal(isRecoverableStripeSubscriptionStatus("incomplete_expired"), false);
   assert.equal(isRecoverableStripeSubscriptionStatus("unexpected_status"), true);
+});
+
+test("removed accounts can return to Checkout without receiving another Stripe trial", () => {
+  assert.deepEqual(resolveCheckoutTrialPlan({
+    subscriptionStatus: "removed",
+    trialEndsAt: null,
+    hasStripeSubscriptionHistory: true,
+  }), { kind: "none" });
+});
+
+test("removed-account resubscribe ignores stale local subscription status but blocks live Stripe subscriptions", () => {
+  assert.equal(hasCheckoutBlockingSubscription({
+    accountSubscriptionStatus: "removed",
+    stripeSubscriptionId: "sub_pre_removal",
+    stripeSubscriptionStatuses: ["canceled"],
+  }), false);
+  assert.equal(resolveCheckoutTrialPlan({
+    subscriptionStatus: "removed",
+    trialEndsAt: null,
+    hasStripeSubscriptionHistory: true,
+  }).kind, "none");
+
+  for (const status of ["active", "trialing", "past_due", "incomplete"]) {
+    assert.equal(hasCheckoutBlockingSubscription({
+      accountSubscriptionStatus: "removed",
+      stripeSubscriptionId: "sub_pre_removal",
+      stripeSubscriptionStatuses: [status],
+    }), true, `must block a Stripe subscription in ${status}`);
+  }
+});
+
+test("first-direct setup confirmation always carries a 30-day Stripe trial before any charge", () => {
+  const stripeNowSeconds = Math.floor(new Date("2026-10-01T12:00:00Z").getTime() / 1000);
+  const trialEnd = resolveFirstDirectSetupTrialEnd({
+    trialPolicy: "first-direct-30",
+    trialPeriodDays: 30,
+    subscriptionStatus: "pending_payment",
+    hasStripeSubscriptionHistory: false,
+    stripeNowSeconds,
+  });
+  assert.equal(trialEnd, stripeNowSeconds + 30 * 24 * 60 * 60);
+  assert.ok(trialEnd! > stripeNowSeconds + 29 * 24 * 60 * 60);
+  assert.throws(() => resolveFirstDirectSetupTrialEnd({
+    trialPolicy: "first-direct-30",
+    trialPeriodDays: 30,
+    subscriptionStatus: "pending_payment",
+    hasStripeSubscriptionHistory: true,
+    stripeNowSeconds,
+  }), /full 30-day trial/);
+  assert.throws(() => resolveFirstDirectSetupTrialEnd({
+    trialPolicy: "first-direct-14",
+    trialPeriodDays: 14,
+    subscriptionStatus: "pending_payment",
+    hasStripeSubscriptionHistory: false,
+    stripeNowSeconds,
+  }), /full 30-day trial/);
+  assert.throws(() => resolveFirstDirectSetupTrialEnd({
+    trialPolicy: "none",
+    trialPeriodDays: 0,
+    subscriptionStatus: "pending_payment",
+    hasStripeSubscriptionHistory: false,
+    stripeNowSeconds,
+  }), /missing its required 30-day trial policy/);
+  assert.match(billingRouteSource, /hasCheckoutBlockingSubscription\(\{/);
 });
 
 test("production direct-trial configuration must be exactly 30 days", () => {

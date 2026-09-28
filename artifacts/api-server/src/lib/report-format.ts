@@ -33,8 +33,14 @@ export function monthBounds(monthStr?: string): { start: Date; end: Date; label:
 
 export function toCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
   const escape = (v: string | number | null | undefined) => {
-    const s = v == null ? "" : String(v);
-    return s.includes(",") || s.includes('"') || s.includes("\n")
+    let s = v == null ? "" : String(v);
+    // A numeric value is already data, not spreadsheet formula source. For all
+    // strings (headers included), prefix an apostrophe when Excel/Sheets could
+    // interpret leading whitespace followed by =, +, - or @ as a formula.
+    if (typeof v !== "number" && /^[\u0000-\u0020\uFEFF]*[=+\-@]/u.test(s)) {
+      s = `'${s}`;
+    }
+    return /[",\r\n]/u.test(s)
       ? `"${s.replace(/"/g, '""')}"`
       : s;
   };

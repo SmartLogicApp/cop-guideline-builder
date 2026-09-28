@@ -43,6 +43,7 @@ export function AdminShell({ children, title, subtitle }: { children: React.Reac
             <span className="font-bold text-white">Admin Console</span>
           </Link>
           <nav className="flex items-center gap-6 text-sm font-semibold text-slate-300">
+            <Link href="/admin/clients" className="hover:text-white transition-colors">Clients</Link>
             <Link href="/admin/affiliates" className="hover:text-white transition-colors">Affiliates</Link>
             <Link href="/admin/affiliate-compliance" className="hover:text-white transition-colors">Compliance Docs</Link>
             <Link href="/admin/affiliate-payouts" className="hover:text-white transition-colors">Payouts</Link>

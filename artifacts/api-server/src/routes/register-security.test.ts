@@ -132,17 +132,60 @@ test("only consultant registrations receive the local no-card trial", () => {
   assert.match(handler, /trialEndsAt:\s*trialEnds/);
 });
 
-test("consultant registration requires a server-verified active affiliate", () => {
+test("consultant registration links a verified affiliate email and activates current pending acceptances", () => {
   const handler = registerHandler();
   const gateStart = handler.indexOf('if (idType === "consultant") {');
-  const gateEnd = handler.indexOf('if (!facilityName?.trim())', gateStart);
+  const gateEnd = handler.indexOf('if (idType !== "consultant" && !facilityName?.trim())', gateStart);
   assert.notEqual(gateStart, -1, "expected an explicit consultant authorization gate");
   assert.ok(gateEnd > gateStart, "expected the gate before account registration validation");
   const gate = handler.slice(gateStart, gateEnd);
 
-  assert.match(gate, /eq\(affiliates\.clerkUserId, userId\)/);
-  assert.match(gate, /eq\(affiliates\.status, "active"\)/);
+  assert.match(gate, /clerkClient\.users\.getUser\(userId\)/);
+  assert.match(gate, /primaryEmail\?\.verification\?\.status === "verified"/);
+  assert.match(gate, /lower\(\$\{affiliates\.email\}\)/);
+  assert.match(gate, /inArray\(affiliates\.status, \["active", "pending"\]\)/);
   assert.match(gate, /status\(403\)/);
   assert.match(gate, /CONSULTANT_REGISTRATION_REQUIRES_ACTIVE_AFFILIATE/);
   assert.doesNotMatch(gate, /referralCode/);
+  assert.match(handler, /currentReviewedAffiliateAcceptanceCondition\(\)/);
+  assert.match(handler, /commissionRatePct: 20/);
+  assert.match(handler, /generateAffiliateReferralCode\(\)/);
+  assert.match(handler, /companyName: affiliates\.companyName/);
+  assert.match(handler, /workspaceName = affiliate\.companyName\.trim\(\)/);
+  assert.match(handler, /facilityName: workspaceName/);
+});
+
+test("a held pending affiliate cannot activate, bind to a Clerk user, or receive a consultant trial", () => {
+  const handler = registerHandler();
+  const gateStart = handler.indexOf('if (idType === "consultant") {');
+  const gateEnd = handler.indexOf('if (idType !== "consultant" && !facilityName?.trim())', gateStart);
+  const gate = handler.slice(gateStart, gateEnd);
+  assert.match(gate, /status: affiliates\.status, applicationHeldAt: affiliates\.applicationHeldAt/);
+  assert.match(gate, /activeAffiliate\.status === "pending" && activeAffiliate\.applicationHeldAt/);
+  assert.match(gate, /status\(409\)[\s\S]*AFFILIATE_APPLICATION_ON_HOLD/);
+
+  const transaction = handler.slice(handler.indexOf("const createWithAcceptance"));
+  const lockedHoldGuard = transaction.indexOf('if (affiliate.status === "pending" && affiliate.applicationHeldAt)');
+  const activate = transaction.indexOf("tx.update(affiliates).set({", lockedHoldGuard);
+  const accountInsert = transaction.indexOf("tx.insert(accounts).values({", lockedHoldGuard);
+  const userLinkInsert = transaction.indexOf("tx.insert(accountUsers).values({", lockedHoldGuard);
+  assert.ok(lockedHoldGuard >= 0 && activate > lockedHoldGuard);
+  assert.ok(accountInsert > activate && userLinkInsert > accountInsert);
+  assert.match(transaction.slice(activate, accountInsert), /isNull\(affiliates\.applicationHeldAt\)/);
+  assert.match(transaction, /AFFILIATE_APPLICATION_ON_HOLD/);
+});
+
+test("an unheld pending affiliate with current acceptance remains eligible for the no-card trial", () => {
+  const handler = registerHandler();
+  const transaction = handler.slice(handler.indexOf("const createWithAcceptance"));
+  const activate = transaction.slice(
+    transaction.indexOf('if (affiliate.status === "pending")'),
+    transaction.indexOf('} else if (!affiliate.clerkUserId)'),
+  );
+  assert.match(activate, /affiliate\.status === "pending"/);
+  assert.match(activate, /commissionRatePct: 20/);
+  assert.match(activate, /isNull\(affiliates\.applicationHeldAt\)/);
+  assert.match(activate, /currentReviewedAffiliateAcceptanceCondition\(\)/);
+  assert.match(handler, /subscriptionStatus:\s*isConsultant \? "trial" : "pending_payment"/);
+  assert.match(handler, /trialEndsAt:\s*trialEnds/);
 });

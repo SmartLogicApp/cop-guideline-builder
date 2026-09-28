@@ -32,6 +32,7 @@ export default function AffiliatesPage() {
   const [agreementLoading, setAgreementLoading] = useState(true);
   const [agreementRefresh, setAgreementRefresh] = useState(0);
   const [agreed, setAgreed] = useState(false);
+  const [signInAfterDuplicate, setSignInAfterDuplicate] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -63,6 +64,7 @@ export default function AffiliatesPage() {
     if (!canSubmitApplication(agreement, agreed, agreementLoading) || !agreement) return;
     setStatus('sending');
     setError('');
+    setSignInAfterDuplicate(false);
     const attemptReference = crypto.randomUUID();
     setReference(attemptReference);
     try {
@@ -82,7 +84,8 @@ export default function AffiliatesPage() {
         const conflict = await response.json().catch(() => null);
         if (conflict?.code === 'APPLICATION_ALREADY_EXISTS') {
           setStatus('error');
-          setError('An application with this email already exists. Contact support if you need to update it or reapply.');
+          setSignInAfterDuplicate(true);
+          setError('This email already has an affiliate application or account. Sign in to continue.');
           return;
         }
         setAgreed(false);
@@ -103,6 +106,11 @@ export default function AffiliatesPage() {
     'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-[15px] text-slate-900 ' +
     'placeholder:text-slate-400 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-700/20 bg-white';
   const label = 'block text-sm font-semibold text-slate-800';
+  const affiliateSignupQuery = new URLSearchParams({
+    affiliate: '1',
+    email: form.email.trim().toLowerCase(),
+    company: form.companyName.trim(),
+  }).toString();
 
   return (
     <div className="min-h-[100dvh] flex flex-col bg-slate-50">
@@ -123,8 +131,8 @@ export default function AffiliatesPage() {
           Become a Vendor or Affiliate
         </h1>
         <p className="mt-4 max-w-2xl text-[17px] leading-7 text-slate-700" data-testid="text-description">
-          If you advise healthcare facilities on CMS survey readiness — as a consultant, an association,
-          or a quality-improvement group — we invite you to apply for our referral partnership program.
+          Join the referral partnership instantly. Create a secure login to receive 30 days of full workspace access
+          with no card required, while your affiliate commissions stay active independently of a paid workspace plan.
         </p>
 
         <section className="mt-10">
@@ -135,7 +143,7 @@ export default function AffiliatesPage() {
                 1
               </span>
               <p className="text-[15px] leading-7 text-slate-700">
-                <strong className="font-semibold text-slate-950">Apply below.</strong> Submit your details and let us know how you plan to refer clients. We review every application manually.
+                <strong className="font-semibold text-slate-950">Accept the current agreement.</strong> Your acceptance is recorded with its published version and document fingerprint.
               </p>
             </li>
             <li className="flex gap-4">
@@ -143,7 +151,7 @@ export default function AffiliatesPage() {
                 2
               </span>
               <p className="text-[15px] leading-7 text-slate-700">
-                <strong className="font-semibold text-slate-950">Review & Follow-up.</strong> If there is a mutual fit, our team will reach out to discuss the partnership. Commission details are provided upon approval.
+                <strong className="font-semibold text-slate-950">Create your secure login.</strong> After you verify your email, your affiliate account activates at 20% and your 30-day workspace access begins immediately. No card is needed for the free period.
               </p>
             </li>
             <li className="flex gap-4">
@@ -151,7 +159,7 @@ export default function AffiliatesPage() {
                 3
               </span>
               <p className="text-[15px] leading-7 text-slate-700">
-                <strong className="font-semibold text-slate-950">Refer Clients.</strong> Once approved, you will receive resources and a process for attributing your clients to your partnership account.
+                <strong className="font-semibold text-slate-950">Keep workspace access.</strong> Add a card before day 31 and your first $299/month charge is on day 31. If you add a card after day 30, Checkout charges $299 immediately and restores access after payment succeeds. Your 20-10-0 commission ladder is separate from workspace access.
               </p>
             </li>
           </ol>
@@ -161,9 +169,17 @@ export default function AffiliatesPage() {
         <section id="apply" className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           {status === 'sent' ? (
             <div role="status" data-testid="status-success">
-              <h2 className="text-xl font-bold text-slate-950">Application received</h2>
+              <h2 className="text-xl font-bold text-slate-950">Agreement accepted — continue to secure signup</h2>
               <p className="mt-3 text-[15px] leading-7 text-slate-700">
-                Thank you for your interest in partnering with CMS Compliance Suite. We review applications manually, so you will hear from us by email once your application has been evaluated.
+                Your agreement acceptance has been recorded. Create or sign in to your Clerk account using <strong>{form.email}</strong>. After verified signup and workspace registration, your affiliate account is active at 20% and your card-free 30-day workspace access starts.
+              </p>
+              <a href={siteUrl(`/sign-up?${affiliateSignupQuery}`)}
+                className="mt-5 inline-flex rounded-lg bg-teal-800 px-6 py-3 text-[15px] font-bold text-white hover:bg-teal-900"
+                data-testid="link-create-affiliate-login">
+                Create your secure login
+              </a>
+              <p className="mt-3 text-sm text-slate-600">
+                Already have an account? <a className="font-semibold text-teal-800 underline" href={siteUrl(`/sign-in?${affiliateSignupQuery}`)}>Sign in</a> to finish activating your affiliate workspace.
               </p>
               <p className="mt-3 text-[15px] leading-7 text-slate-700">
                 If you need to add any additional information, please reply to us at{' '}
@@ -178,9 +194,9 @@ export default function AffiliatesPage() {
             </div>
           ) : (
             <>
-              <h2 className="text-xl font-bold text-slate-950">Partnership Application</h2>
+              <h2 className="text-xl font-bold text-slate-950">Affiliate signup</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Submitting this application does not automatically grant partnership status, create an account, or provide access to the Service. Commission details provided upon approval.
+                Accept the current agreement below, then complete secure Clerk signup and workspace registration. The affiliate program is free to join. Affiliate workspace access is free for 30 days; keeping workspace access after that costs $299/month.
               </p>
 
               <form onSubmit={submit} className="mt-6 space-y-5" data-testid="form-apply">
@@ -277,7 +293,9 @@ export default function AffiliatesPage() {
                 {error && (
                   <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" data-testid="status-error">
                     {error}{' '}
-                    <a className="font-semibold underline" href={`mailto:${CONTACT_EMAIL_SUPPORT}`}>{CONTACT_EMAIL_SUPPORT}</a>
+                    {signInAfterDuplicate
+                      ? <a className="font-semibold underline" href={siteUrl(`/sign-in?${affiliateSignupQuery}`)}>Sign in</a>
+                      : <a className="font-semibold underline" href={`mailto:${CONTACT_EMAIL_SUPPORT}`}>{CONTACT_EMAIL_SUPPORT}</a>}
                     <p className="mt-2">Attempt reference: <span className="font-mono break-all">{reference}</span></p>
                   </div>
                 )}
@@ -289,10 +307,10 @@ export default function AffiliatesPage() {
                     className="rounded-lg bg-teal-800 px-6 py-3 text-[15px] font-bold text-white hover:bg-teal-900 disabled:opacity-60 transition-colors"
                     data-testid="button-submit"
                   >
-                    {status === 'sending' ? 'Sending...' : 'Submit application'}
+                    {status === 'sending' ? 'Saving acceptance...' : 'Accept and continue'}
                   </button>
                   <p className="text-xs text-slate-500 max-w-sm">
-                    We use this information only to review your application and contact you regarding the partnership program.
+                    Commission enrollment is separate from your workspace subscription and remains active even when workspace access is unpaid or expired.
                   </p>
                 </div>
               </form>

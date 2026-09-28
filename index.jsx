@@ -4185,8 +4185,7 @@ function AccessResolutionScreen({ failed = false, onRetry, onSignOut }) {
  * reconciling a commission against the revenue it came from should not have to
  * close one panel to open the other.
  *
-  * Existing affiliate accounting stays available while new paid enrollments
-  * are paused pending legal review of the program terms.
+ * Existing affiliate accounting and current enrollment remain available.
  */
 function AffiliateAdminSection({ basePath, month }) {
   const [stats, setStats] = useState(null);
@@ -4297,11 +4296,6 @@ function AffiliateAdminSection({ basePath, month }) {
         ))}
       </div>
 
-      {!loading && stats?.activationEnabled !== true && (
-        <div role="status" style={{ fontSize: "11.5px", color: "#FBBF24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "7px", padding: "8px 11px", marginBottom: "12px" }}>
-          New paid affiliate enrollments are paused until the owner enables reviewed program terms. Applications remain pending; existing affiliate accounting is unchanged.
-        </div>
-      )}
       {stats?.lapsingAffiliates > 0 && (
         <div style={{ fontSize: "11.5px", color: "#FBBF24", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "7px", padding: "8px 11px", marginBottom: "12px" }}>
           {stats.lapsingAffiliates} affiliate{stats.lapsingAffiliates === 1 ? " is" : "s are"} in or past the 60-day grace period (§11).
@@ -4372,7 +4366,7 @@ function AffiliateAdminSection({ basePath, month }) {
           attribution starts the moment an affiliate is enrolled with a matching code.
         </div>
       ) : (
-        <div style={{ maxHeight: "260px", overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px" }}>
+        <div style={{ maxHeight: "260px", overflowX: "auto", overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead style={{ position: "sticky", top: 0, background: "#0B1F3A" }}>
               <tr>
@@ -4391,10 +4385,10 @@ function AffiliateAdminSection({ basePath, month }) {
                 const tone = activityTone[row.activityStatus] ?? activityTone.active;
                 return (
                   <tr key={row.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                    <td style={{ ...cell, maxWidth: "190px", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      <span style={{ color: "#fff", fontWeight: 700 }}>{row.companyName}</span>
+                    <td style={{ ...cell, maxWidth: "190px", whiteSpace: "normal", overflow: "visible", textOverflow: "clip", overflowWrap: "anywhere" }}>
+                      <span style={{ color: "#fff", fontWeight: 700, overflowWrap: "anywhere" }}>{row.companyName}</span>
                       {row.status !== "active" && (
-                        <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "10px", marginLeft: "6px" }}>({row.status})</span>
+                        <div style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", marginTop: "3px", whiteSpace: "normal", overflowWrap: "anywhere" }}>({row.status})</div>
                       )}
                     </td>
                     <td style={{ ...cell, color: "#F5C542", fontFamily: "ui-monospace, monospace" }}>{row.referralCode}</td>
@@ -4433,7 +4427,6 @@ function AffiliateAdminSection({ basePath, month }) {
 // Applying only records contact details; it does not activate a partnership.
 function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
   const [applications, setApplications] = useState([]);
-  const [activationEnabled, setActivationEnabled] = useState(false);
   const [agreementStatus, setAgreementStatus] = useState(null);
   const [version, setVersion] = useState("");
   const [agreementBody, setAgreementBody] = useState("");
@@ -4444,7 +4437,6 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState("");
   const [agreementError, setAgreementError] = useState("");
-  const [statsError, setStatsError] = useState("");
   const [actionError, setActionError] = useState("");
   const [approvingId, setApprovingId] = useState(null);
   const [ratesById, setRatesById] = useState({});
@@ -4463,9 +4455,7 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
     setLoading(true);
     setListError("");
     setAgreementError("");
-    setStatsError("");
     setActionError("");
-    setActivationEnabled(false);
     setAgreementStatus(null);
     setApplications([]);
     const load = async (path) => {
@@ -4490,13 +4480,6 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
         }
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    load("/api/affiliates/stats")
-      .then((stats) => {
-        if (!controller.signal.aborted) setActivationEnabled(stats.activationEnabled === true);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setStatsError("Approval availability could not be confirmed. Try refreshing.");
-      });
     load("/api/affiliates/agreements/current")
       .then((agreement) => {
         if (controller.signal.aborted) return;
@@ -4654,13 +4637,12 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
     <section aria-label="Vendor and affiliate applications" style={{ padding: "10px 0 18px" }}>
       <h2 style={{ color: "#fff", fontSize: "15px", margin: "0 0 4px" }}>Vendor & Affiliate Applications</h2>
       <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "12px", margin: "0 0 14px" }}>
-        Review each application and follow up manually. Applying does not enroll a partner.
+        Activate pending legacy applications only after verifying current agreement acceptance and resolving any hold.
       </p>
       {loading && <p style={{ color: "#fff" }}>Loading applications…</p>}
       {listError && <p role="alert" style={{ color: "#FCA5A5" }}>{listError}</p>}
       {actionError && <p role="alert" style={{ color: "#FCA5A5" }}>{actionError}</p>}
       {agreementError && <p role="status" style={{ color: "#FBBF24" }}>{agreementError}</p>}
-      {statsError && isSuperAdmin && <p role="status" style={{ color: "#FBBF24" }}>{statsError}</p>}
       {notice && <p role="status" style={{ color: "#86EFAC" }}>{notice}</p>}
       {!loading && isSuperAdmin && <section style={{ padding: "14px", margin: "12px 0", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px" }}>
         <h3 style={{ color: "#fff", margin: "0 0 8px", fontSize: "14px" }}>Reviewed affiliate agreement</h3>
@@ -4668,7 +4650,7 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
           {agreementStatus
             ? `Current configured version: ${agreementStatus.version || "not set"} · ${agreementStatus.published ? "document published" : "document not published"}.`
             : "Current agreement status unavailable."}
-          Published versions cannot be edited. Keep paid approvals paused until each applicant accepts the matching version.
+          Published versions cannot be edited. Each application must have acceptance of the current published version before activation.
         </p>
         <form onSubmit={publishAgreement} style={{ display: "grid", gap: "8px" }}>
           <input aria-label="New agreement version" value={version} onChange={(event) => setVersion(event.target.value)}
@@ -4689,9 +4671,6 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
       <button type="button" onClick={() => setRefreshKey((key) => key + 1)} style={{ ...reviewButtonStyle, marginBottom: "10px" }}>
         Refresh applications and acceptance status
       </button>
-      {!loading && isSuperAdmin && !activationEnabled && !statsError && <p role="status" style={{ color: "#FBBF24", fontSize: "12px" }}>
-        Paid partner approvals are paused until the owner enables reviewed program terms.
-      </p>}
       {!loading && !listError && applications.length === 0 && <p style={{ color: "#fff" }}>No applications awaiting review.</p>}
       <div style={{ display: "grid", gap: "10px" }}>
         {applications.map((row) => (
@@ -4725,7 +4704,7 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
               onClick={() => releaseHold(row)} style={{ ...reviewButtonStyle, marginRight: "8px", marginTop: "12px" }}>
               Release hold
             </button>}
-            {isSuperAdmin && activationEnabled && agreementStatus?.published && row.agreementAcceptance && !row.applicationHeldAt && <>
+            {isSuperAdmin && agreementStatus?.published && row.agreementAcceptance?.version === agreementStatus.version && !row.applicationHeldAt && <>
               <label style={{ color: "#fff", fontSize: "12px", marginRight: "8px" }}>
                 Commission rate{" "}
                 <select aria-label={`Commission rate for ${row.companyName}`} value={ratesById[row.id] ?? 20}

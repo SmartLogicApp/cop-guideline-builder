@@ -28,6 +28,58 @@ export function isRecoverableStripeSubscriptionStatus(status: string): boolean {
   return !TERMINAL_STRIPE_SUBSCRIPTION_STATUSES.has(status);
 }
 
+export function hasCheckoutBlockingSubscription({
+  accountSubscriptionStatus,
+  stripeSubscriptionId,
+  stripeSubscriptionStatuses,
+}: {
+  accountSubscriptionStatus: string | null;
+  stripeSubscriptionId: string | null;
+  stripeSubscriptionStatuses: string[];
+}): boolean {
+  // "removed" is a local access-revocation marker, not a Stripe subscription
+  // status. Ignore the stale local subscription ID in that state, while still
+  // blocking if Stripe confirms any non-terminal subscription actually exists.
+  const accountStateIsRecoverable = accountSubscriptionStatus !== "removed" &&
+    Boolean(stripeSubscriptionId) &&
+    isRecoverableStripeSubscriptionStatus(accountSubscriptionStatus ?? "");
+  return accountStateIsRecoverable ||
+    stripeSubscriptionStatuses.some(isRecoverableStripeSubscriptionStatus);
+}
+
+export function resolveFirstDirectSetupTrialEnd({
+  trialPolicy,
+  trialPeriodDays,
+  subscriptionStatus,
+  hasStripeSubscriptionHistory,
+  stripeNowSeconds,
+}: {
+  trialPolicy: string | null | undefined;
+  trialPeriodDays: number;
+  subscriptionStatus: string | null;
+  hasStripeSubscriptionHistory: boolean;
+  stripeNowSeconds: number;
+}): number | null {
+  if (!trialPolicy?.startsWith("first-direct-")) {
+    if (subscriptionStatus === "pending_payment" && !hasStripeSubscriptionHistory) {
+      throw new Error("The first-direct Checkout is missing its required 30-day trial policy.");
+    }
+    return null;
+  }
+  const policyDays = Number(trialPolicy.slice("first-direct-".length));
+  if (
+    policyDays !== 30 ||
+    trialPeriodDays !== 30 ||
+    !Number.isSafeInteger(trialPeriodDays) ||
+    subscriptionStatus !== "pending_payment" ||
+    hasStripeSubscriptionHistory ||
+    !Number.isSafeInteger(stripeNowSeconds)
+  ) {
+    throw new Error("The first-direct Checkout cannot proceed without its full 30-day trial.");
+  }
+  return stripeNowSeconds + 30 * 24 * 60 * 60;
+}
+
 export function getTrialPeriodDays(
   configuredValue = process.env.STRIPE_TRIAL_PERIOD_DAYS,
 ): number {

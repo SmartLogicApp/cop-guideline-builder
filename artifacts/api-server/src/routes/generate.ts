@@ -18,6 +18,7 @@ import {
   GenerationTimeoutError,
   GenerationUpstreamError,
 } from "../services/generation";
+import { resolveTokenUsageAccountId } from "../lib/token-usage-attribution";
 
 const router: IRouter = Router();
 const { fetchEcfrText } = createEcfrService(ecfrDatabaseAdapter);
@@ -113,6 +114,23 @@ router.post("/generate", requireAuth, accountGenerateLimiter, requireActiveSubsc
   }
 
   const clerkUserId = (req as any).clerkUserId as string;
+  const memberships = await db
+    .select({ accountId: accountUsers.accountId })
+    .from(accountUsers)
+    .where(eq(accountUsers.clerkUserId, clerkUserId))
+    .limit(2);
+  const accountId = resolveTokenUsageAccountId(memberships);
+  if (!accountId) {
+    req.log.error(
+      { hasMembership: memberships.length > 0 },
+      "Generation blocked because the Clerk user has no unambiguous client account",
+    );
+    res.status(403).json({
+      error: "This login is not linked to a client account. Contact support before generating content.",
+    });
+    return;
+  }
+
   const upstreamController = new AbortController();
   res.status(200);
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -184,14 +202,8 @@ router.post("/generate", requireAuth, accountGenerateLimiter, requireActiveSubsc
       const { inputTokens, outputTokens } = generation.usage;
       if (inputTokens > 0 || outputTokens > 0) {
         const costs = calcCost(GENERATION_MODEL, inputTokens, outputTokens);
-        const [accountUser] = await db
-          .select({ accountId: accountUsers.accountId })
-          .from(accountUsers)
-          .where(eq(accountUsers.clerkUserId, clerkUserId))
-          .limit(1);
-
         await db.insert(tokenUsage).values({
-          accountId: accountUser?.accountId ?? null,
+          accountId,
           clerkUserId,
           model: GENERATION_MODEL,
           institution: parsed.data.institutionValue ?? null,

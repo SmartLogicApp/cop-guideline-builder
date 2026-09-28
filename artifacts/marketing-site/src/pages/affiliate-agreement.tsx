@@ -18,6 +18,7 @@ export default function AffiliateAgreementPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [createLoginUrl, setCreateLoginUrl] = useState('');
 
   useEffect(() => {
     if (!token) { setError('This invitation link is invalid. Ask the administrator for a new one.'); return; }
@@ -47,6 +48,7 @@ export default function AffiliateAgreementPage() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Could not record acceptance.');
+      if (typeof result.signUpUrl === 'string') setCreateLoginUrl(result.signUpUrl);
       setCompleted(true);
       setAgreement(null);
     } catch (failure) {
@@ -62,9 +64,12 @@ export default function AffiliateAgreementPage() {
       <h1 className="mt-6 text-3xl font-bold">Affiliate agreement</h1>
       {error && <p role="alert" className="mt-5 rounded-lg bg-red-50 p-4 text-red-800">{error}</p>}
       {completed
-        ? <p role="status" className="mt-6 rounded-lg bg-green-50 p-4 text-green-900">
-            Your acceptance was recorded. This does not activate a partnership; an administrator will review your application.
-          </p>
+         ? <div role="status" className="mt-6 rounded-lg bg-green-50 p-4 text-green-900">
+             <p>Your acceptance was recorded. Create a secure account using the email on your application to activate your affiliate account and start your 30-day workspace access.</p>
+             {createLoginUrl && <a href={createLoginUrl} className="mt-4 inline-flex rounded-lg bg-teal-800 px-5 py-3 font-semibold text-white">
+               Create your secure login
+             </a>}
+           </div>
         : agreement
           ? <form onSubmit={accept} className="mt-6 space-y-6">
               <p className="text-sm">For {agreement.companyName} · Agreement version {agreement.version}</p>

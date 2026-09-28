@@ -135,7 +135,7 @@ test("the public application form cannot grant anything", () => {
   );
   assert.match(
     codeOnly(apply),
-    /referralCode:\s*assignedCode\s*,/,
+    /referralCode:\s*await provisionalReferralCode\(companyName\)\s*,/,
     "the stored code must be the server-generated provisional one, nothing else",
   );
   assert.match(apply, /provisionalReferralCode\(/);
@@ -191,25 +191,25 @@ test("every legacy paid activation path checks the reviewed-terms gate", () => {
   assert.match(enroll, /subscriptionFeeWaived: false/);
   assert.doesNotMatch(enroll, /if \(activationBlocked\(res\)\) return;/);
   assert.match(patch, /if \(body\.status === "active"\)/);
-  assert.match(patch, /isBlockedAffiliateActivation\(existing\.status, body\.status\)/);
+  assert.doesNotMatch(patch, /isBlockedAffiliateActivation/);
   assert.match(patch, /eq\(affiliates\.status, expectedStatus\)/);
   assert.match(patch, /eq\(affiliates\.agreementIdentityEpoch, expectedEpoch\)/);
   assert.match(patch, /hasReviewedAffiliateAcceptance/);
   assert.match(patch, /currentReviewedAffiliateAcceptanceCondition\(\)/);
-  assert.match(approve, /if \(activationBlocked\(res\)\) return;/);
+  assert.doesNotMatch(approve, /activationBlocked/);
   assert.match(approve, /hasReviewedAffiliateAcceptance\(row\.id\)/);
   assert.match(approve, /currentReviewedAffiliateAcceptanceCondition\(\)/);
   assert.match(approve, /eq\(affiliates\.email, row\.email\)/);
   assert.match(approve, /eq\(affiliates\.agreementIdentityEpoch, row\.agreementIdentityEpoch\)/);
   assert.match(rate, /row\.status === "pending"/);
   assert.match(manualCommission, /row\.status === "pending"/);
-  assert.match(routes, /activationEnabled: affiliateActivationEnabled\(\) && await reviewedAffiliateAgreementExists\(\)/);
+  assert.match(routes, /activationEnabled: true/);
   const ui = adminUi.slice(adminUi.indexOf("function AffiliateAdminSection("), adminUi.indexOf("function AffiliateApplicationsSection("));
   assert.match(ui, /stats && <button/);
   assert.match(ui, /showEnroll && stats &&/);
   const applicationsUi = adminUi.slice(adminUi.indexOf("function AffiliateApplicationsSection("), adminUi.indexOf("function AdminQuickPanel("));
-  assert.match(applicationsUi, /setActivationEnabled\(stats\.activationEnabled === true\)/);
-  assert.match(applicationsUi, /isSuperAdmin && activationEnabled && agreementStatus\?\.published && row\.agreementAcceptance && !row\.applicationHeldAt && <>/);
+  assert.doesNotMatch(applicationsUi, /activationEnabled/);
+  assert.match(applicationsUi, /isSuperAdmin && agreementStatus\?\.published && row\.agreementAcceptance\?\.version === agreementStatus\.version && !row\.applicationHeldAt && <>/);
   assert.match(applicationsUi, /\/approve`/);
   assert.match(applicationsUi, /agreementAcceptance\.version/);
   assert.match(applicationsUi, /agreementAcceptance\.acceptedAt/);
@@ -268,18 +268,26 @@ test("the commission ledger has a unique key on the Stripe invoice", () => {
   // affiliate a second time for the same customer payment.
   assert.match(
     schema,
-    /stripeInvoiceId:\s*text\("stripe_invoice_id"\)\.unique\(\)/,
+    /stripeInvoiceId:\s*text\("stripe_invoice_id"\)\.unique\("affiliate_commissions_stripe_invoice_id_key"\)/,
     "affiliate_commissions.stripe_invoice_id must be UNIQUE",
   );
 });
 
-test("accrual relies on the unique constraint rather than a prior lookup", () => {
-  // A check-then-insert loses the race between two concurrent deliveries.
+test("accrual checks duplicates and retains the unique-constraint race guard", () => {
+  // The existing-row check is a fast path, not a concurrency defence. The
+  // database key and 23505 handler must still settle simultaneous deliveries.
   assert.match(accrual, /23505/, "must catch unique_violation");
   assert.match(accrual, /already-accrued/);
-  const insertIndex = accrual.indexOf("db.insert(affiliateCommissions)");
+  assert.match(
+    schema,
+    /stripeInvoiceId:\s*text\("stripe_invoice_id"\)\.unique\("affiliate_commissions_stripe_invoice_id_key"\)/,
+    "concurrent webhook deliveries must be serialized by the invoice unique key",
+  );
+  const lookupIndex = accrual.indexOf("eq(affiliateCommissions.stripeInvoiceId, input.stripeInvoiceId)");
+  const insertIndex = accrual.indexOf("tx.insert(affiliateCommissions)");
   const catchIndex = accrual.indexOf('error?.code === "23505"');
-  assert.ok(insertIndex > 0 && catchIndex > insertIndex, "the 23505 catch must guard the insert");
+  assert.ok(lookupIndex >= 0 && lookupIndex < insertIndex, "an existing invoice should take the idempotent fast path");
+  assert.ok(insertIndex > 0 && catchIndex > insertIndex, "the 23505 catch must guard the insert race");
 });
 
 test("a redelivered webhook is not an error", () => {
@@ -317,13 +325,17 @@ test("only a new customer's first payment moves the activity clock", () => {
   // §10 — "Payments received from customers previously referred by Affiliate
   // do not restart, extend, or renew the activity period." A recurring monthly
   // invoice must not keep an otherwise inactive affiliate at 20% forever.
-  assert.match(accrual, /recordQualifyingReferralIfFirst/);
-  assert.match(accrual, /prior\.length\s*!==\s*1/, "must accrue only on the account's first commission row");
+  assert.match(accrual, /let firstQualifyingReferral = !priorReferral/);
+  assert.match(accrual, /affiliateQualifyingReferrals\.affiliateId/);
+  assert.match(accrual, /affiliateQualifyingReferrals\.accountId/);
+  assert.match(accrual, /if \(firstQualifyingReferral\)/);
   assert.match(accrual, /lastQualifyingReferralAt/);
 });
 
 test("an out-of-order webhook cannot drag the activity clock backwards", () => {
-  assert.match(accrual, /current\.getTime\(\)\s*>=\s*paidAt\.getTime\(\)/);
+  const accrualRules = readFileSync(new URL("../lib/affiliate-accrual-rules.ts", import.meta.url), "utf8");
+  assert.match(accrualRules, /current && current\.getTime\(\) > paidAt\.getTime\(\) \? current : paidAt/);
+  assert.match(accrualRules, /paidAt\.getTime\(\) < rateEffectiveAt\.getTime\(\)/);
 });
 
 // ─── Reversals (§25) ─────────────────────────────────────────────────────────
@@ -342,16 +354,16 @@ test("a reversal requires a stated reason", () => {
 
 // ─── The webhook cannot break a customer payment ─────────────────────────────
 
-test("affiliate accrual can never fail the payment webhook", () => {
-  // The customer's money has already moved. An affiliate bookkeeping error
-  // must not make Stripe retry, or make the subscription sync look failed.
+test("affiliate accrual failures propagate for payment-webhook retry", () => {
+  // Persisting the commission is coupled to the payment webhook: an accrual
+  // write failure must propagate so Stripe retries the invoice event.
   const succeededCase = webhooks.slice(
     webhooks.indexOf('case "invoice.payment_succeeded"'),
     webhooks.indexOf('case "charge.refunded"'),
   );
   assert.ok(succeededCase.length > 0, "the invoice.payment_succeeded case must exist");
-  assert.match(succeededCase, /try\s*{/);
-  assert.match(succeededCase, /catch\s*\(error\)/);
+  assert.match(succeededCase, /await accrueCommissionFromInvoice\(invoice\)/);
+  assert.doesNotMatch(succeededCase, /catch\s*\(error\)/);
 });
 
 test("refunds and chargebacks both reverse the commission", () => {

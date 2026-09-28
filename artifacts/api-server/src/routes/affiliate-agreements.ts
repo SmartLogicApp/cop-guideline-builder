@@ -267,10 +267,14 @@ router.post("/accept", publicLimit, async (req, res) => {
         identityEpoch: row!.identityEpoch,
         acceptedAt: now,
       });
-      return true;
+      return { email: row!.recipientEmail, companyName: row!.companyName };
     });
     if (!accepted) return res.status(409).json({ error: "This invitation is invalid, expired, or already used." });
-    return res.json({ accepted: true, message: "Agreement recorded. An administrator will review your application." });
+    return res.json({
+      accepted: true,
+      message: "Agreement accepted. Create a secure login using this email to activate your affiliate account and start your 30-day workspace access.",
+      signUpUrl: `${getReturnBase(req)}/sign-up?affiliate=1&email=${encodeURIComponent(accepted.email)}&company=${encodeURIComponent(accepted.companyName)}`,
+    });
   } catch {
     return res.status(500).json({ error: "Unable to record acceptance. Please try again." });
   }

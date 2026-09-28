@@ -5,7 +5,7 @@
  * the account on its next pass; accounts.trial_warning_email_sent_at is
  * claimed before sending, so a wider window never means a second email.
  */
-export const TRIAL_WARNING_DAYS = 15;
+export const TRIAL_WARNING_DAYS = 5;
 
 export const TRIAL_WARNING_SUBJECT =
   `Your CMS CoP Compliance Suite trial ends in ${TRIAL_WARNING_DAYS} days`;
@@ -50,11 +50,11 @@ export function trialWarningEmailHtml(input: {
       <div style="background: #fff; padding: 28px 32px; border: 1px solid #E2E8F0; border-top: none; border-radius: 0 0 8px 8px;">
         <p style="font-size: 15px; line-height: 1.6;">Hello,</p>
         <p style="font-size: 15px; line-height: 1.6;">
-          This is a friendly reminder that the CMS CoP Compliance Suite trial for
-          <strong>${facilityName}</strong> ends on ${trialEndDate}.
+          This is a friendly reminder about the CMS CoP Compliance Suite trial for
+          <strong>${facilityName}</strong>.
         </p>
         <p style="font-size: 15px; line-height: 1.6;">
-          Add a payment method now to keep uninterrupted access to your compliance tools.
+          Your 30-day trial ends on ${trialEndDate}. Unless you cancel before then, your saved payment method will be charged $299 per month starting on day 31. Manage billing to keep uninterrupted access or cancel before the trial ends.
         </p>
         <a href="${billingUrl}" style="display: inline-block; padding: 11px 20px; background: #0B3D8E; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 700;">Manage billing</a>
         <p style="font-size: 13px; color: #64748B; margin: 24px 0 0; line-height: 1.6;">

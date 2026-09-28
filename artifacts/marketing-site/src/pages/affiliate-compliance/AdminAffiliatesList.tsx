@@ -1,115 +1,188 @@
-import { useState, useMemo } from 'react';
-import { AdminShell } from './shells';
-import { useAdminAffiliates } from './hooks';
-import { Link } from 'wouter';
-import { Loader2, Search, Filter } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useMemo, useState } from "react";
+import { useAuth } from "@clerk/react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { AdminShell } from "./shells";
+import { ArrowUpDown, Download, Loader2, Search } from "lucide-react";
+
+type ReferredClient = {
+  id: string;
+  name: string;
+  createdAt: string | null;
+  status: string;
+  tokensThisMonth: number;
+  tokensTotal: number;
+};
+type AffiliateReport = {
+  id: string;
+  name: string;
+  companyName: string;
+  contact: { email: string; phone: string | null; company: string };
+  referralCode: string;
+  currentRate: number;
+  nextRateChangeDate: string | null;
+  newRate: number | null;
+  restorationDeadline: string | null;
+  activeClients: number;
+  canceledClients: number;
+  workspaceAccessStatus: string;
+  workspaceAccessEndDate: string | null;
+  clients: ReferredClient[];
+};
+
+const headers = [
+  { key: "name", label: "Name" },
+  { key: "contact", label: "Contact (email, phone, company)" },
+  { key: "referralCode", label: "Referral code" },
+  { key: "currentRate", label: "Current rate" },
+  { key: "nextRateChangeDate", label: "Next rate change date and new rate" },
+  { key: "restorationDeadline", label: "Restoration deadline if at 0%" },
+  { key: "activeClients", label: "Clients active/canceled" },
+  { key: "workspaceAccessStatus", label: "Workspace access status + end date" },
+] as const;
+
+const date = (value: string | null) => value ? new Date(value).toLocaleDateString() : "—";
 
 export default function AdminAffiliatesList() {
-  const { data: affiliates = [], isLoading } = useAdminAffiliates();
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('All');
-
+  const { getToken } = useAuth();
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<{ key: string; desc: boolean }>({ key: "name", desc: false });
+  const [csvError, setCsvError] = useState("");
+  const report = useQuery<AffiliateReport[]>({
+    queryKey: ["admin-affiliate-report"],
+    queryFn: async () => {
+      const token = await getToken();
+      const response = await fetch("/api/admin/affiliates", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error((await response.json()).error ?? "Unable to load affiliate report");
+      return response.json();
+    },
+  });
   const filtered = useMemo(() => {
-    return affiliates.filter((a: any) => {
-      const matchSearch = search.length === 0 || 
-        a.legalName?.toLowerCase().includes(search.toLowerCase()) || 
-        a.email?.toLowerCase().includes(search.toLowerCase());
-      
-      let matchFilter = true;
-      if (filter === 'Eligible') matchFilter = a.payoutEligibility === true;
-      if (filter === 'Not Eligible') matchFilter = a.payoutEligibility === false;
-      if (filter === 'Missing Tax') matchFilter = a.taxStatus !== 'Verified/complete';
-      if (filter === 'Missing Stripe') matchFilter = a.stripeSetup !== 'Complete';
-      if (filter === 'International') matchFilter = a.overallStatus === 'International review required';
-      
-      return matchSearch && matchFilter;
-    });
-  }, [affiliates, search, filter]);
+    const query = search.trim().toLocaleLowerCase();
+    return [...(report.data ?? [])]
+      .filter((affiliate) => !query || [
+        affiliate.name, affiliate.companyName, affiliate.contact.email, affiliate.contact.phone,
+        affiliate.referralCode, affiliate.workspaceAccessStatus,
+      ].some((value) => value?.toLocaleLowerCase().includes(query)))
+      .sort((a, b) => {
+        const read = (item: AffiliateReport): string | number => {
+          if (sort.key === "contact") return `${item.contact.email} ${item.contact.phone ?? ""} ${item.companyName}`;
+          if (sort.key === "activeClients") return item.activeClients + item.canceledClients;
+          const value = (item as unknown as Record<string, unknown>)[sort.key];
+          return typeof value === "number" || typeof value === "string" ? value : "";
+        };
+        const left = read(a);
+        const right = read(b);
+        const order = typeof left === "number" && typeof right === "number"
+          ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true });
+        return sort.desc ? -order : order;
+      });
+  }, [report.data, search, sort]);
 
-  if (isLoading) return <AdminShell title="Affiliates"><div className="flex justify-center p-12"><Loader2 className="animate-spin text-slate-800" /></div></AdminShell>;
+  const download = async (type: "affiliates" | "clients") => {
+    setCsvError("");
+    const token = await getToken();
+    const response = await fetch(`/api/admin/affiliates/download?type=${type}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) {
+      setCsvError("Unable to download this CSV.");
+      return;
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = type === "clients" ? "affiliate-clients.csv" : "admin-affiliates.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <AdminShell title="Affiliate Compliance Console" subtitle="Manage affiliate payout eligibility and compliance records.">
-      <div className="bg-white border rounded-xl shadow-sm mb-6 flex flex-col sm:flex-row gap-4 p-4 items-center justify-between">
-        <div className="relative w-full sm:w-96 flex-shrink-0">
-          <Search className="w-5 h-5 absolute left-3 top-2.5 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search affiliates by name or email..." 
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-10 w-full rounded-md border-slate-300 border px-3 py-2 text-sm focus:border-slate-800 focus:ring-slate-800"
-          />
-        </div>
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <Filter className="w-5 h-5 text-slate-400" />
-          <select 
-            value={filter} 
-            onChange={e => setFilter(e.target.value)}
-            className="rounded-md border-slate-300 border px-3 py-2 text-sm focus:border-slate-800 focus:ring-slate-800"
-          >
-            <option>All</option>
-            <option>Eligible</option>
-            <option>Not Eligible</option>
-            <option>Missing Tax</option>
-            <option>Missing Stripe</option>
-            <option>International</option>
-          </select>
+    <AdminShell title="Affiliates" subtitle="Affiliate enrollment, commission rates, referred clients, and workspace access.">
+      <div className="mb-4 flex flex-col gap-3 rounded-lg border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+        <label className="relative w-full sm:max-w-md">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search affiliates by name, company, email, or code"
+            className="w-full rounded-md border py-2 pl-9 pr-3 text-sm" />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => download("affiliates")} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold hover:bg-slate-50">
+            <Download className="h-4 w-4" /> Affiliates CSV
+          </button>
+          <button onClick={() => download("clients")} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold hover:bg-slate-50">
+            <Download className="h-4 w-4" /> Affiliate clients CSV
+          </button>
         </div>
       </div>
-
-      <div className="bg-white border rounded-xl shadow-sm overflow-x-auto">
-        <table className="w-full text-left text-sm text-slate-600">
-          <thead className="bg-slate-50 text-slate-900 border-b">
-            <tr>
-              <th className="px-4 py-3 font-semibold">Affiliate</th>
-              <th className="px-4 py-3 font-semibold">Status</th>
-              <th className="px-4 py-3 font-semibold">Eligibility</th>
-              <th className="px-4 py-3 font-semibold">Tax Status</th>
-              <th className="px-4 py-3 font-semibold">Stripe</th>
-              <th className="px-4 py-3 font-semibold text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filtered.map((affiliate: any) => (
-              <tr key={affiliate.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-4">
-                  <div className="font-semibold text-slate-900">{affiliate.legalName || affiliate.businessName || 'Unnamed'}</div>
-                  <div className="text-xs text-slate-500 mt-1">{affiliate.email}</div>
-                  <div className="text-xs text-slate-400 mt-1">{affiliate.state} • {affiliate.country}</div>
+      {csvError && <p role="alert" className="mb-3 text-sm text-red-700">{csvError}</p>}
+      {report.isLoading ? <div className="flex justify-center p-12"><Loader2 className="animate-spin" /></div>
+        : report.isError ? <p role="alert" className="rounded-md bg-red-50 p-4 text-red-800">{report.error.message}</p>
+        : <div className="overflow-x-auto rounded-lg border bg-white">
+          <table className="w-full min-w-[1450px] border-collapse text-left text-sm">
+            <thead className="bg-slate-50 text-slate-900"><tr>
+              {headers.map((column) => <th key={column.key} className="whitespace-normal px-3 py-3 font-semibold">
+                <button className="inline-flex items-center gap-1 text-left" onClick={() =>
+                  setSort((current) => ({ key: column.key, desc: current.key === column.key ? !current.desc : false }))}>
+                  {column.label}<ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                </button>
+              </th>)}
+              <th className="px-3 py-3">Manage</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtered.map((affiliate) => <tr key={affiliate.id} className="align-top hover:bg-slate-50">
+                <td className="whitespace-normal px-3 py-3 font-semibold text-slate-900">
+                  {affiliate.name}<div className="mt-1 text-xs font-normal text-slate-500">{affiliate.companyName}</div>
                 </td>
-                <td className="px-4 py-4">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${affiliate.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800'}`}>
-                    {affiliate.status}
-                  </span>
+                <td className="whitespace-normal px-3 py-3">{[affiliate.contact.email, affiliate.contact.phone, affiliate.contact.company].filter(Boolean).join(" · ")}</td>
+                <td className="whitespace-nowrap px-3 py-3 font-mono">{affiliate.referralCode}</td>
+                <td className="whitespace-nowrap px-3 py-3">{affiliate.currentRate}%</td>
+                <td className="min-w-[220px] whitespace-normal px-3 py-3">
+                  {affiliate.nextRateChangeDate && affiliate.newRate !== null
+                    ? `${date(affiliate.nextRateChangeDate)} → ${affiliate.newRate}%` : "No scheduled change"}
                 </td>
-                <td className="px-4 py-4">
-                  {affiliate.payoutEligibility ? (
-                    <span className="text-emerald-700 font-medium">Eligible</span>
-                  ) : (
-                    <span className="text-red-600 font-medium">{affiliate.overallStatus || 'Not eligible'}</span>
-                  )}
+                <td className="whitespace-nowrap px-3 py-3">{affiliate.restorationDeadline ? date(affiliate.restorationDeadline) : "—"}</td>
+                <td className="whitespace-nowrap px-3 py-3">{affiliate.activeClients} active / {affiliate.canceledClients} canceled</td>
+                <td className="min-w-[190px] whitespace-normal break-words px-3 py-3">
+                  {affiliate.workspaceAccessStatus}{affiliate.workspaceAccessEndDate ? ` · ends ${date(affiliate.workspaceAccessEndDate)}` : ""}
                 </td>
-                <td className="px-4 py-4">{affiliate.taxStatus || 'Not started'}</td>
-                <td className="px-4 py-4">{affiliate.stripeSetup || 'Not started'}</td>
-                <td className="px-4 py-4 text-right">
-                  <Link href={`/admin/affiliates/${affiliate.id}`} className="inline-flex items-center justify-center rounded-md text-sm font-medium border border-slate-300 bg-white hover:bg-slate-50 px-3 py-1.5 text-slate-700">
-                    View & Manage
-                  </Link>
+                <td className="whitespace-nowrap px-3 py-3">
+                  <Link href={`/admin/affiliates/${affiliate.id}`} className="rounded-md border px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">View</Link>
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs font-semibold text-slate-700">Referred clients ({affiliate.clients.length})</summary>
+                    <div className="mt-2 max-h-[65vh] w-[min(800px,70vw)] overflow-auto rounded-md border bg-white p-3 shadow-sm">
+                      {(["Active", "Canceled"] as const).map((group) => {
+                        const groupClients = affiliate.clients.filter((client) =>
+                          group === "Active" ? ["Active", "Trial"].includes(client.status) : /cancel|removed|expired/i.test(client.status));
+                        return <section key={group} className="mb-4 last:mb-0">
+                          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">{group} ({groupClients.length})</h3>
+                          {groupClients.length ? <div className="overflow-x-auto">
+                            <table className="w-full min-w-[620px] text-left text-xs">
+                              <thead><tr className="border-b text-slate-500">
+                                <th className="p-2">Client name</th><th className="p-2">Signup date</th>
+                                <th className="min-w-[170px] whitespace-normal p-2">Status</th>
+                                <th className="p-2">Tokens this month</th><th className="p-2">Tokens total</th>
+                              </tr></thead>
+                              <tbody>{groupClients.map((client) => <tr key={client.id} className="border-b last:border-0">
+                                <td className="p-2">{client.name}</td><td className="whitespace-nowrap p-2">{date(client.createdAt)}</td>
+                                <td className="min-w-[170px] whitespace-normal break-words p-2">{client.status}</td>
+                                <td className="p-2">{client.tokensThisMonth.toLocaleString()}</td>
+                                <td className="p-2">{client.tokensTotal.toLocaleString()}</td>
+                              </tr>)}</tbody>
+                            </table>
+                          </div> : <p className="text-xs text-slate-500">No {group.toLowerCase()} referred clients.</p>}
+                        </section>;
+                      })}
+                    </div>
+                  </details>
                 </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
-                  No affiliates found matching your filters.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              </tr>)}
+              {filtered.length === 0 && <tr><td colSpan={9} className="p-10 text-center text-slate-500">No affiliates found.</td></tr>}
+            </tbody>
+          </table>
+        </div>}
     </AdminShell>
   );
 }

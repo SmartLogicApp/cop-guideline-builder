@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { accountUsers, accounts, adminUsers, db } from "@workspace/db";
 import { hasEffectiveAccess } from "./subscriptionAccess";
+import { runAccountSubscriptionLifecycle } from "../lib/subscription-lifecycle";
 
 export const PAYMENT_REQUIRED_RESPONSE = {
   error: "An active subscription or trial is required",
@@ -14,7 +15,7 @@ export async function getSubscriptionAccess(clerkUserId: string, now = new Date(
     .map((id) => id.trim())
     .filter(Boolean)
     .includes(clerkUserId);
-  const [admin, membership] = await Promise.all([
+  let [admin, membership] = await Promise.all([
     db.select({ id: adminUsers.id })
       .from(adminUsers)
       .where(and(eq(adminUsers.clerkUserId, clerkUserId), eq(adminUsers.isActive, true)))
@@ -26,10 +27,24 @@ export async function getSubscriptionAccess(clerkUserId: string, now = new Date(
       .limit(1),
   ]);
 
-  const account = membership[0]?.account ?? null;
+  let account = membership[0]?.account ?? null;
   const accountUser = membership[0]?.accountUser ?? null;
+  if (account) {
+    await runAccountSubscriptionLifecycle(account);
+    // Re-read the canonical state before computing access. Stripe may have
+    // changed it while the client was away; never grant access from stale data.
+    [membership] = await Promise.all([
+      db.select({ accountUser: accountUsers, account: accounts })
+        .from(accountUsers)
+        .leftJoin(accounts, eq(accountUsers.accountId, accounts.id))
+        .where(eq(accountUsers.clerkUserId, clerkUserId))
+        .limit(1),
+    ]);
+    account = membership[0]?.account ?? null;
+  }
   const isAdminUser = isConfiguredSuperAdmin || admin.length > 0;
-  const hasComplimentaryAccess = accountUser?.hasComplimentaryAccess === true;
+  const hasComplimentaryAccess = account?.subscriptionStatus !== "removed" &&
+    accountUser?.hasComplimentaryAccess === true;
 
   return {
     account,

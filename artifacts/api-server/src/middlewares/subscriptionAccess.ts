@@ -21,11 +21,20 @@ export function isTrialStatus(status: string | null | undefined): boolean {
 }
 
 export function hasActiveSubscription(
-  account: { subscriptionStatus: string | null; trialEndsAt: Date | null } | null,
+  account: {
+    subscriptionStatus: string | null;
+    trialEndsAt: Date | null;
+    subscriptionCancelAtPeriodEnd?: boolean | null;
+    subscriptionCurrentPeriodEnd?: Date | null;
+  } | null,
   now = new Date(),
 ): boolean {
   const status = account?.subscriptionStatus;
-  if (status === "active") return true;
+  if (status === "active" && account) {
+    return !account.subscriptionCancelAtPeriodEnd ||
+      account.subscriptionCurrentPeriodEnd == null ||
+      account.subscriptionCurrentPeriodEnd > now;
+  }
   return isTrialStatus(status) &&
     account?.trialEndsAt != null &&
     account.trialEndsAt > now;
@@ -39,8 +48,17 @@ export function hasEffectiveAccess({
 }: {
   isAdminUser: boolean;
   hasComplimentaryAccess: boolean;
-  account: { subscriptionStatus: string | null; trialEndsAt: Date | null } | null;
+  account: {
+    subscriptionStatus: string | null;
+    trialEndsAt: Date | null;
+    subscriptionCancelAtPeriodEnd?: boolean | null;
+    subscriptionCurrentPeriodEnd?: Date | null;
+  } | null;
   now?: Date;
 }): boolean {
+  // An administrator's immediate client removal is a hard revocation, including
+  // any complimentary grant that may previously have been attached to a member.
+  // Platform administrators remain able to administer the application itself.
+  if (account?.subscriptionStatus === "removed") return isAdminUser;
   return isAdminUser || hasComplimentaryAccess || hasActiveSubscription(account, now);
 }

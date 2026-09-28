@@ -76,7 +76,7 @@ test("route handlers actually call the executable boundary functions", () => {
   assert.match(affiliates, /hasSensitiveContact\(\{ email, phone \}\)/);
   assert.match(affiliates, /hasSensitiveContact\(body\)/);
   assert.match(affiliates, /!isSafeAffiliateIdentifier\(code\)/);
-  assert.match(affiliates, /!isSafeAffiliateIdentifier\(requestedCode\)/);
+  assert.match(affiliates, /!isSafeAffiliateIdentifier\(legacyCode\)/);
   assert.match(affiliates, /note: approvalRateChangeNote\(\)/);
   assert.match(compliance, /!isSafeDocumentVersion\(version\)/);
   assert.match(compliance, /!isSafeDocumentVersion\(document\.version\)/);
