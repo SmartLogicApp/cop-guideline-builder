@@ -21,6 +21,7 @@ const routes = readFileSync(new URL("./affiliates.ts", import.meta.url), "utf8")
 const accrual = readFileSync(new URL("../lib/affiliate-accrual.ts", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../../../../lib/db/src/schema/affiliates.ts", import.meta.url), "utf8");
 const webhooks = readFileSync(new URL("../webhookHandlers.ts", import.meta.url), "utf8");
+const paymentRisk = readFileSync(new URL("../lib/affiliate-payment-risk.ts", import.meta.url), "utf8");
 const app = readFileSync(new URL("../app.ts", import.meta.url), "utf8");
 const adminUi = readFileSync(new URL("../../../../index.jsx", import.meta.url), "utf8");
 
@@ -47,7 +48,7 @@ function routeSection(start: string, end: string): string {
 
 test("affiliate handlers keep their own database targets after a merge", () => {
   const apply = routeSection('router.post("/apply"', 'async function provisionalReferralCode');
-  assert.match(apply, /from\(affiliates\)\.where\(eq\(affiliates\.email,\s*email\)\)/);
+  assert.match(apply, /\.from\(affiliates\)\.where\(eq\(sql`lower\(trim\(\$\{affiliates\.email\}\)\)`,\s*email\)\)/);
 
   const enroll = routeSection('router.post("/", requireSuperAdmin', 'router.patch("/:id"');
   assert.match(enroll, /db\.insert\(affiliates\)/);
@@ -199,7 +200,7 @@ test("every legacy paid activation path checks the reviewed-terms gate", () => {
   assert.doesNotMatch(approve, /activationBlocked/);
   assert.match(approve, /hasReviewedAffiliateAcceptance\(row\.id\)/);
   assert.match(approve, /currentReviewedAffiliateAcceptanceCondition\(\)/);
-  assert.match(approve, /eq\(affiliates\.email, row\.email\)/);
+  assert.match(approve, /eq\(sql`lower\(trim\(\$\{affiliates\.email\}\)\)`,\s*row\.email\.trim\(\)\.toLowerCase\(\)\)/);
   assert.match(approve, /eq\(affiliates\.agreementIdentityEpoch, row\.agreementIdentityEpoch\)/);
   assert.match(rate, /row\.status === "pending"/);
   assert.match(manualCommission, /row\.status === "pending"/);
@@ -209,7 +210,9 @@ test("every legacy paid activation path checks the reviewed-terms gate", () => {
   assert.match(ui, /showEnroll && stats &&/);
   const applicationsUi = adminUi.slice(adminUi.indexOf("function AffiliateApplicationsSection("), adminUi.indexOf("function AdminQuickPanel("));
   assert.doesNotMatch(applicationsUi, /activationEnabled/);
-  assert.match(applicationsUi, /isSuperAdmin && agreementStatus\?\.published && row\.agreementAcceptance\?\.version === agreementStatus\.version && !row\.applicationHeldAt && <>/);
+  assert.match(applicationsUi, /agreementStatus\?\.published && row\.agreementAcceptance\?\.version === agreementStatus\.version/);
+  assert.match(applicationsUi, /const canActivate = currentAgreementAccepted && !row\.applicationHeldAt/);
+  assert.match(applicationsUi, /disabled=\{approvingId != null \|\| !canActivate\}/);
   assert.match(applicationsUi, /\/approve`/);
   assert.match(applicationsUi, /agreementAcceptance\.version/);
   assert.match(applicationsUi, /agreementAcceptance\.acceptedAt/);
@@ -218,13 +221,22 @@ test("every legacy paid activation path checks the reviewed-terms gate", () => {
 test("agreement acceptance is tied to the applicant identity revision and cannot be replayed after an email change", () => {
   const agreementRoutes = readFileSync(new URL("./affiliate-agreements.ts", import.meta.url), "utf8");
   const agreementState = readFileSync(new URL("../lib/affiliate-agreement-state.ts", import.meta.url), "utf8");
+  const reviewedAcceptance = readFileSync(new URL("../lib/affiliate-reviewed-agreement-acceptance.ts", import.meta.url), "utf8");
   const agreementSchema = readFileSync(new URL("../../../../lib/db/src/schema/affiliate-agreements.ts", import.meta.url), "utf8");
   const affiliateSchema = readFileSync(new URL("../../../../lib/db/src/schema/affiliates.ts", import.meta.url), "utf8");
   assert.match(routes, /patch\.agreementIdentityEpoch = sql`\$\{affiliates\.agreementIdentityEpoch\} \+ 1`/);
   assert.match(agreementRoutes, /for\("update"\)/);
   assert.match(agreementRoutes, /row\.identityEpoch === row\.currentEpoch/);
   assert.match(agreementRoutes, /identityEpoch: row!\.identityEpoch/);
-  assert.match(agreementState, /eq\(affiliateAgreementAcceptances\.identityEpoch, affiliates\.agreementIdentityEpoch\)/);
+  assert.match(agreementState, /acceptedIdentityEpoch:\s*affiliateAgreementAcceptances\.identityEpoch/);
+  assert.match(agreementState, /currentIdentityEpoch:\s*affiliates\.agreementIdentityEpoch/);
+  assert.match(agreementState, /eq\(affiliateAgreementAcceptances\.agreementVersion,\s*reviewedVersion\)/);
+  assert.match(agreementState, /acceptedVersion:\s*candidate\.agreementVersion/);
+  assert.match(agreementState, /isCurrentReviewedAffiliateAcceptance\(/);
+  assert.match(reviewedAcceptance, /input\.acceptedVersion === input\.reviewedVersion/);
+  assert.match(reviewedAcceptance, /input\.acceptedContentSha256 === input\.reviewedContentSha256/);
+  assert.match(reviewedAcceptance, /input\.acceptedSignerEmail\.trim\(\)\.toLowerCase\(\)\s*===\s*input\.currentAffiliateEmail\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(reviewedAcceptance, /input\.acceptedIdentityEpoch === input\.currentIdentityEpoch/);
   assert.match(agreementState, /export function currentReviewedAffiliateAcceptanceCondition/);
   assert.match(agreementState, /affiliateAgreementAcceptances\.contentSha256\} = \$\{affiliateAgreements\.contentSha256\}/);
   assert.match(agreementState, /affiliateAgreementAcceptances\.identityEpoch\} = \$\{affiliates\.agreementIdentityEpoch\}/);
@@ -340,10 +352,15 @@ test("an out-of-order webhook cannot drag the activity clock backwards", () => {
 
 // ─── Reversals (§25) ─────────────────────────────────────────────────────────
 
-test("a commission cannot be reversed twice", () => {
-  // A second reversal of a paid commission would deduct the same money from
-  // the affiliate's next payout twice.
-  assert.match(accrual, /isNull\(affiliateCommissions\.reversedAt\)/);
+test("a Stripe event never mutates paid commission history automatically", () => {
+  // Paid transfer history is retained; the risk record gets a manual recovery hold.
+  assert.ok(
+    paymentRisk.indexOf('if (commission.status === "paid")') <
+      paymentRisk.indexOf('if (disposition === "full_refund")'),
+  );
+  assert.match(paymentRisk, /manualRecoveryReviewRequired: disposition !== "clear"/);
+  assert.doesNotMatch(paymentRisk, /affiliatePayoutHolds/);
+  assert.match(paymentRisk, /isNull\(affiliateCommissions\.reversedAt\)/);
   assert.match(routes, /inArray\(affiliateCommissions\.status,\s*\["pending",\s*"payable",\s*"paid"\]\)/);
 });
 
@@ -366,10 +383,28 @@ test("affiliate accrual failures propagate for payment-webhook retry", () => {
   assert.doesNotMatch(succeededCase, /catch\s*\(error\)/);
 });
 
-test("refunds and chargebacks both reverse the commission", () => {
+test("refund and dispute outcomes persist invoice-scoped risk and retry failures", () => {
   assert.match(webhooks, /case "charge\.refunded":/);
   assert.match(webhooks, /case "charge\.dispute\.created":/);
-  assert.match(webhooks, /reverseCommissionForInvoice/);
+  assert.match(webhooks, /case "charge\.dispute\.updated":/);
+  assert.match(webhooks, /case "charge\.dispute\.closed":/);
+  assert.match(webhooks, /await processInvoiceRiskEvent/);
+  assert.match(webhooks, /Affiliate payment-risk mapping failed/);
+  assert.match(webhooks, /recordAffiliateInvoiceRisk/);
+  assert.doesNotMatch(
+    webhooks.slice(webhooks.indexOf('case "charge.refunded"'), webhooks.indexOf('case "charge.dispute.closed"') + 200),
+    /catch\s*\(/,
+  );
+});
+
+test("invoice risk receipts are idempotent and serialized with affiliate-ledger writes", () => {
+  assert.match(paymentRisk, /affiliatePaymentRiskEvents\)\.values\([\s\S]*?\.onConflictDoNothing\(\)\.returning/);
+  assert.match(paymentRisk, /\.from\(affiliates\)[\s\S]*?\.for\("update"\)/);
+  assert.match(paymentRisk, /status: "risk_held"/);
+  assert.match(paymentRisk, /status: "reversed"/);
+  assert.match(paymentRisk, /manualRecoveryReviewRequired: disposition !== "clear"/);
+  assert.match(accrual, /affiliateInvoicePaymentRisks[\s\S]*?\.for\("update"\)/);
+  assert.match(accrual, /paymentRiskDisposition === "full_refund"/);
 });
 
 // ─── Payout settlement ───────────────────────────────────────────────────────

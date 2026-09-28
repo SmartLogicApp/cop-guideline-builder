@@ -1,12 +1,17 @@
 import {
   db, affiliates, affiliateComplianceStatus, affiliatePayoutWorkflow,
   affiliateCommissions, affiliateComplianceAuditLog, affiliatePayoutWorkflowCommissions,
+  affiliateInvoicePaymentRisks,
 } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { getStripeConnectClient, getStripeConnectLivemode } from "../stripeClient.js";
 import { verifyExpressRecipient } from "./affiliate-connect-account.js";
-import { stripeTaxStatus } from "./affiliate-connect-tax.js";
+import { affiliateConnectChecklistStatus } from "./affiliate-connect-checklist-status.js";
+import { commissionStatusAfterTransferReversal } from "./affiliate-compliance-rules.js";
+import {
+  invoiceRiskDisposition,
+} from "./affiliate-payment-risk-rules.js";
 
 function destinationId(destination: Stripe.Transfer["destination"]): string | null {
   return typeof destination === "string" ? destination : destination?.id ?? null;
@@ -28,13 +33,10 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
     const stripe = getStripeConnectClient();
     const verifiedAccount = await verifyExpressRecipient(stripe, account, getStripeConnectLivemode());
     if (!verifiedAccount.valid) return;
-    const due = [...(account.requirements?.currently_due ?? []), ...(account.requirements?.past_due ?? [])]
-      .filter((item): item is string => typeof item === "string").slice(0, 50);
-    const detailsSubmitted = Boolean(account.details_submitted);
-    const payoutsEnabled = Boolean(account.payouts_enabled) && verifiedAccount.transferCapabilityActive;
+    const stripeStatus = affiliateConnectChecklistStatus(account, verifiedAccount.transferCapabilityActive);
+    const { requirementsDue: due, detailsSubmitted, payoutsEnabled, taxStatus } = stripeStatus;
     const now = new Date();
-    const complete = detailsSubmitted && payoutsEnabled && due.length === 0;
-    const taxStatus = stripeTaxStatus(account);
+    const complete = stripeStatus.onboardingComplete;
     await db.transaction(async (tx) => {
       await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, affiliateId)).for("update").limit(1);
       const [currentStatus] = await tx.select().from(affiliateComplianceStatus)
@@ -48,7 +50,7 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
         stripeAccountType: "express",
         stripeDetailsSubmitted: detailsSubmitted,
         stripePayoutsEnabled: payoutsEnabled,
-        stripeChargesEnabled: Boolean(account.charges_enabled),
+        stripeChargesEnabled: stripeStatus.chargesEnabled,
         stripeRequirementsDue: due,
         stripeOnboardingStatus: complete ? "complete" : "action_required",
         stripeOnboardingCompletedAt: complete ? now : null,
@@ -82,6 +84,17 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
   const metadataAffiliateId = transfer.metadata?.affiliateId;
   if (!workflowId || !metadataAffiliateId) return;
   await db.transaction(async (tx) => {
+    // Match the affiliate-first lock order used by accrual and invoice-risk
+    // updates so a refund cannot race this reversal into releasing a claim.
+    const [payoutReference] = await tx.select({
+      id: affiliatePayoutWorkflow.id,
+      affiliateId: affiliatePayoutWorkflow.affiliateId,
+    }).from(affiliatePayoutWorkflow)
+      .where(eq(affiliatePayoutWorkflow.stripeTransferId, transfer.id)).limit(1);
+    if (!payoutReference || payoutReference.id !== workflowId
+        || payoutReference.affiliateId !== metadataAffiliateId) return;
+    await tx.select({ id: affiliates.id }).from(affiliates)
+      .where(eq(affiliates.id, payoutReference.affiliateId)).for("update").limit(1);
     // The stored transfer ID is the primary binding. Metadata only confirms
     // the linkage after the row has been located.
     const [payout] = await tx.select().from(affiliatePayoutWorkflow)
@@ -111,6 +124,7 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
       id: affiliateCommissions.id,
       affiliateId: affiliateCommissions.affiliateId,
       amount: affiliateCommissions.commissionUsd,
+      stripeInvoiceId: affiliateCommissions.stripeInvoiceId,
       status: affiliateCommissions.status,
       payoutId: affiliateCommissions.payoutId,
     }).from(affiliateCommissions).where(and(
@@ -140,15 +154,40 @@ export async function processAffiliateConnectWebhook(event: Stripe.Event): Promi
     } else if (transfer.reversed && transfer.amount_reversed === transfer.amount) {
       if (!["paid", "reversal_review_required"].includes(payout.payoutStatus)
           || !claims.every((claim) => claim.status === "paid")) return;
+      const invoiceIds = ledgerRows.flatMap((row) => row.stripeInvoiceId ? [row.stripeInvoiceId] : []);
+      const risks = invoiceIds.length ? await tx.select().from(affiliateInvoicePaymentRisks)
+        .where(inArray(affiliateInvoicePaymentRisks.stripeInvoiceId, invoiceIds))
+        .for("update") : [];
+      const riskByInvoiceId = new Map(risks.map((risk) => [risk.stripeInvoiceId, risk]));
       await tx.update(affiliatePayoutWorkflow).set({
         payoutStatus: "reversed", updatedAt: now,
       }).where(eq(affiliatePayoutWorkflow.id, payout.id));
-      await tx.update(affiliateCommissions).set({ status: "payable", paidAt: null, payoutId: null })
-        .where(and(
+      for (const row of ledgerRows) {
+        if (row.status !== "paid") continue;
+        const risk = row.stripeInvoiceId ? riskByInvoiceId.get(row.stripeInvoiceId) : undefined;
+        const disposition = risk ? invoiceRiskDisposition(risk) : "clear";
+        const nextStatus = commissionStatusAfterTransferReversal(disposition);
+        await tx.update(affiliateCommissions).set({
+          status: nextStatus,
+          // Preserve the paid timestamp and old payout-claim row as history.
+          // Clear only the ledger pointer if the commission is safe to claim
+          // through a new, separately reviewed payout.
+          ...(nextStatus === "payable" ? { payoutId: null } : {}),
+        }).where(and(
+          eq(affiliateCommissions.id, row.id),
           eq(affiliateCommissions.affiliateId, payout.affiliateId),
           eq(affiliateCommissions.payoutId, payout.id),
           eq(affiliateCommissions.status, "paid"),
         ));
+        if (risk && (nextStatus === "risk_held"
+            || (nextStatus === "reversed" && risk.disputeStatus === "lost"
+              && risk.cumulativeRefundedMinor < risk.chargeAmountMinor))) {
+          await tx.update(affiliateInvoicePaymentRisks).set({
+            priorCommissionStatus: "payable",
+            updatedAt: now,
+          }).where(eq(affiliateInvoicePaymentRisks.stripeInvoiceId, risk.stripeInvoiceId));
+        }
+      }
       await tx.update(affiliatePayoutWorkflowCommissions).set({ status: "reversed", updatedAt: now })
         .where(and(eq(affiliatePayoutWorkflowCommissions.payoutWorkflowId, payout.id), eq(affiliatePayoutWorkflowCommissions.status, "paid")));
     } else {

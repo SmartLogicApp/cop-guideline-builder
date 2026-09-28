@@ -19,7 +19,7 @@ registerHooks({
   },
 });
 process.env.DATABASE_URL = "postgresql://test:test@localhost:1/disconnected";
-process.env.ADMIN_CLERK_USER_IDS = "synthetic-terms-admin";
+process.env.ADMIN_CLERK_USER_IDS = "user_synthetic_terms_admin";
 
 const [{ default: accountRouter }, { default: billingRouter }, { default: adminRouter }, schema, terms] =
   await Promise.all([
@@ -108,17 +108,36 @@ test("Terms acceptance is authenticated, registered, server-timed and cannot be 
         limit: async () => {
           if (table === accountUsers) {
             return joined
-              ? registered && allowed ? [{ accountUser: { accountId: account.id }, account }] : []
-              : registered && allowed ? [{ accountId: account.id }] : [];
+              ? registered && allowed ? [{
+                accountUser: {
+                  accountId: account.id,
+                  clerkUserId: "synthetic-member",
+                  email: "member@example.test",
+                  role: "admin",
+                },
+                account,
+              }] : []
+              : registered && allowed ? [{
+                accountId: account.id,
+                clerkUserId: "synthetic-member",
+                email: "member@example.test",
+                role: "admin",
+              }] : [];
           }
           if (table === accounts) return registered ? [account] : [];
+          if (table === affiliates) return [];
           if (table === adminUsers) return [];
           if (table === tokenUsage) return [];
           throw new Error("Unexpected select table");
         },
         then(resolve: (value: any[]) => void) {
           resolve(table === accounts ? registered ? [account] : []
-            : table === accountUsers ? registered && allowed ? [{ accountId: account.id }] : []
+            : table === accountUsers ? registered && allowed ? [{
+              accountId: account.id,
+              clerkUserId: "synthetic-member",
+              email: "member@example.test",
+              role: "admin",
+            }] : []
             : []);
         },
       });
@@ -211,7 +230,7 @@ test("Terms acceptance is authenticated, registered, server-timed and cannot be 
     assert.equal(billing.body.subscription.termsAcceptedAt, first.body.termsAcceptedAt);
     assert.equal(billing.body.subscription.termsVersion, CURRENT_TERMS_VERSION);
     assert.equal(billing.body.subscription.termsAcceptanceRequired, false);
-    const admin = await request(adminRouter, "get", "/clients", "synthetic-terms-admin");
+    const admin = await request(adminRouter, "get", "/clients", "user_synthetic_terms_admin");
     assert.equal(admin.status, 200, JSON.stringify(admin.body));
     assert.equal(admin.body[0].termsAcceptedAt, first.body.termsAcceptedAt);
     assert.equal(admin.body[0].termsVersion, CURRENT_TERMS_VERSION);

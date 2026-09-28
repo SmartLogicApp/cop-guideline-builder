@@ -33,12 +33,15 @@ test('affiliate enrollment explains immediate verified signup and the separate 3
   assert.match(form, /new URLSearchParams\(\{\s*affiliate: '1',\s*email: form\.email\.trim\(\)\.toLowerCase\(\),\s*company: form\.companyName\.trim\(\)/);
 });
 
-test('older pending applications without acceptance retain the invitation button', () => {
+test('older pending applications show a disabled activation button until the current agreement is accepted and holds are cleared', () => {
   const admin = readFileSync(new URL('../../../../index.jsx', import.meta.url), 'utf8');
   const applications = admin.slice(admin.indexOf('function AffiliateApplicationsSection('), admin.indexOf('function AdminQuickPanel('));
   assert.match(applications, /row\.agreementAcceptance\.invitationId == null \? "with application" : "after invitation"/);
   assert.match(applications, /isSuperAdmin && !row\.agreementAcceptance && <button[^>]*[\s\S]*?Send agreement invitation/);
-  assert.match(applications, /isSuperAdmin && agreementStatus\?\.published && row\.agreementAcceptance\?\.version === agreementStatus\.version && !row\.applicationHeldAt && <>/);
+  assert.match(applications, /isSuperAdmin && \(\(\) => \{[\s\S]*?const canActivate = currentAgreementAccepted && !row\.applicationHeldAt/);
+  assert.match(applications, /disabled=\{approvingId != null \|\| !canActivate\}[\s\S]*?"Activate"/);
+  assert.match(applications, /Release the application hold before activation/);
+  assert.match(applications, /must accept the current published agreement/);
   assert.doesNotMatch(applications, /activationEnabled|paid partner approvals are paused|paid approvals paused/i);
   assert.match(applications, /!loading && isSuperAdmin && <section[\s\S]*?type="checkbox" checked=\{confirmedReviewed\}/);
   assert.match(applications, /disabled=\{actionBusy \|\| !confirmedReviewed \|\| !agreementStatus\}[\s\S]*?Publish immutable agreement version/);
@@ -50,7 +53,8 @@ test('application review exposes hold and release while approval generates its c
   assert.match(applications, /\/hold`/);
   assert.match(applications, /\/release-hold`/);
   assert.match(applications, /row\.applicationHeldAt && <p role="status"/);
-  assert.match(applications, /row\.agreementAcceptance\?\.version === agreementStatus\.version && !row\.applicationHeldAt/);
+  assert.match(applications, /const currentAgreementAccepted = Boolean\([\s\S]*?row\.agreementAcceptance\?\.version === agreementStatus\.version/);
+  assert.match(applications, /const canActivate = currentAgreementAccepted && !row\.applicationHeldAt/);
   assert.match(applications, /body: JSON\.stringify\(\{ commissionRatePct: ratesById\[row\.id\] \?\? 20 \}\)/);
   assert.doesNotMatch(applications.slice(applications.indexOf('async function approve('), applications.indexOf('async function hold(')), /window\.prompt/);
 });

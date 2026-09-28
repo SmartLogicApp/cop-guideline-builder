@@ -10,3 +10,9 @@ Any external transfer attempt must first persist a non-voidable processing state
 **Why:** The original manual path marked the legacy commission ledger paid before payment was actually sent. A second payout workflow and asynchronous Connect webhooks make duplicate or unrelated settlement possible unless both ledgers agree on exact claims and transfer evidence. Stripe can accept a transfer even if the database transaction rolls back or the network response is lost.
 
 **How to apply:** Any new payout route, batch, retry, webhook, or reactivation of a historical endpoint must use the shared eligibility gate, exact claim ownership, durable attempt state, and verified transfer evidence. Keep the old settlement path blocked until it is unified with those controls; preserve old payout history.
+
+Partial refunds and open disputes should hold the entire affected unpaid invoice commission until its retained-revenue portion is explicitly reconciled; do not guess a replacement amount from an immutable claim. Already-paid refunds require an auditable human recovery or waiver decision, not an invented automatic offset. A later Stripe transfer reversal must never make a refunded commission payable again.
+
+**Why:** Stripe risk events can arrive before accrual, after payout, or out of order relative to a transfer reversal. Auto-releasing claims or repricing frozen rows can double-pay returned revenue and misstate the historical transfer.
+
+**How to apply:** Keep invoice-risk events durable and check them under the affiliate payout lock whenever accruing, releasing, drafting, or transferring. Keep historical paid claims intact while a recovery review blocks new payouts; require evidence-backed review before clearing it.

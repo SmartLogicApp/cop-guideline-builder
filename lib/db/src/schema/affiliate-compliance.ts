@@ -2,6 +2,7 @@ import {
   boolean,
   check,
   index,
+  integer,
   jsonb,
   numeric,
   pgTable,
@@ -14,6 +15,7 @@ import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { affiliateCommissions, affiliates } from "./affiliates";
+import { accounts } from "./accounts";
 
 /**
  * Additive compliance and manual-payout workflow records.
@@ -145,6 +147,55 @@ export const affiliatePayoutHolds = pgTable("affiliate_payout_holds", {
   index("affiliate_payout_holds_status_idx").on(table.status),
   index("affiliate_payout_holds_type_status_idx").on(table.holdType, table.status),
   check("affiliate_payout_holds_status_check", sql`${table.status} IN ('active', 'released')`),
+]);
+
+/**
+ * Durable invoice-level refund/dispute facts. Commission amounts remain
+ * immutable; an unresolved partial refund or dispute moves only an unpaid
+ * commission to risk_held. Paid commissions remain paid and are flagged for
+ * invoice-specific manual recovery review rather than automatically offset.
+ */
+export const affiliateInvoicePaymentRisks = pgTable("affiliate_invoice_payment_risks", {
+  stripeInvoiceId: text("stripe_invoice_id").primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  affiliateId: uuid("affiliate_id").references(() => affiliates.id, { onDelete: "restrict" }),
+  stripeChargeId: text("stripe_charge_id").notNull(),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  chargeAmountMinor: integer("charge_amount_minor").notNull(),
+  cumulativeRefundedMinor: integer("cumulative_refunded_minor").notNull().default(0),
+  disputeId: text("dispute_id"),
+  disputeStatus: text("dispute_status").notNull().default("none"),
+  priorCommissionStatus: text("prior_commission_status"),
+  manualRecoveryReviewRequired: boolean("manual_recovery_review_required").notNull().default(false),
+  recoveryReviewReason: text("recovery_review_reason"),
+  lastStripeEventCreatedAt: timestamp("last_stripe_event_created_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("affiliate_invoice_payment_risks_affiliate_idx").on(table.affiliateId),
+  index("affiliate_invoice_payment_risks_account_idx").on(table.accountId),
+  check("affiliate_invoice_payment_risks_amount_check", sql`${table.chargeAmountMinor} > 0 AND ${table.cumulativeRefundedMinor} >= 0 AND ${table.cumulativeRefundedMinor} <= ${table.chargeAmountMinor}`),
+  check("affiliate_invoice_payment_risks_dispute_status_check", sql`${table.disputeStatus} IN ('none', 'open', 'won', 'lost')`),
+  check("affiliate_invoice_payment_risks_prior_status_check", sql`${table.priorCommissionStatus} IS NULL OR ${table.priorCommissionStatus} IN ('pending', 'payable')`),
+]);
+
+/** Stripe event receipt journal makes redelivery idempotent without discarding provenance. */
+export const affiliatePaymentRiskEvents = pgTable("affiliate_payment_risk_events", {
+  stripeEventId: text("stripe_event_id").primaryKey(),
+  stripeInvoiceId: text("stripe_invoice_id").notNull()
+    .references(() => affiliateInvoicePaymentRisks.stripeInvoiceId, { onDelete: "restrict" }),
+  eventType: text("event_type").notNull(),
+  eventCreatedAt: timestamp("event_created_at", { withTimezone: true }).notNull(),
+  chargeAmountMinor: integer("charge_amount_minor").notNull(),
+  cumulativeRefundedMinor: integer("cumulative_refunded_minor").notNull(),
+  disputeId: text("dispute_id"),
+  disputeStatus: text("dispute_status"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("affiliate_payment_risk_events_invoice_idx").on(table.stripeInvoiceId),
+  check("affiliate_payment_risk_events_type_check", sql`${table.eventType} IN ('charge.refunded', 'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed', 'charge.dispute.funds_reinstated', 'charge.dispute.funds_withdrawn')`),
+  check("affiliate_payment_risk_events_amount_check", sql`${table.chargeAmountMinor} > 0 AND ${table.cumulativeRefundedMinor} >= 0 AND ${table.cumulativeRefundedMinor} <= ${table.chargeAmountMinor}`),
+  check("affiliate_payment_risk_events_dispute_status_check", sql`${table.disputeStatus} IS NULL OR ${table.disputeStatus} IN ('none', 'open', 'won', 'lost')`),
 ]);
 
 export const affiliateComplianceAuditLog = pgTable("affiliate_compliance_audit_log", {

@@ -8,7 +8,7 @@ import {
 import { monthBounds, toCsv, sendCsv } from "../lib/report-format.js";
 import { deliver } from "../lib/resend-mailer.js";
 import { db } from "@workspace/db";
-import { adminUsers, accounts, accountUsers, tokenUsage, affiliates } from "@workspace/db";
+import { adminUsers, adminTestFlagAudit, accounts, accountUsers, tokenUsage, affiliates } from "@workspace/db";
 import { eq, and, gte, lt, desc, isNull, inArray } from "drizzle-orm";
 import {
   TRIAL_WARNING_SUBJECT,
@@ -29,6 +29,11 @@ import {
 } from "../lib/usage-alert";
 import { affiliateReportRateFields, getAffiliateWorkspaceReport, type ConsultantWorkspaceLink } from "../lib/admin-affiliate-report.js";
 import { resolveAccountContact, resolveAccountContacts } from "../lib/account-contact.js";
+import {
+  includeActiveAffiliateContacts,
+  includeTestRows,
+  parseIncludeTest,
+} from "../lib/admin-client-rows.js";
 
 /**
  * Sender for transactional mail. Resend's onboarding@resend.dev is a shared
@@ -48,6 +53,7 @@ function getTrialEmailFrom(): string {
 }
 
 const router: IRouter = Router();
+const TEST_FLAG_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Guards (requireSuperAdmin / requireCronOrSuperAdmin / requireAnyAdmin) and
 // the report helpers (monthBounds / toCsv) now live in ../lib/admin-guards.ts
@@ -253,30 +259,33 @@ router.get("/stats", requireAnyAdmin, async (req, res) => {
       db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
     ]);
 
+    const testAccountIds = new Set(allAccounts.filter((account) => account.isTest).map((account) => account.id));
+    const reportedAccounts = includeTestRows(allAccounts);
+    const reportedTokenRows = allTokenRows.filter((row) => !row.accountId || !testAccountIds.has(row.accountId));
     const now = new Date();
-    const active  = allAccounts.filter((a) => a.subscriptionStatus === "active").length;
-    const trial   = allAccounts.filter((a) =>
+    const active  = reportedAccounts.filter((a) => a.subscriptionStatus === "active").length;
+    const trial   = reportedAccounts.filter((a) =>
       isTrialStatus(a.subscriptionStatus) && a.trialEndsAt != null && a.trialEndsAt > now
     ).length;
-    const expired = allAccounts.filter((a) =>
+    const expired = reportedAccounts.filter((a) =>
       isTrialStatus(a.subscriptionStatus) && (a.trialEndsAt == null || a.trialEndsAt <= now)
     ).length;
-    const cancelled = allAccounts.filter((a) => a.subscriptionStatus === "cancelled").length;
+    const cancelled = reportedAccounts.filter((a) => a.subscriptionStatus === "cancelled").length;
 
-    const rawCost    = allTokenRows.reduce((s, r) => s + (r.rawCostUsd ?? 0), 0);
-    const totalCharge = allTokenRows.reduce((s, r) => s + (r.markedUpCostUsd ?? 0), 0);
+    const rawCost    = reportedTokenRows.reduce((s, r) => s + (r.rawCostUsd ?? 0), 0);
+    const totalCharge = reportedTokenRows.reduce((s, r) => s + (r.markedUpCostUsd ?? 0), 0);
 
     return res.json({
       monthLabel: label,
-      totalFacilities:     allAccounts.length,
+      totalFacilities:     reportedAccounts.length,
       activeSubscriptions: active,
       trialAccounts:       trial,
       expiredTrials:       expired,
       cancelledAccounts:   cancelled,
       thisMonth: {
-        requests:    allTokenRows.length,
-        inputTokens:  allTokenRows.reduce((s, r) => s + (r.inputTokens ?? 0), 0),
-        outputTokens: allTokenRows.reduce((s, r) => s + (r.outputTokens ?? 0), 0),
+        requests:    reportedTokenRows.length,
+        inputTokens:  reportedTokenRows.reduce((s, r) => s + (r.inputTokens ?? 0), 0),
+        outputTokens: reportedTokenRows.reduce((s, r) => s + (r.outputTokens ?? 0), 0),
         rawCostUsd:   Math.round(rawCost * 1e6) / 1e6,
         totalChargeUsd: Math.round(totalCharge * 1e6) / 1e6,
       },
@@ -292,16 +301,24 @@ router.get("/stats", requireAnyAdmin, async (req, res) => {
 router.get("/clients", requireAnyAdmin, async (req, res) => {
   try {
     const { start, end } = monthBounds(req.query.month as string | undefined);
+    const includeTest = parseIncludeTest(req.query.includeTest);
 
-    const [allAccounts, allUsers, allTokenRows, lifetimeRows, affiliateRows] = await Promise.all([
+    const [accountRows, allUsers, allTokenRows, lifetimeRows, affiliateRowsRaw] = await Promise.all([
       db.select().from(accounts).orderBy(desc(accounts.createdAt)),
       db.select().from(accountUsers),
       db.select().from(tokenUsage).where(
         and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))
       ),
       db.select().from(tokenUsage),
-      db.select({ referralCode: affiliates.referralCode, companyName: affiliates.companyName }).from(affiliates),
+      db.select({
+        id: affiliates.id, referralCode: affiliates.referralCode, companyName: affiliates.companyName,
+        status: affiliates.status, clerkUserId: affiliates.clerkUserId, contactName: affiliates.contactName,
+        isTest: affiliates.isTest,
+        email: affiliates.email, phone: affiliates.phone, createdAt: affiliates.createdAt,
+      }).from(affiliates),
     ]);
+    const allAccounts = includeTestRows(accountRows, includeTest);
+    const affiliateRows = includeTestRows(affiliateRowsRaw, includeTest);
 
     // Alongside cost, count how many distinct facilities and provider types
     // each account generated for this month. Nothing is blocked on these —
@@ -359,6 +376,8 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
       };
       return {
         id:                  a.id,
+        isTest:              a.isTest,
+        isClientAccount:     true,
         uniqueId:            a.id,
         facilityName:        a.facilityName,
         ccn:                 a.ccn,
@@ -394,7 +413,7 @@ router.get("/clients", requireAnyAdmin, async (req, res) => {
       };
     });
 
-    return res.json(clients);
+    return res.json(includeActiveAffiliateContacts(clients, allUsers, affiliateRowsRaw, includeTest));
   } catch {
     return res.status(500).json({ error: "Failed to load clients" });
   }
@@ -414,21 +433,24 @@ function adminClientStatus(status: string | null, cancelAtPeriodEnd: boolean, pe
 }
 
 const CLIENT_CSV_HEADERS = [
-  "Client name", "Unique ID", "Contact (name, email, phone)", "Sign-up date", "Status",
+  "Client name", "Type", "Test", "Client Test", "Affiliate Test", "Affiliate ID", "Unique ID",
+  "Contact (name, email, phone)", "Sign-up date", "Status",
   "Next billing date", "Tokens this month", "Tokens total", "Referred by",
 ];
 const AFFILIATE_CSV_HEADERS = [
   "Name", "Contact (email, phone, company)", "Referral code", "Status", "Current rate",
   "Next rate change date and new rate", "Restoration deadline if at 0%",
-  "Clients active/canceled", "Workspace access status + end date",
+  "Clients active/canceled", "Workspace access status + end date", "Test",
 ];
 const AFFILIATE_CLIENT_CSV_HEADERS = [
-  "Affiliate", "Client name", "Sign-up date", "Status", "Tokens this month", "Tokens total",
+  "Affiliate", "Client name", "Test", "Client Test", "Affiliate Test", "Sign-up date", "Status",
+  "Tokens this month", "Tokens total",
 ];
 
 function adminClientCsvRows(clients: any[]) {
   return clients.map((client) => [
-    client.facilityName, client.id,
+    client.facilityName, client.type, client.isTest ? "Yes" : "No",
+    client.clientIsTest ? "Yes" : "No", client.affiliateIsTest ? "Yes" : "No", client.affiliateId ?? "", client.id,
     [client.contact?.name, client.contact?.email?.trim() || "No email on file", client.contact?.phone].filter(Boolean).join("; "),
     client.createdAt ? new Date(client.createdAt).toISOString().slice(0, 10) : "",
     client.status,
@@ -441,13 +463,21 @@ function adminClientCsvRows(clients: any[]) {
 router.get("/clients/download", requireAnyAdmin, async (req, res) => {
   try {
     const { start, end } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
-    const [allAccounts, allUsers, monthRows, lifetimeRows, affiliateRows] = await Promise.all([
+    const includeTest = parseIncludeTest(req.query.includeTest);
+    const [accountRows, allUsers, monthRows, lifetimeRows, affiliateRowsRaw] = await Promise.all([
       db.select().from(accounts).orderBy(desc(accounts.createdAt)),
       db.select().from(accountUsers),
       db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
       db.select().from(tokenUsage),
-      db.select({ referralCode: affiliates.referralCode, companyName: affiliates.companyName }).from(affiliates),
+      db.select({
+        id: affiliates.id, referralCode: affiliates.referralCode, companyName: affiliates.companyName,
+        status: affiliates.status, clerkUserId: affiliates.clerkUserId, contactName: affiliates.contactName,
+        isTest: affiliates.isTest,
+        email: affiliates.email, phone: affiliates.phone, createdAt: affiliates.createdAt,
+      }).from(affiliates),
     ]);
+    const allAccounts = includeTestRows(accountRows, includeTest);
+    const affiliateRows = includeTestRows(affiliateRowsRaw, includeTest);
     const usersByAccount = new Map<string, typeof allUsers>();
     for (const user of allUsers) {
       if (!user.accountId) continue;
@@ -467,7 +497,9 @@ router.get("/clients/download", requireAnyAdmin, async (req, res) => {
     const companyByCode = new Map(affiliateRows.map((row) => [row.referralCode, row.companyName]));
     const clients = allAccounts.map((account) => {
       return {
-        id: account.id, facilityName: account.facilityName, createdAt: account.createdAt,
+        id: account.id, facilityName: account.facilityName, createdAt: account.createdAt, isTest: account.isTest,
+        type: "Client" as const,
+        isClientAccount: true,
         status: adminClientStatus(account.subscriptionStatus, account.subscriptionCancelAtPeriodEnd, account.subscriptionCurrentPeriodEnd),
         nextBillingDate: account.subscriptionCurrentPeriodEnd,
         contact: contacts.get(account.id),
@@ -476,7 +508,8 @@ router.get("/clients/download", requireAnyAdmin, async (req, res) => {
         totalTokens: totalTokens.get(account.id) ?? 0,
       };
     });
-    return sendCsv(res, "admin-clients.csv", toCsv(CLIENT_CSV_HEADERS, adminClientCsvRows(clients)));
+    const rows = includeActiveAffiliateContacts(clients, allUsers, affiliateRowsRaw, includeTest);
+    return sendCsv(res, "admin-clients.csv", toCsv(CLIENT_CSV_HEADERS, adminClientCsvRows(rows)));
   } catch (error: any) {
     req.log.error({ err: error }, "Admin clients CSV failed");
     return res.status(500).json({ error: "Failed to download clients CSV" });
@@ -487,9 +520,10 @@ router.get("/clients/download", requireAnyAdmin, async (req, res) => {
 // owned by the existing affiliate ladder and are not changed here.
 router.get("/affiliates", requireAnyAdmin, async (req, res) => {
   try {
+    const includeTest = parseIncludeTest(req.query.includeTest);
     const now = new Date();
     const { start, end } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
-    const [affiliateRows, allAccounts, users, monthRows, lifetimeRows, consultantWorkspaces] = await Promise.all([
+    const [affiliateRowsRaw, accountRows, users, monthRows, lifetimeRows, consultantWorkspacesRaw] = await Promise.all([
       db.select().from(affiliates).orderBy(desc(affiliates.createdAt)),
       db.select().from(accounts).orderBy(desc(accounts.createdAt)),
       db.select().from(accountUsers),
@@ -500,6 +534,7 @@ router.get("/affiliates", requireAnyAdmin, async (req, res) => {
         email: accountUsers.email,
         hasComplimentaryAccess: accountUsers.hasComplimentaryAccess,
         accountId: accounts.id,
+        accountIsTest: accounts.isTest,
         accountIdentifierType: accounts.identifierType,
         subscriptionStatus: accounts.subscriptionStatus,
         trialEndsAt: accounts.trialEndsAt,
@@ -510,6 +545,12 @@ router.get("/affiliates", requireAnyAdmin, async (req, res) => {
         .innerJoin(accounts, eq(accountUsers.accountId, accounts.id))
         .where(eq(accounts.identifierType, "consultant")),
     ]);
+    const affiliateRows = includeTestRows(affiliateRowsRaw, includeTest);
+    const allAccounts = includeTestRows(accountRows, includeTest);
+    const consultantWorkspaces = includeTestRows(
+      consultantWorkspacesRaw.map(({ accountIsTest, ...row }) => ({ ...row, isTest: accountIsTest })),
+      includeTest,
+    );
     const usersByAccount = new Map(users.filter((user) => user.accountId).map((user) => [user.accountId!, user]));
     const monthTokens = new Map<string, number>();
     const totalTokens = new Map<string, number>();
@@ -532,6 +573,7 @@ router.get("/affiliates", requireAnyAdmin, async (req, res) => {
       ));
       return {
         id: affiliate.id,
+        isTest: affiliate.isTest,
         name: affiliate.contactName || affiliate.companyName,
         companyName: affiliate.companyName,
         contact: { email: affiliate.email, phone: affiliate.phone, company: affiliate.companyName },
@@ -550,6 +592,7 @@ router.get("/affiliates", requireAnyAdmin, async (req, res) => {
           const relevant = monthTokens.get(account.id) ?? 0;
           return {
             id: account.id, name: account.facilityName, createdAt: account.createdAt,
+            isTest: account.isTest,
             status: adminClientStatus(account.subscriptionStatus, account.subscriptionCancelAtPeriodEnd, account.subscriptionCurrentPeriodEnd),
             tokensThisMonth: relevant, tokensTotal: totalTokens.get(account.id) ?? 0,
             contact: { name: null, email: user?.email ?? null, phone: null },
@@ -565,8 +608,9 @@ router.get("/affiliates", requireAnyAdmin, async (req, res) => {
 
 router.get("/affiliates/download", requireAnyAdmin, async (req, res) => {
   try {
+    const includeTest = parseIncludeTest(req.query.includeTest);
     const { start, end } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
-    const [affiliateRows, allAccounts, monthRows, lifetimeRows, consultantWorkspaces] = await Promise.all([
+    const [affiliateRowsRaw, accountRows, monthRows, lifetimeRows, consultantWorkspacesRaw] = await Promise.all([
       db.select().from(affiliates).orderBy(desc(affiliates.createdAt)),
       db.select().from(accounts).orderBy(desc(accounts.createdAt)),
       db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
@@ -576,6 +620,7 @@ router.get("/affiliates/download", requireAnyAdmin, async (req, res) => {
         email: accountUsers.email,
         hasComplimentaryAccess: accountUsers.hasComplimentaryAccess,
         accountId: accounts.id,
+        accountIsTest: accounts.isTest,
         accountIdentifierType: accounts.identifierType,
         subscriptionStatus: accounts.subscriptionStatus,
         trialEndsAt: accounts.trialEndsAt,
@@ -586,6 +631,12 @@ router.get("/affiliates/download", requireAnyAdmin, async (req, res) => {
         .innerJoin(accounts, eq(accountUsers.accountId, accounts.id))
         .where(eq(accounts.identifierType, "consultant")),
     ]);
+    const affiliateRows = includeTestRows(affiliateRowsRaw, includeTest);
+    const allAccounts = includeTestRows(accountRows, includeTest);
+    const consultantWorkspaces = includeTestRows(
+      consultantWorkspacesRaw.map(({ accountIsTest, ...row }) => ({ ...row, isTest: accountIsTest })),
+      includeTest,
+    );
     const sumTokens = (rows: typeof monthRows) => {
       const totals = new Map<string, number>();
       for (const row of rows) if (row.accountId) totals.set(row.accountId, (totals.get(row.accountId) ?? 0) + (row.inputTokens ?? 0) + (row.outputTokens ?? 0));
@@ -601,6 +652,7 @@ router.get("/affiliates/download", requireAnyAdmin, async (req, res) => {
         .filter((account) => account.referralCode === affiliate.referralCode)
         .map((account) => [
           affiliate.contactName || affiliate.companyName, account.facilityName,
+          account.isTest || affiliate.isTest ? "Yes" : "No", account.isTest ? "Yes" : "No", affiliate.isTest ? "Yes" : "No",
           account.createdAt ? new Date(account.createdAt).toISOString().slice(0, 10) : "",
           adminClientStatus(account.subscriptionStatus, account.subscriptionCancelAtPeriodEnd, account.subscriptionCurrentPeriodEnd),
           monthTokens.get(account.id) ?? 0, totalTokens.get(account.id) ?? 0,
@@ -628,6 +680,7 @@ router.get("/affiliates/download", requireAnyAdmin, async (req, res) => {
           return status.startsWith("Canceled") || status === "Removed";
         }).length} canceled`,
         `${workspaceReport.workspaceAccessStatus}${workspaceReport.workspaceAccessEndDate ? ` — ${new Date(workspaceReport.workspaceAccessEndDate).toISOString().slice(0, 10)}` : ""}`,
+        affiliate.isTest ? "Yes" : "No",
       ];
     });
     return sendCsv(res, "admin-affiliates.csv", toCsv(AFFILIATE_CSV_HEADERS, rows));
@@ -637,35 +690,94 @@ router.get("/affiliates/download", requireAnyAdmin, async (req, res) => {
   }
 });
 
+type AdminTestEntity = "account" | "affiliate";
+
+async function setAdminTestFlag(req: any, res: any, entity: AdminTestEntity) {
+  const id = String(req.params.id ?? "");
+  const isTest = req.body?.isTest;
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!TEST_FLAG_ID_PATTERN.test(id)) return res.status(400).json({ error: "A valid record ID is required." });
+  if (typeof isTest !== "boolean" || reason.length < 10 || reason.length > 1000) {
+    return res.status(400).json({ error: "Provide isTest (boolean) and a reason between 10 and 1000 characters." });
+  }
+
+  try {
+    const outcome = await db.transaction(async (tx) => {
+      if (entity === "account") {
+        const [current] = await tx.select({ isTest: accounts.isTest }).from(accounts)
+          .where(eq(accounts.id, id)).for("update").limit(1);
+        if (!current) return null;
+        if (current.isTest !== isTest) {
+          await tx.update(accounts).set({ isTest, updatedAt: new Date() }).where(eq(accounts.id, id));
+          await tx.insert(adminTestFlagAudit).values({
+            entityType: entity, entityId: id, actorId: req.clerkUserId,
+            priorValue: current.isTest, newValue: isTest, reason,
+          });
+        }
+        return { id, isTest, changed: current.isTest !== isTest };
+      }
+
+      const [current] = await tx.select({ isTest: affiliates.isTest }).from(affiliates)
+        .where(eq(affiliates.id, id)).for("update").limit(1);
+      if (!current) return null;
+      if (current.isTest !== isTest) {
+        await tx.update(affiliates).set({ isTest, updatedAt: new Date() }).where(eq(affiliates.id, id));
+        await tx.insert(adminTestFlagAudit).values({
+          entityType: entity, entityId: id, actorId: req.clerkUserId,
+          priorValue: current.isTest, newValue: isTest, reason,
+        });
+      }
+      return { id, isTest, changed: current.isTest !== isTest };
+    });
+    if (!outcome) return res.status(404).json({ error: `${entity === "account" ? "Client" : "Affiliate"} not found.` });
+    return res.json(outcome);
+  } catch (error) {
+    req.log.error({ err: error, entity, id }, "Admin test flag update failed");
+    return res.status(500).json({ error: "Failed to update test flag." });
+  }
+}
+
+// Test labels are reversible and auditable; records and financial history are retained.
+router.patch("/clients/:id/test", requireSuperAdmin, (req, res) => setAdminTestFlag(req, res, "account"));
+router.patch("/affiliates/:id/test", requireSuperAdmin, (req, res) => setAdminTestFlag(req, res, "affiliate"));
+
 // ─── Token usage by account ───────────────────────────────────────────────────
 
 // GET /api/admin/token-usage?month=YYYY-MM
 router.get("/token-usage", requireAnyAdmin, async (req, res) => {
   try {
     const { start, end, label } = monthBounds(req.query.month as string | undefined);
+    const includeTest = parseIncludeTest(req.query.includeTest);
 
     const [allAccounts, allTokenRows] = await Promise.all([
-      db.select({ id: accounts.id, facilityName: accounts.facilityName, ccn: accounts.ccn }).from(accounts),
+      db.select({ id: accounts.id, facilityName: accounts.facilityName, ccn: accounts.ccn, isTest: accounts.isTest }).from(accounts),
       db.select().from(tokenUsage).where(
         and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))
       ),
     ]);
 
-    const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
+    const reportedAccounts = includeTestRows(allAccounts, includeTest);
+    const accountMap = new Map(reportedAccounts.map((a) => [a.id, a]));
+    const testAccountIds = new Set(allAccounts.filter((account) => account.isTest).map((account) => account.id));
+    const reportedTokenRows = includeTest
+      ? allTokenRows
+      : allTokenRows.filter((row) => !row.accountId || !testAccountIds.has(row.accountId));
 
     // Aggregate by account
     const byAccount = new Map<string, {
       facilityName: string; ccn: string;
+      isTest: boolean;
       requests: number; inputTokens: number; outputTokens: number;
       rawCost: number; totalCharge: number;
     }>();
 
-    for (const row of allTokenRows) {
+    for (const row of reportedTokenRows) {
       const aid = row.accountId ?? "__unknown__";
       const acct = accountMap.get(aid);
       const cur = byAccount.get(aid) ?? {
         facilityName: acct?.facilityName ?? "(unlinked)",
         ccn: acct?.ccn ?? "—",
+        isTest: acct?.isTest ?? false,
         requests: 0, inputTokens: 0, outputTokens: 0, rawCost: 0, totalCharge: 0,
       };
       cur.requests++;
@@ -680,6 +792,7 @@ router.get("/token-usage", requireAnyAdmin, async (req, res) => {
       .sort((a, b) => b[1].totalCharge - a[1].totalCharge)
       .map(([, v]) => ({
         facilityName:   v.facilityName,
+        isTest:         v.isTest,
         ccn:            v.ccn,
         requests:       v.requests,
         inputTokens:    v.inputTokens,
@@ -712,6 +825,7 @@ router.get("/token-usage", requireAnyAdmin, async (req, res) => {
 router.get("/reports/download", requireAnyAdmin, async (req, res) => {
   const type  = (req.query.type  as string) || "clients";
   const month = req.query.month as string | undefined;
+  const includeTest = parseIncludeTest(req.query.includeTest);
   const { start, end, label } = monthBounds(month);
 
   try {
@@ -719,17 +833,18 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
     let filename = "";
 
     if (type === "clients") {
-      const [allAccounts, allUsers] = await Promise.all([
+      const [accountRows, allUsers] = await Promise.all([
         db.select().from(accounts).orderBy(accounts.facilityName),
         db.select().from(accountUsers),
       ]);
+      const allAccounts = includeTestRows(accountRows, includeTest);
       const userCount = new Map<string, number>();
       for (const u of allUsers) {
         if (u.accountId) userCount.set(u.accountId, (userCount.get(u.accountId) ?? 0) + 1);
       }
-      const headers = ["Facility Name", "Identifier", "Identifier Type", "Type", "State", "City", "Subscription Status", "Trial End Date", "Registered", "User Count"];
+      const headers = ["Facility Name", "Identifier", "Identifier Type", "Type", "Test", "State", "City", "Subscription Status", "Trial End Date", "Registered", "User Count"];
       const rows = allAccounts.map((a) => [
-        a.facilityName, a.ccn, a.identifierType, a.facilityType, a.state, a.city,
+        a.facilityName, a.ccn, a.identifierType, a.facilityType, a.isTest ? "Yes" : "No", a.state, a.city,
         a.subscriptionStatus,
         a.trialEndsAt ? new Date(a.trialEndsAt).toLocaleDateString("en-US") : "",
         a.createdAt ? new Date(a.createdAt).toLocaleDateString("en-US") : "",
@@ -739,10 +854,13 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
       filename = `cop-suite-clients-${new Date().toISOString().slice(0, 10)}.csv`;
 
     } else if (type === "tokens") {
-      const [allAccounts, allTokenRows] = await Promise.all([
+      const [accountRows, tokenRows] = await Promise.all([
         db.select().from(accounts),
         db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
       ]);
+      const allAccounts = includeTestRows(accountRows, includeTest);
+      const testAccountIds = new Set(accountRows.filter((account) => account.isTest).map((account) => account.id));
+      const allTokenRows = includeTest ? tokenRows : tokenRows.filter((row) => !row.accountId || !testAccountIds.has(row.accountId));
       const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
       const byAccount = new Map<string, any>();
       for (const row of allTokenRows) {
@@ -750,6 +868,7 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
         const cur = byAccount.get(aid) ?? {
           facilityName: accountMap.get(aid)?.facilityName ?? "(unlinked)",
           ccn: accountMap.get(aid)?.ccn ?? "—",
+          isTest: accountMap.get(aid)?.isTest ?? false,
           requests: 0, inputTokens: 0, outputTokens: 0, rawCost: 0, totalCharge: 0,
           facilities: new Set<string>(), institutions: new Set<string>(),
         };
@@ -759,9 +878,9 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
         if (row.institution) cur.institutions.add(row.institution);
         byAccount.set(aid, cur);
       }
-      const headers = ["Facility Name", "CCN", "Month", "AI Requests", "Distinct Facilities", "Provider Types", "Input Tokens", "Output Tokens", "Total Tokens", "API Cost (USD)", "50% Markup (USD)", "Total Charge (USD)"];
+      const headers = ["Facility Name", "CCN", "Test", "Month", "AI Requests", "Distinct Facilities", "Provider Types", "Input Tokens", "Output Tokens", "Total Tokens", "API Cost (USD)", "50% Markup (USD)", "Total Charge (USD)"];
       const rows = [...byAccount.values()].sort((a, b) => b.totalCharge - a.totalCharge).map((v) => [
-        v.facilityName, v.ccn, label, v.requests,
+        v.facilityName, v.ccn, v.isTest ? "Yes" : "No", label, v.requests,
         v.facilities.size,
         [...v.institutions].sort().join(" / "),
         v.inputTokens, v.outputTokens,
@@ -772,15 +891,18 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
       filename = `cop-suite-token-usage-${label.replace(/ /g, "-")}.csv`;
 
     } else if (type === "revenue") {
-      const [allAccounts, allTokenRows] = await Promise.all([
+      const [accountRows, tokenRows] = await Promise.all([
         db.select().from(accounts),
         db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
       ]);
+      const allAccounts = includeTestRows(accountRows, includeTest);
+      const testAccountIds = new Set(accountRows.filter((account) => account.isTest).map((account) => account.id));
+      const allTokenRows = includeTest ? tokenRows : tokenRows.filter((row) => !row.accountId || !testAccountIds.has(row.accountId));
       const tokByAcct = new Map<string, number>();
       for (const r of allTokenRows) { if (r.accountId) tokByAcct.set(r.accountId, (tokByAcct.get(r.accountId) ?? 0) + (r.markedUpCostUsd ?? 0)); }
-      const headers = ["Facility Name", "CCN", "Subscription Status", "Month", "Token Charge (USD)"];
+      const headers = ["Facility Name", "CCN", "Test", "Subscription Status", "Month", "Token Charge (USD)"];
       const rows = allAccounts.map((a) => [
-        a.facilityName, a.ccn, a.subscriptionStatus, label, ((tokByAcct.get(a.id) ?? 0)).toFixed(6),
+        a.facilityName, a.ccn, a.isTest ? "Yes" : "No", a.subscriptionStatus, label, ((tokByAcct.get(a.id) ?? 0)).toFixed(6),
       ]);
       csv = toCsv(headers, rows);
       filename = `cop-suite-revenue-${label.replace(/ /g, "-")}.csv`;
@@ -815,11 +937,14 @@ router.post("/reports/email", requireAnyAdmin, async (req, res) => {
       `?type=${encodeURIComponent(type)}&month=${encodeURIComponent(month ?? "")}`;
     const { start, end, label } = monthBounds(month);
 
-    const [allAccounts, allTokenRows] = await Promise.all([
+    const [accountRows, tokenRows] = await Promise.all([
       db.select().from(accounts),
       db.select().from(tokenUsage).where(and(gte(tokenUsage.createdAt, start), lt(tokenUsage.createdAt, end))),
     ]);
 
+    const allAccounts = includeTestRows(accountRows);
+    const testAccountIds = new Set(accountRows.filter((account) => account.isTest).map((account) => account.id));
+    const allTokenRows = tokenRows.filter((row) => !row.accountId || !testAccountIds.has(row.accountId));
     const totalCharge = allTokenRows.reduce((s, r) => s + (r.markedUpCostUsd ?? 0), 0);
 
     const subjectMap: Record<string, string> = {

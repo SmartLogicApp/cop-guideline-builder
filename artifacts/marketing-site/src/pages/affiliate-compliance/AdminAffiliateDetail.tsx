@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { AdminShell } from './shells';
-import { useAdminAffiliateDetail, useAdminAction, useAdminApplicationDecision, useAdminRecheck, useAdminRemind } from './hooks';
+import { useAdminAccountAccess, useAdminAffiliateDetail, useAdminAction, useAdminApplicationDecision, useAdminRecheck, useAdminRemind } from './hooks';
 import { useParams, Link } from 'wouter';
 import { Loader2, ArrowLeft, CheckCircle2, XCircle, AlertCircle, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { affiliateApplicationActivationGate, checklistAcceptanceDetails, isChecklistComplete, payoutChecklistProgress } from './types';
 
 export default function AdminAffiliateDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: affiliate, isLoading, error } = useAdminAffiliateDetail(id || '');
+  const adminAccess = useAdminAccountAccess(affiliate?.affiliate?.status === 'pending');
   const [reason, setReason] = useState('');
   const [decisionReason, setDecisionReason] = useState('');
   const [holdReason, setHoldReason] = useState('');
@@ -43,6 +45,10 @@ export default function AdminAffiliateDetail() {
   };
 
   const decideApplication = async (type: 'approve' | 'reject' | 'hold' | 'release-hold') => {
+    if (type === 'approve' && !activationGate.canActivate) {
+      toast({ variant: 'destructive', title: 'Activation unavailable', description: activationGate.blockingReasons.join(' ') });
+      return;
+    }
     if (type === 'reject' && decisionReason.trim().length < 5) {
       toast({ variant: 'destructive', title: 'Error', description: 'Enter a review reason of at least 5 characters.' });
       return;
@@ -71,6 +77,22 @@ export default function AdminAffiliateDetail() {
   };
 
   const StatusIcon = ({ ok }: { ok: boolean }) => ok ? <CheckCircle2 className="w-5 h-5 text-emerald-600 inline mr-2" /> : <XCircle className="w-5 h-5 text-red-500 inline mr-2" />;
+  const payoutEligible = affiliate.eligibility?.eligible === true;
+  const checklistProgress = payoutChecklistProgress(affiliate.checklist, payoutEligible);
+  const blockingReasons = affiliate.eligibility?.blocking_reasons ?? [];
+  const auditLog = affiliate.auditLog ?? [];
+  const agreementChecklistItem = affiliate.checklist?.find((item) => item.key === 'agreement');
+  const agreementAccepted = agreementChecklistItem ? isChecklistComplete(agreementChecklistItem) : false;
+  const superAdminAccess = adminAccess.isError
+    ? 'unavailable'
+    : adminAccess.isFetching || !adminAccess.data
+      ? 'checking'
+      : adminAccess.data.isSuperAdmin ? 'super_admin' : 'ordinary_admin';
+  const activationGate = affiliateApplicationActivationGate(
+    agreementAccepted,
+    Boolean(affiliate.affiliate?.applicationHeldAt),
+    superAdminAccess,
+  );
 
   return (
     <AdminShell title={`Affiliate: ${affiliate.legalName || affiliate.businessName || affiliate.email}`} subtitle="Review compliance status and manage payouts">
@@ -87,51 +109,53 @@ export default function AdminAffiliateDetail() {
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-lg font-bold text-slate-900">Compliance Checklist</h2>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Get paid checklist</h2>
+                <p className="mt-1 font-semibold text-slate-700" data-testid="admin-payout-checklist-progress">
+                  {checklistProgress.heading}
+                </p>
+              </div>
               <Button variant="outline" size="sm" onClick={() => recheck.mutate()} disabled={recheck.isPending}>
                 {recheck.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 Re-check Eligibility
               </Button>
             </div>
-            
-            <div className="space-y-4">
-              <div className="flex justify-between py-3 border-b">
-                <span className="font-medium text-slate-700">1. Partner Agreement</span>
-                <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.agreement === 'Complete'} /> {affiliate.complianceStatus?.agreement || 'Missing'}</span>
+            <p className="mb-4 text-sm text-slate-600">
+              The $100 minimum and 60-day commission holdback are evaluated separately from these seven checklist steps.
+            </p>
+            {checklistProgress.items.length === 7 ? (
+              <div className="space-y-4">
+                {checklistProgress.items.map((item, index) => {
+                  const acceptance = checklistAcceptanceDetails(item);
+                  const complete = isChecklistComplete(item);
+                  return (
+                    <div key={item.key} className="flex justify-between gap-4 border-b py-3 last:border-0">
+                      <div>
+                        <span className="font-medium text-slate-700">{index + 1}. {item.title}</span>
+                        {acceptance && <p className="mt-1 text-xs text-slate-500">
+                          Acknowledged version {acceptance.version} on {new Date(acceptance.timestamp).toLocaleString()}
+                        </p>}
+                      </div>
+                      <span className="shrink-0 text-slate-900">
+                        <StatusIcon ok={complete} /> {complete ? 'Complete' : item.status}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="flex justify-between py-3 border-b">
-                <span className="font-medium text-slate-700">2. Privacy Notice</span>
-                <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.privacy === 'Complete'} /> {affiliate.complianceStatus?.privacy || 'Missing'}</span>
-              </div>
-              <div className="flex justify-between py-3 border-b">
-                <span className="font-medium text-slate-700">3. Tax information (via Stripe)</span>
-                <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.tax === 'Verified/complete'} /> {affiliate.complianceStatus?.tax || 'Missing'}</span>
-              </div>
-              <div className="flex justify-between py-3 border-b">
-                <span className="font-medium text-slate-700">4. Payment Setup (Stripe)</span>
-                <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.payment === 'Complete'} /> {affiliate.complianceStatus?.payment || 'Missing'}</span>
-              </div>
-              <div className="flex justify-between py-3 border-b">
-                <span className="font-medium text-slate-700">5. FTC Disclosure</span>
-                <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.ftc === 'Complete'} /> {affiliate.complianceStatus?.ftc || 'Missing'}</span>
-              </div>
-              <div className="flex justify-between py-3 border-b">
-                <span className="font-medium text-slate-700">6. Marketing Guidelines</span>
-                <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.marketing === 'Complete'} /> {affiliate.complianceStatus?.marketing || 'Missing'}</span>
-              </div>
-              <div className="flex justify-between py-3">
-                <span className="font-medium text-slate-700">7. Admin Approval</span>
-                <span className="text-slate-900"><StatusIcon ok={affiliate.complianceStatus?.adminApproval === 'Complete'} /> {affiliate.complianceStatus?.adminApproval || 'Missing'}</span>
-              </div>
-            </div>
+            ) : (
+              <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                The server did not return the complete seven-step checklist. Re-check eligibility or refresh this page.
+              </p>
+            )}
             <div className="mt-4 text-xs text-slate-500">Tax IDs and payment details are entered only in Stripe-hosted onboarding. This app stores Stripe status flags, not a signed W-9 or a tax ID.</div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <h2 className="text-lg font-bold text-slate-900 mb-6">Audit Log</h2>
             <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
-              {affiliate.auditLog?.length > 0 ? (
-                affiliate.auditLog.map((log: any) => (
+              {auditLog.length > 0 ? (
+                auditLog.map((log: any) => (
                   <div key={log.id} className="text-sm pb-4 border-b border-slate-100 last:border-0 last:pb-0">
                     <div className="flex justify-between font-medium text-slate-900">
                       <span>{log.eventType}</span>
@@ -161,7 +185,13 @@ export default function AdminAffiliateDetail() {
               {affiliate.affiliate.applicationHeldAt && <p role="status" className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
                 On hold: {affiliate.affiliate.applicationHoldReason}
               </p>}
-              <Button data-testid="button-approve-application" disabled={decision.isPending || !!affiliate.affiliate.applicationHeldAt}
+              {activationGate.blockingReasons.length > 0 && <div role="alert" data-testid="application-activation-blockers" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-semibold">Activation is unavailable:</p>
+                <ul className="mt-1 list-disc space-y-1 pl-5">
+                  {activationGate.blockingReasons.map((blocker) => <li key={blocker}>{blocker}</li>)}
+                </ul>
+              </div>}
+              <Button data-testid="button-approve-application" disabled={decision.isPending || !activationGate.canActivate}
                 onClick={() => decideApplication('approve')}>Activate at 20%</Button>
               {affiliate.affiliate.applicationHeldAt ? (
                 <Button data-testid="button-release-application-hold" variant="outline" disabled={decision.isPending}
@@ -190,21 +220,21 @@ export default function AdminAffiliateDetail() {
           )}
           <div className="bg-slate-900 text-white rounded-xl shadow-sm border border-slate-800 p-6">
             <h3 className="font-bold text-lg mb-2">Overall Status</h3>
-            {affiliate.payoutEligibility ? (
+            {payoutEligible ? (
               <div className="text-emerald-400 font-bold flex items-center gap-2 text-xl mb-4">
                 <CheckCircle2 className="w-6 h-6" /> Eligible for Payouts
               </div>
             ) : (
               <div className="text-red-400 font-bold flex items-center gap-2 text-xl mb-4">
-                <AlertCircle className="w-6 h-6" /> {affiliate.overallStatus || 'Not Eligible'}
+                <AlertCircle className="w-6 h-6" /> {affiliate.eligibility?.overall_status || 'Not Eligible'}
               </div>
             )}
             
-            {!affiliate.payoutEligibility && affiliate.blockingReasons?.length > 0 && (
+            {!payoutEligible && blockingReasons.length > 0 && (
               <div className="mt-4">
                 <div className="text-sm text-slate-400 mb-2 font-medium">Blocking reasons:</div>
                 <ul className="text-sm space-y-1">
-                  {affiliate.blockingReasons.map((reason: string, i: number) => (
+                  {blockingReasons.map((reason: string, i: number) => (
                     <li key={i} className="flex gap-2 text-slate-300">
                       <span className="text-red-400 mt-0.5">•</span> {reason}
                     </li>
@@ -218,7 +248,7 @@ export default function AdminAffiliateDetail() {
                 variant="secondary" 
                 className="w-full bg-slate-800 text-white hover:bg-slate-700 border-slate-700" 
                 onClick={() => remind.mutate()}
-                disabled={remind.isPending || affiliate.payoutEligibility}
+                disabled={remind.isPending || payoutEligible}
               >
                 <Mail className="w-4 h-4 mr-2" />
                 {remind.isPending ? 'Sending...' : 'Send Reminder Email'}

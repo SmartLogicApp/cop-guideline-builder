@@ -3,9 +3,10 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
-import test from "node:test";
+import test, { mock } from "node:test";
 import { fileURLToPath } from "node:url";
 import { prepareAffiliateAgreementV4 } from "../lib/affiliate-agreement-v4.ts";
+import { clerkClient } from "@clerk/express";
 
 // Resolve source .js imports without running the application, Clerk middleware,
 // a database, or any production service. This test only invokes the GET route.
@@ -33,7 +34,7 @@ registerHooks({
   },
 });
 process.env.DATABASE_URL = "postgresql://test:test@localhost:1/disconnected";
-process.env.ADMIN_CLERK_USER_IDS = "synthetic-staging-super-admin";
+process.env.ADMIN_CLERK_USER_IDS = "user_synthetic_staging_super_admin";
 
 const { default: router } = await import("./affiliate-agreements.ts");
 const route = (router as any).stack.find((layer: any) =>
@@ -74,7 +75,7 @@ async function requestDraft(userId: string | null) {
 test("synthetic super-admin receives only canonical source-derived Version 4.0 text and checksum", async () => {
   const source = await readFile(new URL("../legal/affiliate-partner-agreement-v4-source.txt", import.meta.url), "utf8");
   const expected = prepareAffiliateAgreementV4(source);
-  const response = await requestDraft("synthetic-staging-super-admin");
+  const response = await requestDraft("user_synthetic_staging_super_admin");
   assert.equal(response.status, 200);
   assert.equal(response.handlerCalled, true);
   assert.deepEqual(response.body, {
@@ -85,10 +86,23 @@ test("synthetic super-admin receives only canonical source-derived Version 4.0 t
 });
 
 test("signed-out and non-super-admin sessions never receive the draft", async () => {
-  for (const [userId, expectedStatus] of [[null, 401], ["synthetic-other-user", 403]] as const) {
-    const response = await requestDraft(userId);
-    assert.equal(response.status, expectedStatus);
-    assert.equal(response.handlerCalled, false);
-    assert.equal("body" in response.body, false);
+  const lookup = mock.method(clerkClient.users, "getUser", async (userId: string) => ({
+    id: userId,
+    primaryEmailAddressId: "email_primary",
+    emailAddresses: [{
+      id: "email_primary",
+      emailAddress: "other@example.test",
+      verification: { status: "verified" },
+    }],
+  } as Awaited<ReturnType<typeof clerkClient.users.getUser>>));
+  try {
+    for (const [userId, expectedStatus] of [[null, 401], ["user_synthetic_other_user", 403]] as const) {
+      const response = await requestDraft(userId);
+      assert.equal(response.status, expectedStatus);
+      assert.equal(response.handlerCalled, false);
+      assert.equal("body" in response.body, false);
+    }
+  } finally {
+    lookup.mock.restore();
   }
 });

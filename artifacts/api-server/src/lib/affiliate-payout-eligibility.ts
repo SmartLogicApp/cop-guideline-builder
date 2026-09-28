@@ -1,8 +1,8 @@
 import {
-  db, affiliates, affiliateCommissions, affiliateComplianceStatus,
+  db, affiliates, accounts, affiliateCommissions, affiliateComplianceStatus,
   affiliateDocumentVersions, affiliateDocumentAcknowledgements,
   affiliatePaymentAuthorizations, affiliatePayoutHolds, affiliateAgreementAcceptances,
-  affiliateAgreements, affiliateComplianceAuditLog,
+  affiliateAgreements, affiliateComplianceAuditLog, affiliateInvoicePaymentRisks,
 } from "@workspace/db";
 import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { reviewedAffiliateAgreementVersion } from "./affiliate-agreement-state.js";
@@ -26,12 +26,20 @@ export async function calculateAffiliatePayoutEligibility(affiliateId: string, e
   if (!affiliate) {
     return { eligible: false, overall_status: "not_eligible", blocking_reasons: ["Affiliate record was not found."], compliance_status: {}, checked_at: checkedAt.toISOString() };
   }
-  const [[status], holds, payableRows, currentDocs, acknowledgements, paymentAuthorization] = await Promise.all([
+  const [[status], holds, payableRows, recoveryReviews, currentDocs, acknowledgements, paymentAuthorization] = await Promise.all([
     executor.select().from(affiliateComplianceStatus).where(eq(affiliateComplianceStatus.affiliateId, affiliateId)).limit(1),
     executor.select({ id: affiliatePayoutHolds.id, holdType: affiliatePayoutHolds.holdType, reason: affiliatePayoutHolds.reason })
       .from(affiliatePayoutHolds).where(and(eq(affiliatePayoutHolds.affiliateId, affiliateId), eq(affiliatePayoutHolds.status, "active"))),
     executor.select({ total: sql<number>`coalesce(sum(${affiliateCommissions.commissionUsd}), 0)` })
-      .from(affiliateCommissions).where(and(eq(affiliateCommissions.affiliateId, affiliateId), eq(affiliateCommissions.status, "payable"))),
+      .from(affiliateCommissions)
+      .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+      .where(and(eq(affiliateCommissions.affiliateId, affiliateId), eq(affiliateCommissions.status, "payable"),
+        eq(accounts.isTest, false))),
+    executor.select({ stripeInvoiceId: affiliateInvoicePaymentRisks.stripeInvoiceId })
+      .from(affiliateInvoicePaymentRisks).where(and(
+        eq(affiliateInvoicePaymentRisks.affiliateId, affiliateId),
+        eq(affiliateInvoicePaymentRisks.manualRecoveryReviewRequired, true),
+      )),
      executor.select().from(affiliateDocumentVersions).where(and(
        eq(affiliateDocumentVersions.status, "published"),
        lte(affiliateDocumentVersions.effectiveAt, checkedAt),
@@ -73,9 +81,12 @@ export async function calculateAffiliatePayoutEligibility(affiliateId: string, e
     && acceptedPaymentAuthorization.authorizationDocumentVersionId === currentPaymentAuthorizationDoc.id
     && acceptedPaymentAuthorization.authorizationVersion === currentPaymentAuthorizationDoc.version);
   const activeHolds = holds as Array<{ id: string; holdType: string; reason: string }>;
+  const applicationHeld = Boolean(affiliate.applicationHeldAt);
+  const stripeRequirementsDue = status?.stripeRequirementsDue ?? [];
   const payableAmount = Number(payableRows[0]?.total ?? 0);
   const reasons = payoutEligibilityReasons({
     affiliateStatus: affiliate.status,
+    applicationHeld,
     country: status?.country ?? null,
     state: status?.state ?? null,
     agreementAccepted: Boolean(currentAgreement && acceptedAgreementRows.length),
@@ -88,30 +99,38 @@ export async function calculateAffiliatePayoutEligibility(affiliateId: string, e
     stripeOnboardingStatus: status?.stripeOnboardingStatus ?? "not_started",
     stripeDetailsSubmitted: status?.stripeDetailsSubmitted ?? false,
     stripePayoutsEnabled: status?.stripePayoutsEnabled ?? false,
+    stripeRequirementsDue,
     paymentAuthorizationAccepted: paymentAuthorizationCurrent,
     adminApprovalStatus: status?.adminApprovalStatus ?? "pending",
     activeHolds: activeHolds.length ? activeHolds : status?.adminHoldStatus === "active" ? [{ holdType: "Admin", reason: status.adminHoldReason ?? "Admin payout hold is active." }] : [],
+    manualRecoveryReviewCount: recoveryReviews.length,
     payableAmount, minimumAmount: PAYOUT_MINIMUM_USD,
   });
+  if (affiliate.isTest) {
+    reasons.push("Test affiliates are excluded from payouts.");
+  }
   const eligible = reasons.length === 0;
   const international = Boolean(status?.country && !["US", "USA", "United States"].includes(status.country));
   const overall_status = international ? "international_review_required"
     : eligible ? "eligible_for_payouts"
-    : holds.length || status?.adminHoldStatus === "active" ? "payouts_paused"
-    : status?.adminApprovalStatus !== "approved" ? "pending_approval"
+    : applicationHeld || holds.length || status?.adminHoldStatus === "active" ? "payouts_paused"
+    : affiliate.status === "pending" ? "pending_approval"
     : "not_eligible";
 
   const snapshot = {
     affiliateStatus: affiliate.status,
+    applicationHeld,
     country: status?.country ?? null,
     state: status?.state ?? null,
     agreementAccepted: !reasons.some((reason) => reason.includes("Affiliate Partner Agreement")),
     documents: Object.fromEntries(requiredDocumentTypes.map((type) => [type, acceptedByType.get(type)?.documentVersion ?? null])),
     taxStatus: status?.taxStatus ?? "not_started",
     stripe: { connected: Boolean(status?.stripeConnectedAccountId), accountType: status?.stripeAccountType ?? null, detailsSubmitted: status?.stripeDetailsSubmitted ?? false, payoutsEnabled: status?.stripePayoutsEnabled ?? false },
+    stripeRequirementsDue,
     paymentAuthorization: paymentAuthorizationCurrent,
     adminApprovalStatus: status?.adminApprovalStatus ?? "pending",
     activeHolds: activeHolds.length,
+    manualRecoveryReviewCount: recoveryReviews.length,
     payableAmount,
     minimumAmount: PAYOUT_MINIMUM_USD,
   };

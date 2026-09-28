@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { AdminShell } from "./shells";
 import { ArrowUpDown, Download, Loader2, Search } from "lucide-react";
+import { useAdminAccountAccess, useAdminTestFlag } from "./hooks";
 
 type ReferredClient = {
   id: string;
@@ -12,9 +13,11 @@ type ReferredClient = {
   status: string;
   tokensThisMonth: number;
   tokensTotal: number;
+  isTest?: boolean;
 };
 type AffiliateReport = {
   id: string;
+  isTest?: boolean;
   name: string;
   companyName: string;
   contact: { email: string; phone: string | null; company: string };
@@ -48,22 +51,29 @@ const date = (value: string | null) => value ? new Date(value).toLocaleDateStrin
 export function AdminAffiliatesTable() {
   const { getToken } = useAuth();
   const [search, setSearch] = useState("");
+  const [includeTest, setIncludeTest] = useState(false);
   const [sort, setSort] = useState<{ key: string; desc: boolean }>({ key: "name", desc: false });
   const [csvError, setCsvError] = useState("");
+  const adminAccess = useAdminAccountAccess(true);
+  const testFlagMutation = useAdminTestFlag();
+  const isSuperAdmin = !adminAccess.isLoading && !adminAccess.isFetching
+    && !adminAccess.isError && adminAccess.data?.isSuperAdmin === true;
   const report = useQuery<AffiliateReport[]>({
-    queryKey: ["admin-affiliate-report"],
+    queryKey: ["admin-affiliate-report", includeTest],
     queryFn: async () => {
       const token = await getToken();
-      const response = await fetch("/api/admin/affiliates", {
+      const response = await fetch(`/api/admin/affiliates${includeTest ? "?includeTest=true" : ""}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!response.ok) throw new Error((await response.json()).error ?? "Unable to load affiliate report");
       return response.json();
     },
+    refetchOnMount: "always",
   });
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return [...(report.data ?? [])]
+      .filter((affiliate) => includeTest || affiliate.isTest !== true)
       .filter((affiliate) => !query || [
         affiliate.name, affiliate.companyName, affiliate.contact.email, affiliate.contact.phone,
         affiliate.referralCode, affiliate.workspaceAccessStatus,
@@ -81,12 +91,41 @@ export function AdminAffiliatesTable() {
           ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true });
         return sort.desc ? -order : order;
       });
-  }, [report.data, search, sort]);
+  }, [includeTest, report.data, search, sort]);
+
+  const setTestFlag = async (affiliate: AffiliateReport) => {
+    if (!isSuperAdmin) return;
+    const isTest = affiliate.isTest !== true;
+    const nextLabel = isTest ? "mark as a test affiliate" : "restore to live";
+    const confirmation = isTest
+      ? `Mark ${affiliate.name} as a test affiliate? It will be omitted from admin counts and payout selection. Its data and history will be preserved.`
+      : `Restore ${affiliate.name} to live affiliates? It will again be included in admin counts and payout selection. Its data and history will be preserved.`;
+    if (!window.confirm(confirmation)) return;
+
+    const reason = window.prompt(`Required: explain why you want to ${nextLabel} (at least 10 characters).`);
+    if (reason === null) return;
+    if (reason.trim().length < 10) {
+      setCsvError("Enter a written reason of at least 10 characters. No changes were made.");
+      return;
+    }
+
+    setCsvError("");
+    try {
+      await testFlagMutation.mutateAsync({
+        recordType: "affiliate",
+        id: affiliate.id,
+        isTest,
+        reason: reason.trim(),
+      });
+    } catch (error: unknown) {
+      setCsvError(error instanceof Error ? error.message : "Unable to update the test flag.");
+    }
+  };
 
   const download = async (type: "affiliates" | "clients") => {
     setCsvError("");
     const token = await getToken();
-    const response = await fetch(`/api/admin/affiliates/download?type=${type}`, {
+    const response = await fetch(`/api/admin/affiliates/download?type=${type}${includeTest ? "&includeTest=true" : ""}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!response.ok) {
@@ -104,12 +143,19 @@ export function AdminAffiliatesTable() {
   return (
     <>
       <div className="mb-4 flex flex-col gap-3 rounded-lg border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-        <label className="relative w-full sm:max-w-md">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search affiliates by name, company, email, or code"
-            className="w-full rounded-md border py-2 pl-9 pr-3 text-sm" />
-        </label>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <label className="relative w-full sm:max-w-md">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search affiliates by name, company, email, or code"
+              className="w-full rounded-md border py-2 pl-9 pr-3 text-sm" />
+          </label>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <input type="checkbox" checked={includeTest} onChange={(event) => setIncludeTest(event.target.checked)}
+              className="rounded border-slate-300" data-testid="toggle-show-test-affiliates" />
+            Show test records
+          </label>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => download("affiliates")} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold hover:bg-slate-50">
             <Download className="h-4 w-4" /> Affiliates CSV
@@ -120,6 +166,9 @@ export function AdminAffiliatesTable() {
         </div>
       </div>
       {csvError && <p role="alert" className="mb-3 text-sm text-red-700">{csvError}</p>}
+      {includeTest && <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        Review mode: test affiliates and referred test clients are included. They remain excluded from normal admin counts and payout selection.
+      </p>}
       {report.isLoading ? <div className="flex justify-center p-12"><Loader2 className="animate-spin" /></div>
         : report.isError ? <p role="alert" className="rounded-md bg-red-50 p-4 text-red-800">{report.error.message}</p>
         : <div className="overflow-x-auto rounded-lg border bg-white">
@@ -136,7 +185,9 @@ export function AdminAffiliatesTable() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((affiliate) => <tr key={affiliate.id} className="align-top hover:bg-slate-50">
                 <td className="whitespace-normal px-3 py-3 font-semibold text-slate-900">
-                  {affiliate.name}<div className="mt-1 text-xs font-normal text-slate-500">{affiliate.companyName}</div>
+                  {affiliate.name}
+                  {affiliate.isTest === true && <span className="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900" data-testid={`badge-test-affiliate-${affiliate.id}`}>Test</span>}
+                  <div className="mt-1 text-xs font-normal text-slate-500">{affiliate.companyName}</div>
                 </td>
                 <td className="whitespace-normal px-3 py-3">{[affiliate.contact.email, affiliate.contact.phone, affiliate.contact.company].filter(Boolean).join(" · ")}</td>
                 <td className="whitespace-nowrap px-3 py-3 font-mono">{affiliate.referralCode}</td>
@@ -152,13 +203,19 @@ export function AdminAffiliatesTable() {
                   {affiliate.workspaceAccessStatus}{affiliate.workspaceAccessEndDate ? ` · ends ${date(affiliate.workspaceAccessEndDate)}` : ""}
                 </td>
                 <td className="whitespace-nowrap px-3 py-3">
+                  {isSuperAdmin && <button type="button" disabled={testFlagMutation.isPending}
+                    onClick={() => void setTestFlag(affiliate)}
+                    className="mb-2 block whitespace-nowrap rounded border border-amber-300 px-2.5 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-50 disabled:opacity-50"
+                    data-testid={`button-test-flag-affiliate-${affiliate.id}`}>
+                    {testFlagMutation.isPending ? "Saving…" : affiliate.isTest === true ? "Restore to live" : "Mark as test"}
+                  </button>}
                   <Link href={`/admin/affiliates/${affiliate.id}`} className="rounded-md border px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">View</Link>
                   <details className="mt-2">
                     <summary className="cursor-pointer text-xs font-semibold text-slate-700">Referred clients ({affiliate.clients.length})</summary>
                     <div className="mt-2 max-h-[65vh] w-[min(800px,70vw)] overflow-auto rounded-md border bg-white p-3 shadow-sm">
                       {(["Active", "Canceled"] as const).map((group) => {
-                        const groupClients = affiliate.clients.filter((client) =>
-                          group === "Active" ? ["Active", "Trial"].includes(client.status) : /cancel|removed|expired/i.test(client.status));
+                        const groupClients = affiliate.clients.filter((client) => (includeTest || client.isTest !== true)
+                          && (group === "Active" ? ["Active", "Trial"].includes(client.status) : /cancel|removed|expired/i.test(client.status)));
                         return <section key={group} className="mb-4 last:mb-0">
                           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">{group} ({groupClients.length})</h3>
                           {groupClients.length ? <div className="overflow-x-auto">
@@ -169,7 +226,7 @@ export function AdminAffiliatesTable() {
                                 <th className="p-2">Tokens this month</th><th className="p-2">Tokens total</th>
                               </tr></thead>
                               <tbody>{groupClients.map((client) => <tr key={client.id} className="border-b last:border-0">
-                                <td className="p-2">{client.name}</td><td className="whitespace-nowrap p-2">{date(client.createdAt)}</td>
+                                <td className="p-2">{client.name}{client.isTest === true && <span className="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-900">Test</span>}</td><td className="whitespace-nowrap p-2">{date(client.createdAt)}</td>
                                 <td className="min-w-[170px] whitespace-normal break-words p-2">{client.status}</td>
                                 <td className="p-2">{client.tokensThisMonth.toLocaleString()}</td>
                                 <td className="p-2">{client.tokensTotal.toLocaleString()}</td>

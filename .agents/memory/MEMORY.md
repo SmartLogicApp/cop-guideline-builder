@@ -1,5 +1,6 @@
 - [Root-level index.jsx import constraints](root-index-import-constraints.md) — files at the workspace root cannot import from packages only installed in a specific artifact; pass values as props from artifact components instead.
-- [Admin authorization](admin-bootstrap.md) — privileged Clerk IDs must come from controlled environment configuration or active database authorization, never source code.
+- [Admin authorization](admin-bootstrap.md) — retain configured Clerk ID grants; the owner's explicit email exception requires a server-verified primary Clerk address.
+- [Affiliate admin approval default](affiliate-admin-approval-default.md) — active affiliates show approval complete unless held/disapproved; keep payout rules in sync without bypassing transfer controls.
 - [CMS content verification boundary](cms-content-verification.md) — provider architecture may be scaffolded broadly, but official CMS requirements must stay unavailable until sourced and verified.
 - [Ephemeral customer policy handling](ephemeral-policy-handling.md) — proprietary policy text and derived results must remain session-scoped, user-bound, short-lived, and absent from permanent storage/logs.
 - [Autoscale cache persistence](autoscale-cache-persistence.md) — local files do not survive autoscale replacement; restart-safe shared caches must use a durable external store.
@@ -48,3 +49,5 @@
 - [Active signup source](active-signup-source.md) — use the current marketing-site flow rather than restoring the deleted standalone builder for signup changes.
 - [Native TypeScript test imports](native-ts-test-imports.md) — Node's native TS test runner does not remap .js import specifiers to .ts files; register resolution hooks before dynamic imports.
 - [Client contact authority](client-contact-authority.md) — account-user email may be blank despite Clerk signup; reports and reminders should resolve the verified primary Clerk contact first.
+- [Test-record exclusion boundary](test-record-exclusion-boundary.md) — test flags exclude future operational money, not historical evidence or a separate live client owned by a test affiliate.
+- [Payout statement evidence boundary](payout-statement-evidence-boundary.md) — distinguish actual transfers and recorded deductions from refund/dispute risk; never invent itemized tax evidence.

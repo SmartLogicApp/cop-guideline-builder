@@ -190,12 +190,21 @@ test("legacy numeric document versions cannot be copied into acknowledgements", 
   try {
     const acknowledge = handler(complianceRouter, "post", "/portal/acknowledgements");
     await rejects(acknowledge, {
-      documentVersionId: "synthetic-doc", typedLegalName: "Example Applicant", agreed: true,
+      documentVersionId: "synthetic-doc", typedLegalName: "Example Applicant", agreed: true, confirmedReviewed: true,
     }, 409);
     assert.equal(select.mock.callCount(), 1, "no further read, transaction or acknowledgement");
   } finally {
     select.mock.restore();
   }
+});
+
+test("document acknowledgements require the explicit I acknowledge confirmation", async () => {
+  const acknowledge = handler(complianceRouter, "post", "/portal/acknowledgements");
+  await rejects(acknowledge, {
+    documentVersionId: "synthetic-doc",
+    typedLegalName: "Example Applicant",
+    agreed: true,
+  });
 });
 
 test("legacy template keys cannot be edited", async () => {

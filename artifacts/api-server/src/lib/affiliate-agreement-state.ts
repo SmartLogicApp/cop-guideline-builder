@@ -1,5 +1,6 @@
 import { db, affiliates, affiliateAgreements, affiliateAgreementAcceptances } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { isCurrentReviewedAffiliateAcceptance } from "./affiliate-reviewed-agreement-acceptance.js";
 import { eligibleReviewedAgreementVersion } from "./affiliate-sample-agreement.js";
 
 export function reviewedAffiliateAgreementVersion(): string | null {
@@ -15,25 +16,45 @@ export async function reviewedAffiliateAgreementExists(): Promise<boolean> {
   return Boolean(agreement);
 }
 
-export async function hasReviewedAffiliateAcceptance(affiliateId: string): Promise<boolean> {
-  const version = reviewedAffiliateAgreementVersion();
-  if (!version) return false;
-  const [accepted] = await db.select({ id: affiliateAgreementAcceptances.id })
+export async function getReviewedAffiliateAcceptance(affiliateId: string) {
+  const reviewedVersion = reviewedAffiliateAgreementVersion();
+  if (!reviewedVersion) return null;
+  const candidates = await db.select({
+    agreementVersion: affiliateAgreementAcceptances.agreementVersion,
+    acceptedAt: affiliateAgreementAcceptances.acceptedAt,
+    acceptedContentSha256: affiliateAgreementAcceptances.contentSha256,
+    reviewedContentSha256: affiliateAgreements.contentSha256,
+    acceptedSignerEmail: affiliateAgreementAcceptances.signerEmail,
+    currentAffiliateEmail: affiliates.email,
+    acceptedIdentityEpoch: affiliateAgreementAcceptances.identityEpoch,
+    currentIdentityEpoch: affiliates.agreementIdentityEpoch,
+  })
     .from(affiliateAgreementAcceptances)
-    .innerJoin(affiliateAgreements, and(
-      eq(affiliateAgreementAcceptances.agreementVersion, affiliateAgreements.version),
-      eq(affiliateAgreementAcceptances.contentSha256, affiliateAgreements.contentSha256),
-    ))
-    .innerJoin(affiliates, and(
-      eq(affiliateAgreementAcceptances.affiliateId, affiliates.id),
-       eq(affiliateAgreementAcceptances.signerEmail, sql`lower(trim(${affiliates.email}))`),
-      eq(affiliateAgreementAcceptances.identityEpoch, affiliates.agreementIdentityEpoch),
-    ))
+    .innerJoin(affiliateAgreements, eq(affiliateAgreementAcceptances.agreementVersion, affiliateAgreements.version))
+    .innerJoin(affiliates, eq(affiliateAgreementAcceptances.affiliateId, affiliates.id))
     .where(and(
       eq(affiliateAgreementAcceptances.affiliateId, affiliateId),
-      eq(affiliateAgreementAcceptances.agreementVersion, version),
-    )).limit(1);
-  return Boolean(accepted);
+      eq(affiliateAgreementAcceptances.agreementVersion, reviewedVersion),
+    ))
+    .orderBy(desc(affiliateAgreementAcceptances.acceptedAt));
+  const accepted = candidates.find((candidate) => isCurrentReviewedAffiliateAcceptance({
+    acceptedVersion: candidate.agreementVersion,
+    acceptedContentSha256: candidate.acceptedContentSha256,
+    reviewedContentSha256: candidate.reviewedContentSha256,
+    acceptedSignerEmail: candidate.acceptedSignerEmail,
+    currentAffiliateEmail: candidate.currentAffiliateEmail,
+    acceptedIdentityEpoch: candidate.acceptedIdentityEpoch,
+    currentIdentityEpoch: candidate.currentIdentityEpoch,
+    reviewedVersion,
+  }));
+  return accepted ? {
+    agreementVersion: accepted.agreementVersion,
+    acceptedAt: accepted.acceptedAt,
+  } : null;
+}
+
+export async function hasReviewedAffiliateAcceptance(affiliateId: string): Promise<boolean> {
+  return Boolean(await getReviewedAffiliateAcceptance(affiliateId));
 }
 
 /**

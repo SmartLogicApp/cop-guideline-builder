@@ -4,7 +4,7 @@ import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { adminUsers } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { isSuperAdminId } from "./super-admin-identities.js";
+import { resolveSuperAdmin } from "./super-admin-identities.js";
 
 /**
  * The admin authorization guards, in one place.
@@ -20,15 +20,36 @@ import { isSuperAdminId } from "./super-admin-identities.js";
  * application. One implementation, imported by both.
  */
 
-// ─── requireSuperAdmin — env-var only ────────────────────────────────────────
+function markAdminAuthorization(
+  req: Request,
+  userId: string,
+  source: string,
+  isSuperAdmin: boolean,
+) {
+  (req as any).clerkUserId = userId;
+  (req as any).isSuperAdmin = isSuperAdmin;
+  (req as any).adminAuthorizationSource = source;
+  if (isSuperAdmin) {
+    (req as any).log?.info?.(
+      { actorId: userId, authorizationSource: source },
+      "Super-admin access granted",
+    );
+  }
+}
 
-export function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
+// ─── requireSuperAdmin — exact ID allowlist or verified owner identity ───────
+
+export async function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
   const auth = getAuth(req as any);
   const userId = auth?.userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  if (!isSuperAdminId(userId))
+  const authorization = await resolveSuperAdmin(userId);
+  if (authorization.lookupFailed) {
+    return res.status(503).json({ error: "Super-admin identity could not be verified." });
+  }
+  if (!authorization.source)
     return res.status(403).json({ error: "Super-admin access required" });
-  (req as any).clerkUserId = userId;
+  markAdminAuthorization(req, userId, authorization.source, true);
   return next();
 }
 
@@ -73,10 +94,11 @@ export async function requireAnyAdmin(req: Request, res: Response, next: NextFun
   const userId = auth?.userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-  // Super-admin check first (no DB hit)
-  if (isSuperAdminId(userId)) {
-    (req as any).clerkUserId = userId;
-    (req as any).isSuperAdmin = true;
+  // Super-admin check first; only a verified primary email returned by Clerk
+  // can grant the explicit owner-email identity.
+  const authorization = await resolveSuperAdmin(userId);
+  if (authorization.source) {
+    markAdminAuthorization(req, userId, authorization.source, true);
     return next();
   }
 
@@ -88,9 +110,13 @@ export async function requireAnyAdmin(req: Request, res: Response, next: NextFun
       .where(and(eq(adminUsers.clerkUserId, userId), eq(adminUsers.isActive, true)))
       .limit(1);
 
-    if (!row) return res.status(403).json({ error: "Admin access required" });
-    (req as any).clerkUserId = userId;
-    (req as any).isSuperAdmin = false;
+    if (!row) {
+      if (authorization.lookupFailed) {
+        return res.status(503).json({ error: "Admin identity could not be verified." });
+      }
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    markAdminAuthorization(req, userId, "active_admin_database_record", false);
     next();
   } catch {
     res.status(500).json({ error: "Auth check failed" });

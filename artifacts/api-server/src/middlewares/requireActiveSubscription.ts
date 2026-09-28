@@ -3,18 +3,20 @@ import { and, eq } from "drizzle-orm";
 import { accountUsers, accounts, adminUsers, db } from "@workspace/db";
 import { hasEffectiveAccess, hasUnexpiredComplimentaryAccess } from "./subscriptionAccess";
 import { runAccountSubscriptionLifecycle } from "../lib/subscription-lifecycle";
+import { resolveSuperAdmin, type SuperAdminResolution } from "../lib/super-admin-identities.js";
 
 export const PAYMENT_REQUIRED_RESPONSE = {
   error: "An active subscription or trial is required",
   code: "SUBSCRIPTION_REQUIRED",
 } as const;
 
-export async function getSubscriptionAccess(clerkUserId: string, now = new Date()) {
-  const isConfiguredSuperAdmin = (process.env.ADMIN_CLERK_USER_IDS ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean)
-    .includes(clerkUserId);
+export async function getSubscriptionAccess(
+  clerkUserId: string,
+  now = new Date(),
+  resolvedSuperAdmin?: SuperAdminResolution,
+) {
+  const superAdminResolution = resolvedSuperAdmin ?? await resolveSuperAdmin(clerkUserId);
+  const isSuperAdmin = Boolean(superAdminResolution.source);
   let [admin, membership] = await Promise.all([
     db.select({ id: adminUsers.id })
       .from(adminUsers)
@@ -43,7 +45,7 @@ export async function getSubscriptionAccess(clerkUserId: string, now = new Date(
     account = membership[0]?.account ?? null;
     accountUser = membership[0]?.accountUser ?? null;
   }
-  const isAdminUser = isConfiguredSuperAdmin || admin.length > 0;
+  const isAdminUser = isSuperAdmin || admin.length > 0;
   const hasComplimentaryAccess = hasUnexpiredComplimentaryAccess(
     accountUser,
     account?.subscriptionStatus,
@@ -53,7 +55,9 @@ export async function getSubscriptionAccess(clerkUserId: string, now = new Date(
   return {
     account,
     accountUser,
+    isSuperAdmin,
     isAdminUser,
+    superAdminAuthorizationSource: superAdminResolution.source,
     hasComplimentaryAccess,
     accessSource: isAdminUser
       ? "admin"
@@ -82,6 +86,16 @@ export async function requireActiveSubscription(
     }
 
     const access = await getSubscriptionAccess(clerkUserId);
+    (req as any).isSuperAdmin = access.isSuperAdmin;
+    if (access.superAdminAuthorizationSource) {
+      (req as any).adminAuthorizationSource = access.superAdminAuthorizationSource;
+      if (access.isSuperAdmin) {
+        (req as any).log?.info?.({
+          actorId: clerkUserId,
+          authorizationSource: access.superAdminAuthorizationSource,
+        }, "Super-admin access granted");
+      }
+    }
     if (!access.isActive) {
       res.status(402).json(PAYMENT_REQUIRED_RESPONSE);
       return;

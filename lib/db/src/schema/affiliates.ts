@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, doublePrecision, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, boolean, integer, doublePrecision, index, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { accounts } from "./accounts";
 
 /**
@@ -68,6 +69,8 @@ export const affiliates = pgTable("affiliates", {
    * already earned.
    */
   status: text("status").default("pending").notNull(),
+  /** Super Admin-controlled reversible exclusion from operational reporting. */
+  isTest: boolean("is_test").default(false).notNull(),
   /** Review hold applies only to pending applications, not payout compliance. */
   applicationHeldAt: timestamp("application_held_at", { withTimezone: true }),
   applicationHoldReason: text("application_hold_reason"),
@@ -166,6 +169,10 @@ export const affiliateCommissions = pgTable("affiliate_commissions", {
    */
   stripeInvoiceId: text("stripe_invoice_id").unique("affiliate_commissions_stripe_invoice_id_key"),
 
+  /** Immutable service/billing month captured from the paid Stripe invoice. */
+  billingMonth: text("billing_month"),
+  billingMonthSource: text("billing_month_source"),
+
   /**
    * §7.1 — subscription amounts actually received and retained, excluding tax,
    * refunds, credits, chargebacks, professional services, implementation and
@@ -186,6 +193,7 @@ export const affiliateCommissions = pgTable("affiliate_commissions", {
    * "pending"   — accrued, inside the §24 holdback
    * "payable"   — holdback elapsed, awaiting a quarterly payout (§8)
    * "paid"      — included in a completed payout
+   * "risk_held" — withheld from payout while an invoice refund/dispute is reviewed
    * "reversed"  — the underlying payment was refunded or charged back (§25)
    * "cancelled" — accrued in error, or the referral was rejected under §5
    */
@@ -217,6 +225,12 @@ export const affiliateCommissions = pgTable("affiliate_commissions", {
   index("affiliate_commissions_status_idx").on(table.status),
   index("affiliate_commissions_accrued_at_idx").on(table.accruedAt),
   index("affiliate_commissions_payable_at_idx").on(table.payableAt),
+  check(
+    "affiliate_commissions_billing_month_check",
+    sql`(${table.billingMonth} IS NULL AND ${table.billingMonthSource} IS NULL)
+      OR (${table.billingMonth} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'
+        AND ${table.billingMonthSource} IN ('invoice_line_period', 'invoice_period', 'payment_month_fallback'))`,
+  ),
 ]);
 
 /**

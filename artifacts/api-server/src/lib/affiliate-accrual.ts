@@ -5,15 +5,21 @@ import {
   affiliateAgreementAcceptances,
   affiliateAgreements,
   affiliateCommissions,
+  affiliateInvoicePaymentRisks,
   affiliateOutOfOrderPaymentReviews,
   affiliateQualifyingReferrals,
   affiliateRateChanges,
   affiliates,
 } from "@workspace/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { AFFILIATE_AGREEMENT_V4_VERSION } from "./affiliate-agreement-v4.ts";
 import { reviewedAffiliateAgreementVersion } from "./affiliate-agreement-state.js";
+import type { AffiliateBillingMonth } from "./affiliate-billing-month.ts";
 import { applyPendingAffiliateRateReductions } from "./affiliate-rate-automation.js";
+import {
+  invoiceRiskDisposition,
+  type InvoiceRiskDisposition,
+} from "./affiliate-payment-risk-rules.js";
 import {
   acceptanceCoversPayment,
   latestQualifyingReferralAt,
@@ -48,7 +54,8 @@ import {
 export type AccrualOutcome =
   | { accrued: false; reason: "no-referral-code" | "no-matching-affiliate" | "affiliate-inactive"
         | "zero-rate" | "no-qualifying-revenue" | "already-accrued" | "account-not-found"
-        | "agreement-not-accepted" | "out-of-order-payment" }
+        | "agreement-not-accepted" | "out-of-order-payment" | "payment-refunded-or-dispute-lost"
+        | "test-record" }
   | { accrued: true; commissionUsd: number; ratePct: number; affiliateId: string };
 
 export type AccrualInput = {
@@ -58,6 +65,7 @@ export type AccrualInput = {
   stripeInvoiceId: string;
   invoice: InvoiceRevenueInput;
   paidAt: Date;
+  billingMonth?: AffiliateBillingMonth;
 };
 
 /**
@@ -71,11 +79,12 @@ export type AccrualInput = {
 export async function accrueCommissionForPayment(input: AccrualInput): Promise<AccrualOutcome> {
   const [account] = await db.select().from(accounts).where(eq(accounts.id, input.accountId)).limit(1);
   if (!account) return { accrued: false, reason: "account-not-found" };
+  if (account.isTest) return { accrued: false, reason: "test-record" };
 
   const code = normalizeReferralCode(account.referralCode);
   if (!code) return { accrued: false, reason: "no-referral-code" };
 
-  const [affiliate] = await db.select({ id: affiliates.id }).from(affiliates)
+  const [affiliate] = await db.select({ id: affiliates.id, isTest: affiliates.isTest }).from(affiliates)
     .where(eq(affiliates.referralCode, code)).limit(1);
   if (!affiliate) {
     // The customer signed up through a link whose code matches no affiliate.
@@ -84,6 +93,7 @@ export async function accrueCommissionForPayment(input: AccrualInput): Promise<A
     // report lists these explicitly rather than dropping them.
     return { accrued: false, reason: "no-matching-affiliate" };
   }
+  if (affiliate.isTest) return { accrued: false, reason: "test-record" };
   const qualifyingRevenueUsd = qualifyingRevenueUsdFromInvoice(input.invoice);
   if (qualifyingRevenueUsd <= 0) return { accrued: false, reason: "no-qualifying-revenue" };
 
@@ -99,6 +109,20 @@ export async function accrueCommissionForPayment(input: AccrualInput): Promise<A
       if (!lockedAffiliate || lockedAffiliate.status !== "active") {
         return { accrued: false, reason: "affiliate-inactive" };
       }
+      if (lockedAffiliate.isTest) return { accrued: false, reason: "test-record" };
+      // The account Test flag is mutable, so re-read and lock it after the
+      // affiliate lock. This order matches payout processing and prevents a
+      // concurrent flag change from being missed by a stale preflight read.
+      const [lockedAccount] = await tx.select().from(accounts)
+        .where(eq(accounts.id, input.accountId))
+        .for("update")
+        .limit(1);
+      if (!lockedAccount) return { accrued: false, reason: "account-not-found" };
+      if (lockedAccount.isTest) return { accrued: false, reason: "test-record" };
+      if (normalizeReferralCode(lockedAccount.referralCode) !== code
+          || normalizeReferralCode(lockedAffiliate.referralCode) !== code) {
+        return { accrued: false, reason: "no-matching-affiliate" };
+      }
       if (!lockedAffiliate.rateEffectiveAt) {
         throw new Error("Affiliate commission accrual is blocked: active affiliate is missing its rate-effective date.");
       }
@@ -108,6 +132,21 @@ export async function accrueCommissionForPayment(input: AccrualInput): Promise<A
         .where(eq(affiliateCommissions.stripeInvoiceId, input.stripeInvoiceId))
         .limit(1);
       if (duplicate) return { accrued: false, reason: "already-accrued" };
+
+      const [paymentRisk] = await tx.select({
+        chargeAmountMinor: affiliateInvoicePaymentRisks.chargeAmountMinor,
+        cumulativeRefundedMinor: affiliateInvoicePaymentRisks.cumulativeRefundedMinor,
+        disputeStatus: affiliateInvoicePaymentRisks.disputeStatus,
+      }).from(affiliateInvoicePaymentRisks)
+        .where(eq(affiliateInvoicePaymentRisks.stripeInvoiceId, input.stripeInvoiceId))
+        .for("update")
+        .limit(1);
+      const paymentRiskDisposition: InvoiceRiskDisposition = paymentRisk
+        ? invoiceRiskDisposition(paymentRisk)
+        : "clear";
+      if (paymentRiskDisposition === "full_refund") {
+        return { accrued: false, reason: "payment-refunded-or-dispute-lost" };
+      }
 
       if (!await hasCurrentV4Acceptance(tx, lockedAffiliate, input.paidAt)) {
         return { accrued: false, reason: "agreement-not-accepted" };
@@ -260,14 +299,23 @@ export async function accrueCommissionForPayment(input: AccrualInput): Promise<A
         affiliateId: lockedAffiliate.id,
         accountId: account.id,
         stripeInvoiceId: input.stripeInvoiceId,
+        billingMonth: input.billingMonth?.billingMonth ?? null,
+        billingMonthSource: input.billingMonth?.billingMonthSource ?? null,
         qualifyingRevenueUsd: roundUsd(qualifyingRevenueUsd),
         ratePct,
         commissionUsd,
-        status: "pending",
+        status: paymentRiskDisposition === "clear" ? "pending" : "risk_held",
         accruedAt: input.paidAt,
         payableAt: holdbackEndsAt(input.paidAt),
         source: "stripe:invoice.payment_succeeded",
       }).returning();
+
+      if (paymentRiskDisposition !== "clear") {
+        await tx.update(affiliateInvoicePaymentRisks).set({
+          priorCommissionStatus: "pending",
+          updatedAt: new Date(),
+        }).where(eq(affiliateInvoicePaymentRisks.stripeInvoiceId, input.stripeInvoiceId));
+      }
 
       // If webhook delivery is late, bring the mutable current rate forward
       // from the newly restarted activity clock. The commission row remains
@@ -310,7 +358,6 @@ export async function accrueCommissionForPayment(input: AccrualInput): Promise<A
     throw error;
   }
 }
-
 async function recordOutOfOrderPaymentReview(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   input: AccrualInput,
@@ -380,28 +427,4 @@ async function hasCurrentV4Acceptance(
     ))
     .limit(1);
   return Boolean(acceptance && acceptanceCoversPayment(acceptance.acceptedAt, paidAt));
-}
-
-/**
- * §25 — a refund or chargeback cancels the unpaid commission on that payment,
- * and flags an already-paid one for deduction from a future payout.
- *
- * Looks the commission up by its Stripe invoice, so a refund event maps to
- * exactly the accrual it undoes.
- */
-export async function reverseCommissionForInvoice(
-  stripeInvoiceId: string,
-  reason: string,
-): Promise<{ reversed: number }> {
-  const now = new Date();
-  const reversed = await db.update(affiliateCommissions)
-    .set({ status: "reversed", reversedAt: now, reversalReason: reason })
-    .where(and(
-      eq(affiliateCommissions.stripeInvoiceId, stripeInvoiceId),
-      // Never re-reverse: a second reversal of a paid commission would deduct
-      // the same money from the affiliate's next payout twice.
-      isNull(affiliateCommissions.reversedAt),
-    ))
-    .returning({ id: affiliateCommissions.id });
-  return { reversed: reversed.length };
 }

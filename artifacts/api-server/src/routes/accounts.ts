@@ -24,7 +24,10 @@ import {
 import { LEGACY_INSTITUTION_TYPES } from "@workspace/cms-compliance-data";
 import { getSubscriptionAccess } from "../middlewares/requireActiveSubscription.js";
 import { currentReviewedAffiliateAcceptanceCondition } from "../lib/affiliate-agreement-state.js";
-import { getSuperAdminIds, isSuperAdminId } from "../lib/super-admin-identities.js";
+import {
+  getSuperAdminIds,
+  resolveSuperAdmin,
+} from "../lib/super-admin-identities.js";
 import { generateAffiliateReferralCode } from "../lib/affiliate-referral-code.js";
 
 import {
@@ -151,13 +154,24 @@ router.get("/validate-ccn", requireAuth, async (req, res) => {
 });
 
 // GET /api/accounts/whoami — diagnostic: returns clerk ID + super-admin match result
-router.get("/whoami", requireAuth, (req, res) => {
+router.get("/whoami", requireAuth, async (req, res) => {
   const userId = (req as any).clerkUserId as string;
   const ids = getSuperAdminIds();
-  const isSuperAdmin = isSuperAdminId(userId);
+  const authorization = await resolveSuperAdmin(userId);
+  if (authorization.source) {
+    (req as any).adminAuthorizationSource = authorization.source;
+    if (authorization.source === "verified_primary_owner_email") {
+      (req as any).log?.info?.({
+        actorId: userId,
+        authorizationSource: authorization.source,
+      }, "Super-admin access granted");
+    }
+  }
   return res.json({
     clerkUserId: userId,
-    isSuperAdmin,
+    isSuperAdmin: Boolean(authorization.source),
+    superAdminAuthorizationSource: authorization.source,
+    identityLookupFailed: authorization.lookupFailed,
     adminIdCount: ids.length,
     adminIdPrefixes: ids.map((id) => id.slice(0, 10) + "…"),
     yourIdPrefix: userId.slice(0, 10) + "…",
@@ -170,10 +184,20 @@ router.get("/me", requireAuth, async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.setHeader("Pragma", "no-cache");
   const userId = (req as any).clerkUserId as string;
-  const isSuperAdmin = isSuperAdminId(userId);
-  const access = await getSubscriptionAccess(userId);
-  const isAdminUser = isSuperAdmin || access.isAdminUser;
+  const authorization = await resolveSuperAdmin(userId);
+  const isSuperAdmin = Boolean(authorization.source);
+  const access = await getSubscriptionAccess(userId, new Date(), authorization);
+  const isAdminUser = access.isAdminUser;
   const isActive = isAdminUser || access.isActive;
+  if (authorization.source) {
+    (req as any).adminAuthorizationSource = authorization.source;
+    if (authorization.source === "verified_primary_owner_email") {
+      (req as any).log?.info?.({
+        actorId: userId,
+        authorizationSource: authorization.source,
+      }, "Super-admin access granted");
+    }
+  }
 
   return res.json({
     clerkUserId: userId,
@@ -183,6 +207,7 @@ router.get("/me", requireAuth, async (req, res) => {
     isAdminUser,
     isSuperAdmin,
     hasComplimentaryAccess: access.hasComplimentaryAccess,
+    superAdminAuthorizationSource: authorization.source,
     accessSource: isSuperAdmin ? "admin" : access.accessSource,
   });
 });

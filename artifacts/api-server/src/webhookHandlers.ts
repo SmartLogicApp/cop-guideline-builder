@@ -9,8 +9,13 @@ import {
 import { logger } from "./lib/logger.js";
 import {
   accrueCommissionForPayment,
-  reverseCommissionForInvoice,
 } from "./lib/affiliate-accrual.js";
+import { deriveAffiliateBillingMonth } from "./lib/affiliate-billing-month.js";
+import {
+  recordAffiliateInvoiceRisk,
+  resolveInvoiceRiskAttribution,
+  type StripeRiskEventType,
+} from "./lib/affiliate-payment-risk.js";
 import {
   isAuthorizedPostRemovalCheckout,
   reconcileStripeSubscriptionSet,
@@ -44,6 +49,159 @@ export function getInvoiceSubscriptionId(invoice: Stripe.Invoice): string | null
 
 function timestamp(seconds: number | null | undefined) {
   return seconds ? new Date(seconds * 1000) : null;
+}
+
+type StripeIdReference = string | { id: string } | null | undefined;
+type ChargeRiskSnapshot = {
+  id: string;
+  amount: number;
+  amount_refunded: number;
+  customer?: StripeIdReference;
+  invoice?: StripeIdReference;
+  payment_intent?: StripeIdReference;
+};
+type PaymentIntentRiskSnapshot = {
+  id: string;
+  customer?: StripeIdReference;
+  invoice?: StripeIdReference;
+};
+type InvoiceRiskSnapshot = {
+  id: string;
+  customer?: StripeIdReference;
+};
+
+function stripeId(value: StripeIdReference): string | null {
+  if (typeof value === "string") return value;
+  return value && typeof value.id === "string" ? value.id : null;
+}
+
+async function processInvoiceRiskEvent(input: {
+  event: Stripe.Event;
+  eventType: StripeRiskEventType;
+  eventObject: Stripe.Charge | Stripe.Dispute;
+}): Promise<void> {
+  const event = input.event;
+  const dispute = input.eventObject as Stripe.Dispute & {
+    charge?: StripeIdReference;
+    payment_intent?: StripeIdReference;
+  };
+  const chargeEvent = input.eventObject as Stripe.Charge & {
+    invoice?: StripeIdReference;
+    payment_intent?: StripeIdReference;
+  };
+  const eventChargeId = input.eventType === "charge.refunded"
+    ? chargeEvent.id
+    : stripeId(dispute.charge);
+  let paymentIntentId = input.eventType === "charge.refunded"
+    ? stripeId(chargeEvent.payment_intent)
+    : stripeId(dispute.payment_intent);
+
+  let charge: ChargeRiskSnapshot | null = eventChargeId
+    ? await stripeRequest<ChargeRiskSnapshot>(
+      `/v1/charges/${encodeURIComponent(eventChargeId)}`,
+    )
+    : null;
+  paymentIntentId ??= stripeId(charge?.payment_intent);
+  let paymentIntent: PaymentIntentRiskSnapshot | null = null;
+  let invoiceId = stripeId(charge?.invoice) ??
+    (input.eventType === "charge.refunded" ? stripeId(chargeEvent.invoice) : null);
+  if (!invoiceId && paymentIntentId) {
+    paymentIntent = await stripeRequest<PaymentIntentRiskSnapshot>(
+      `/v1/payment_intents/${encodeURIComponent(paymentIntentId)}`,
+    );
+    invoiceId = stripeId(paymentIntent.invoice);
+  }
+  if (!invoiceId) {
+    throw new Error(
+      `Affiliate payment-risk mapping failed: ${input.eventType} event ${event.id} has no resolvable invoice.`,
+    );
+  }
+
+  const invoice = await stripeRequest<InvoiceRiskSnapshot>(
+    `/v1/invoices/${encodeURIComponent(invoiceId)}`,
+  );
+  if (invoice.id !== invoiceId) {
+    throw new Error(`Affiliate payment-risk mapping failed: Stripe returned a different invoice for ${invoiceId}.`);
+  }
+  const customerId = stripeId(invoice.customer) ??
+    stripeId(charge?.customer) ??
+    stripeId(paymentIntent?.customer);
+  if (!customerId) {
+    throw new Error(`Affiliate payment-risk mapping failed: invoice ${invoiceId} has no Stripe customer.`);
+  }
+  if (
+    (stripeId(charge?.customer) && stripeId(charge?.customer) !== customerId) ||
+    (stripeId(paymentIntent?.customer) && stripeId(paymentIntent?.customer) !== customerId)
+  ) {
+    throw new Error(`Affiliate payment-risk mapping failed: invoice ${invoiceId} does not match its charge customer.`);
+  }
+  if (charge && stripeId(charge.invoice) && stripeId(charge.invoice) !== invoiceId) {
+    throw new Error(`Affiliate payment-risk mapping failed: charge ${charge.id} refers to a different invoice.`);
+  }
+  if (paymentIntent && stripeId(paymentIntent.invoice) && stripeId(paymentIntent.invoice) !== invoiceId) {
+    throw new Error(`Affiliate payment-risk mapping failed: payment intent ${paymentIntent.id} refers to a different invoice.`);
+  }
+  if (!charge) {
+    if (!paymentIntentId) {
+      throw new Error(`Affiliate payment-risk mapping failed: invoice ${invoiceId} has no charge or payment intent.`);
+    }
+    const paymentIntentForCharge = paymentIntent ??
+      await stripeRequest<PaymentIntentRiskSnapshot>(
+        `/v1/payment_intents/${encodeURIComponent(paymentIntentId)}`,
+      );
+    const latestChargeId = stripeId(
+      (paymentIntentForCharge as PaymentIntentRiskSnapshot & { latest_charge?: StripeIdReference }).latest_charge,
+    );
+    if (!latestChargeId) {
+      throw new Error(`Affiliate payment-risk mapping failed: payment intent ${paymentIntentId} has no charge.`);
+    }
+    charge = await stripeRequest<ChargeRiskSnapshot>(
+      `/v1/charges/${encodeURIComponent(latestChargeId)}`,
+    );
+  }
+  const retrievedChargeInvoiceId = stripeId(charge.invoice);
+  if (retrievedChargeInvoiceId && retrievedChargeInvoiceId !== invoiceId) {
+    throw new Error(`Affiliate payment-risk mapping failed: charge ${charge.id} refers to a different invoice.`);
+  }
+  const retrievedChargeCustomerId = stripeId(charge.customer);
+  if (retrievedChargeCustomerId && retrievedChargeCustomerId !== customerId) {
+    throw new Error(`Affiliate payment-risk mapping failed: charge ${charge.id} refers to a different customer.`);
+  }
+  const retrievedPaymentIntentId = stripeId(charge.payment_intent);
+  if (paymentIntentId && retrievedPaymentIntentId && retrievedPaymentIntentId !== paymentIntentId) {
+    throw new Error(`Affiliate payment-risk mapping failed: charge ${charge.id} refers to a different payment intent.`);
+  }
+  paymentIntentId ??= retrievedPaymentIntentId;
+  if (!Number.isSafeInteger(charge.amount) || charge.amount <= 0) {
+    throw new Error(`Affiliate payment-risk processing failed: charge ${charge.id} has an invalid amount.`);
+  }
+  if (!Number.isSafeInteger(charge.amount_refunded) || charge.amount_refunded < 0) {
+    throw new Error(`Affiliate payment-risk processing failed: charge ${charge.id} has an invalid refund amount.`);
+  }
+  const disputeStatus = input.eventType === "charge.refunded"
+    ? "none"
+    : input.eventType === "charge.dispute.created"
+      ? "open"
+      : dispute.status === "won"
+        ? "won"
+        : dispute.status === "lost"
+          ? "lost"
+          : "open";
+  const attribution = await resolveInvoiceRiskAttribution(customerId);
+  await recordAffiliateInvoiceRisk({
+    stripeInvoiceId: invoiceId,
+    accountId: attribution.accountId,
+    affiliateId: attribution.affiliateId,
+    stripeChargeId: charge.id,
+    stripePaymentIntentId: paymentIntentId,
+    chargeAmountMinor: charge.amount,
+    cumulativeRefundedMinor: charge.amount_refunded,
+    stripeEventId: event.id,
+    eventType: input.eventType,
+    eventCreatedAt: new Date(event.created * 1000),
+    disputeId: input.eventType === "charge.refunded" ? null : dispute.id,
+    disputeStatus,
+  });
 }
 
 const TERMINAL_STRIPE_STATUSES = new Set(["canceled", "incomplete_expired"]);
@@ -106,10 +264,13 @@ async function accrueCommissionFromInvoice(invoice: Stripe.Invoice): Promise<voi
     .from(accounts).where(eq(accounts.stripeCustomerId, customerId)).limit(1);
   if (!account) return;
 
+  const paidAt = timestamp(invoice.status_transitions?.paid_at) ?? new Date();
+  const billingMonth = deriveAffiliateBillingMonth(invoice, paidAt);
   const outcome = await accrueCommissionForPayment({
     accountId: account.id,
     stripeInvoiceId: invoice.id,
-    paidAt: timestamp(invoice.status_transitions?.paid_at) ?? new Date(),
+    paidAt,
+    billingMonth,
     invoice: {
       amountPaid: invoice.amount_paid,
       tax: (invoice as any).tax ?? (invoice as any).total_taxes?.reduce(
@@ -700,21 +861,16 @@ export class WebhookHandlers {
         break;
       }
       case "charge.refunded":
-      case "charge.dispute.created": {
-        // §25 — the customer's money went back, so the commission on it is
-        // cancelled (or deducted from a future payout if already paid).
-        try {
-          const charge = event.data.object as Stripe.Charge & { invoice?: string | { id?: string } | null };
-          const invoiceId = typeof charge.invoice === "string" ? charge.invoice : charge.invoice?.id;
-          if (invoiceId) {
-            await reverseCommissionForInvoice(
-              invoiceId,
-              event.type === "charge.refunded" ? "Customer payment refunded" : "Customer chargeback",
-            );
-          }
-        } catch (error) {
-          console.error("[affiliate] reversal failed for", event.type, error);
-        }
+      case "charge.dispute.created":
+      case "charge.dispute.updated":
+      case "charge.dispute.closed":
+      case "charge.dispute.funds_reinstated":
+      case "charge.dispute.funds_withdrawn": {
+        await processInvoiceRiskEvent({
+          event,
+          eventType: event.type,
+          eventObject: event.data.object as Stripe.Charge | Stripe.Dispute,
+        });
         break;
       }
       case "invoice.payment_failed": {

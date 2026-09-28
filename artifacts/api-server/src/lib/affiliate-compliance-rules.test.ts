@@ -19,7 +19,9 @@ const fullyEligible = {
   stripeOnboardingStatus: "complete",
   stripeDetailsSubmitted: true,
   stripePayoutsEnabled: true,
+  stripeRequirementsDue: [],
   paymentAuthorizationAccepted: true,
+  applicationHeld: false,
   adminApprovalStatus: "approved",
   activeHolds: [],
   payableAmount: 125,
@@ -58,12 +60,12 @@ test("all required checks, threshold, and payout hold jointly control eligibilit
   assert.ok(payoutEligibilityReasons({ ...fullyEligible, payableAmount: 99.99 }).some((reason) => reason.includes("$100 minimum")));
 });
 
-test("reviewed agreement, completed Stripe onboarding, and admin approval are all necessary", () => {
+test("reviewed agreement, completed Stripe setup, and the activation gate control eligibility", () => {
   // All other checks pass in this fixture; the sample agreement never supplies
   // agreementAccepted because only a reviewed-version acceptance can set it.
   for (const agreementAccepted of [false, true]) {
     for (const stripeComplete of [false, true]) {
-      for (const adminApproved of [false, true]) {
+      for (const adminApprovalStatus of ["pending", "approved", "rejected", "suspended", "terminated"]) {
         const reasons = payoutEligibilityReasons({
           ...fullyEligible,
           agreementAccepted,
@@ -71,15 +73,28 @@ test("reviewed agreement, completed Stripe onboarding, and admin approval are al
           stripeDetailsSubmitted: stripeComplete,
           stripePayoutsEnabled: stripeComplete,
           stripeOnboardingStatus: stripeComplete ? "complete" : "action_required",
-          adminApprovalStatus: adminApproved ? "approved" : "pending",
+          adminApprovalStatus,
         });
-        assert.equal(reasons.length === 0, agreementAccepted && stripeComplete && adminApproved);
+        const approvalAllowed = ["pending", "approved"].includes(adminApprovalStatus);
+        assert.equal(reasons.length === 0, agreementAccepted && stripeComplete && approvalAllowed);
         assert.equal(reasons.some((reason) => reason.includes("Affiliate Partner Agreement")), !agreementAccepted);
         assert.equal(reasons.some((reason) => reason.includes("Stripe Express")), !stripeComplete);
-        assert.equal(reasons.some((reason) => reason.includes("Admin approval")), !adminApproved);
+        assert.equal(reasons.some((reason) => reason.includes("Admin approval")), !approvalAllowed);
       }
     }
   }
+  assert.ok(payoutEligibilityReasons({ ...fullyEligible, affiliateStatus: "pending" })
+    .some((reason) => reason.includes("Affiliate account must be active")));
+});
+
+test("application holds and outstanding Stripe requirements still block payouts", () => {
+  const held = payoutEligibilityReasons({ ...fullyEligible, applicationHeld: true });
+  assert.ok(held.some((reason) => reason.includes("application is on hold")));
+
+  const requirementsDue = payoutEligibilityReasons({
+    ...fullyEligible, stripeRequirementsDue: ["individual.address.line1"],
+  });
+  assert.ok(requirementsDue.some((reason) => reason.includes("Stripe Express")));
 });
 
 test("Connect transfer webhook transitions are idempotent", () => {

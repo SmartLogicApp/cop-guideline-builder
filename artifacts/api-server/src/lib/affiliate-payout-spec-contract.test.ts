@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { isCurrentReviewedAffiliateAcceptance } from "./affiliate-reviewed-agreement-acceptance.ts";
 import { payoutEligibilityReasons } from "./affiliate-compliance-rules.ts";
+import { buildAffiliatePayoutChecklist } from "./affiliate-payout-checklist.ts";
 import { stripeTaxStatus } from "./affiliate-connect-tax.ts";
 import { verifyAffiliateConnectWebhook } from "./affiliate-compliance-webhook-signature.ts";
 import {
@@ -27,7 +29,9 @@ const eligibleFacts = {
   stripeOnboardingStatus: "complete",
   stripeDetailsSubmitted: true,
   stripePayoutsEnabled: true,
+  stripeRequirementsDue: [],
   paymentAuthorizationAccepted: true,
+  applicationHeld: false,
   adminApprovalStatus: "approved",
   activeHolds: [],
   payableAmount: 125,
@@ -83,10 +87,32 @@ test("I.3 Stripe onboarding alone does not prove tax ID status; account flags dr
 
   const webhook = await read("../lib/affiliate-compliance-webhook.ts");
   const accountUpdateBranch = webhook.slice(webhook.indexOf('if (event.type === "account.updated")'), webhook.indexOf('if (event.type !== "transfer.created"'));
-  assert.match(accountUpdateBranch, /stripeOnboardingStatus:\s*complete\s*\?\s*"complete"/);
+  assert.match(accountUpdateBranch, /affiliateConnectChecklistStatus\(account,\s*verifiedAccount\.transferCapabilityActive\)/);
   assert.match(accountUpdateBranch, /taxStatus:\s*currentStatus\?\.country/);
-  assert.match(accountUpdateBranch, /stripeTaxStatus\(account\)/);
+  const routes = await read("../routes/affiliate-compliance.ts");
+  const returnSync = routes.slice(routes.indexOf("async function synchronizeStripeAccount"), routes.indexOf('router.post("/portal/connect/sync"'));
+  assert.match(returnSync, /affiliateConnectChecklistStatus\(account,\s*verifiedAccount\.transferCapabilityActive\)/);
+  assert.match(returnSync, /taxStatus:\s*status\.country === "US" && status\.state \? taxStatus/);
   assert.doesNotMatch(accountUpdateBranch, /account\.(?:individual|company)\?\.(?:id_number|tax_id)\b/);
+});
+
+test("reviewed signup agreement checklist evidence is bound to the current version and identity revision", () => {
+  const proof = {
+    reviewedVersion: "terms-v4",
+    acceptedVersion: "terms-v4",
+    acceptedContentSha256: "a".repeat(64),
+    reviewedContentSha256: "a".repeat(64),
+    acceptedSignerEmail: "  HECTOR@example.com ",
+    currentAffiliateEmail: "hector@example.com",
+    acceptedIdentityEpoch: 3,
+    currentIdentityEpoch: 3,
+  };
+  assert.equal(isCurrentReviewedAffiliateAcceptance(proof), true);
+  assert.equal(isCurrentReviewedAffiliateAcceptance({ ...proof, acceptedIdentityEpoch: 2 }), false);
+  assert.equal(isCurrentReviewedAffiliateAcceptance({ ...proof, acceptedVersion: "terms-v3" }), false);
+  assert.equal(isCurrentReviewedAffiliateAcceptance({ ...proof, reviewedContentSha256: "b".repeat(64) }), false);
+  assert.equal(isCurrentReviewedAffiliateAcceptance({ ...proof, currentAffiliateEmail: "other@example.com" }), false);
+  assert.equal(isCurrentReviewedAffiliateAcceptance({ ...proof, reviewedVersion: null }), false);
 });
 
 test("I.4 affiliate is eligible only when every required condition is complete", () => {
@@ -94,7 +120,6 @@ test("I.4 affiliate is eligible only when every required condition is complete",
   for (const facts of [
     { ...eligibleFacts, affiliateStatus: "pending" },
     { ...eligibleFacts, agreementAccepted: false },
-    { ...eligibleFacts, adminApprovalStatus: "pending" },
     { ...eligibleFacts, taxStatus: "manual_review_required" },
     { ...eligibleFacts, stripeAccountType: "standard" },
     { ...eligibleFacts, stripeOnboardingStatus: "action_required" },
@@ -105,6 +130,49 @@ test("I.4 affiliate is eligible only when every required condition is complete",
   ]) {
     assert.notDeepEqual(payoutEligibilityReasons(facts), [], `Expected blocking reasons for ${JSON.stringify(facts)}`);
   }
+});
+
+test("pending and approved admin states match the green Admin Approval checklist for active affiliates", () => {
+  const checklistForApprovalStatus = (adminApprovalStatus: string) => buildAffiliatePayoutChecklist({
+    agreementAcceptance: null,
+    publishedDocuments: [],
+    acknowledgements: [],
+    compliance: { adminApprovalStatus },
+    paymentAuthorizationCurrent: false,
+    affiliateStatus: "active",
+    payoutEligible: false,
+  });
+  for (const adminApprovalStatus of ["pending", "approved"]) {
+    const reasons = payoutEligibilityReasons({ ...eligibleFacts, adminApprovalStatus });
+    const checklist = checklistForApprovalStatus(adminApprovalStatus);
+    assert.equal(reasons.some((reason) => reason.includes("Admin approval")), false);
+    assert.equal(checklist.items[6].complete, true, `${adminApprovalStatus} should be green by default`);
+  }
+  for (const adminApprovalStatus of ["rejected", "suspended", "terminated"]) {
+    const reasons = payoutEligibilityReasons({ ...eligibleFacts, adminApprovalStatus });
+    const checklist = checklistForApprovalStatus(adminApprovalStatus);
+    assert.equal(reasons.some((reason) => reason.includes("Admin approval")), true);
+    assert.equal(checklist.items[6].complete, false, `${adminApprovalStatus} should block and show red`);
+  }
+  for (const affiliateStatus of ["rejected", "suspended", "terminated"]) {
+    assert.ok(payoutEligibilityReasons({ ...eligibleFacts, affiliateStatus })
+      .some((reason) => reason.includes("Affiliate account must be active")));
+  }
+  assert.ok(payoutEligibilityReasons({ ...eligibleFacts, affiliateStatus: "pending" })
+    .some((reason) => reason.includes("Affiliate account must be active")), "admin status does not bypass activation");
+});
+
+test("payout eligibility receives the same application hold and Stripe requirements as checklist state", async () => {
+  assert.ok(payoutEligibilityReasons({ ...eligibleFacts, applicationHeld: true })
+    .some((reason) => reason.includes("application is on hold")));
+  assert.ok(payoutEligibilityReasons({ ...eligibleFacts, stripeRequirementsDue: ["individual.address.line1"] })
+    .some((reason) => reason.includes("Stripe Express")));
+
+  const eligibility = await read("../lib/affiliate-payout-eligibility.ts");
+  assert.match(eligibility, /^\s*applicationHeld,\s*$/m);
+  assert.match(eligibility, /applicationHeld\s*=\s*Boolean\(affiliate\.applicationHeldAt\)/);
+  assert.match(eligibility, /^\s*stripeRequirementsDue,\s*$/m);
+  assert.match(eligibility, /stripeRequirementsDue\s*=\s*status\?\.stripeRequirementsDue \?\? \[\]/);
 });
 
 test("I.5 an active compliance or payout hold blocks an otherwise eligible affiliate", () => {
@@ -135,6 +203,16 @@ test("I.8 affiliate portal and Admin routes enforce server-side authentication a
   assert.match(routes, /router\.get\("\/portal",\s*requireAffiliate/);
   assert.match(routes, /router\.get\("\/admin",\s*requireAnyAdmin/);
   assert.match(routes, /router\.post\("\/admin\/payouts\/:id\/send",\s*requireSuperAdmin/);
+  const adminList = routes.slice(routes.indexOf('router.get("/admin"'), routes.indexOf('router.get("/admin/documents"'));
+  assert.match(adminList, /filter === "under_review" && snapshot\.adminApprovalStatus === "pending"/);
+  const portal = routes.slice(routes.indexOf('router.get("/portal"'), routes.indexOf('router.post("/portal/agreement-accept"'));
+  const adminDetail = routes.slice(routes.indexOf('router.get("/admin/:id"'), routes.indexOf('router.post("/admin/:id/action"'));
+  assert.match(portal, /buildAffiliatePayoutChecklist\(/);
+  assert.match(portal, /getReviewedAffiliateAcceptance\(affiliateId\)/);
+  assert.match(portal, /checklistSummary,/);
+  assert.match(adminDetail, /buildAffiliatePayoutChecklist\(/);
+  assert.match(adminDetail, /getReviewedAffiliateAcceptance\(id\)/);
+  assert.match(adminDetail, /checklistSummary,/);
 });
 
 test("I.9 affiliate portal records and actions are scoped to the authenticated affiliate", async () => {

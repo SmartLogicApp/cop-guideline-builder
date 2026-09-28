@@ -19,9 +19,9 @@ test("Applications keeps pending rows through optional failures and limits revie
   };
   let superAdmin = false;
   let listFails = false;
-  let statsFails = false;
   let agreementFailureStatus = 403;
   let accepted = false;
+  let held = false;
   let writes = 0;
   try {
     await page.route("**/api/accounts/me", (route) => route.fulfill({
@@ -40,14 +40,13 @@ test("Applications keeps pending rows through optional failures and limits revie
       if (path.endsWith("/agreements/current"))
         return route.fulfill({ status: agreementFailureStatus || 200, contentType: "application/json",
           body: JSON.stringify(agreementFailureStatus ? { error: "Agreement unavailable" } : { version: "reviewed", published: true }) });
-      if (path.endsWith("/stats"))
-        return route.fulfill({ status: statsFails ? 503 : 200, contentType: "application/json",
-          body: JSON.stringify(statsFails ? { error: "Unavailable" } : { activationEnabled: true }) });
       if (path.endsWith("/affiliates"))
         return route.fulfill({ status: listFails ? 503 : 200, contentType: "application/json",
           body: JSON.stringify(listFails ? { error: "Unavailable" } : [
             { ...pending, agreementAcceptance: accepted
-              ? { version: "reviewed", acceptedAt: "2026-09-01T12:00:00Z", signerName: "Example Contact" } : null },
+              ? { version: "reviewed", acceptedAt: "2026-09-01T12:00:00Z", signerName: "Example Contact" } : null,
+              applicationHeldAt: held ? "2026-09-02T12:00:00Z" : null,
+              applicationHoldReason: held ? "Need more information" : null },
             { ...pending, id: "active", status: "active", companyName: "Not Pending" },
           ]) });
       return route.fulfill({ status: 404, body: "{}" });
@@ -63,7 +62,6 @@ test("Applications keeps pending rows through optional failures and limits revie
     await expect(applications.getByText(/status is restricted to the owner/)).toBeVisible();
     await expect(applications.getByRole("button", { name: /Publish|Approve|Disapprove|Send agreement invitation/ })).toHaveCount(0);
 
-    statsFails = true;
     agreementFailureStatus = 503;
     await applications.getByRole("button", { name: /Refresh applications/ }).click();
     await expect(applications.getByText("Example Vendor")).toBeVisible();
@@ -78,27 +76,28 @@ test("Applications keeps pending rows through optional failures and limits revie
     await expect(applications.getByRole("alert")).toHaveCount(0);
 
     superAdmin = true;
-    statsFails = false;
     agreementFailureStatus = 0;
     await page.reload();
     await page.getByRole("button", { name: "⚙ Admin" }).click();
     await page.getByRole("tab", { name: "Applications" }).click();
     await expect(applications.getByRole("button", { name: "Send agreement invitation" })).toBeEnabled();
     await expect(applications.getByRole("button", { name: "Disapprove application" })).toBeVisible();
-    await expect(applications.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
+    const activate = applications.getByRole("button", { name: "Activate", exact: true });
+    await expect(activate).toBeDisabled();
+    await expect(applications.getByText(/must accept the current published agreement/)).toBeVisible();
     accepted = true;
     await applications.getByRole("button", { name: /Refresh applications/ }).click();
-    await expect(applications.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
-    statsFails = true;
+    await expect(activate).toBeEnabled();
+    held = true;
     await applications.getByRole("button", { name: /Refresh applications/ }).click();
-    await expect(applications.getByText(/Approval availability could not be confirmed/)).toBeVisible();
-    await expect(applications.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
-    statsFails = false;
+    await expect(activate).toBeDisabled();
+    await expect(applications.getByText(/Release the application hold before activation/)).toBeVisible();
+    held = false;
     agreementFailureStatus = 503;
     await applications.getByRole("button", { name: /Refresh applications/ }).click();
     await expect(applications.getByText(/Reviewed agreement status could not be loaded/)).toBeVisible();
-    await expect(applications.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
-    await expect(applications.getByRole("button", { name: "Send agreement invitation" })).toHaveCount(0);
+    await expect(activate).toBeDisabled();
+    await expect(applications.getByText(/current published agreement could not be confirmed/)).toBeVisible();
     agreementFailureStatus = 403;
     await applications.getByRole("button", { name: /Refresh applications/ }).click();
     await expect(applications.getByText(/Super-admin permission was denied/)).toBeVisible();

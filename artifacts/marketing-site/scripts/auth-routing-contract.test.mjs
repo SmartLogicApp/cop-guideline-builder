@@ -342,7 +342,9 @@ test('pending applications activate only after current published terms are accep
   assert.match(review, /row\.status === "pending"/);
   assert.match(review, /row\.phone/);
   assert.match(review, /row\.referralPlan/);
-  assert.match(review, /isSuperAdmin && agreementStatus\?\.published && row\.agreementAcceptance\?\.version === agreementStatus\.version && !row\.applicationHeldAt && <>/);
+  assert.match(review, /isSuperAdmin && \(\(\) => \{[\s\S]*?const canActivate = currentAgreementAccepted && !row\.applicationHeldAt/);
+  assert.match(review, /disabled=\{approvingId != null \|\| !canActivate\}[\s\S]*?"Activate"/);
+  assert.match(review, /Release the application hold before activation/);
   assert.doesNotMatch(review, /activationEnabled|AFFILIATE_ACTIVATION_PAUSED/);
   assert.match(review, /\/approve`/);
   assert.doesNotMatch(review, /Paid partner approvals are paused/);

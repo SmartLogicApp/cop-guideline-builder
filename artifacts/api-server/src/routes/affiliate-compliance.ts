@@ -5,16 +5,19 @@ import {
   affiliateDocumentAcknowledgements, affiliatePaymentAuthorizations,
   affiliateAgreements, affiliateAgreementAcceptances, affiliateAgreementInvitations,
   affiliateComplianceAuditLog, affiliatePayoutHolds,
-  affiliateEmailTemplates, affiliatePayoutWorkflow, affiliateCommissions,
-  affiliatePayoutWorkflowCommissions,
+  affiliateEmailTemplates, affiliatePayoutWorkflow, affiliateCommissions, accounts,
+  affiliatePayoutWorkflowCommissions, affiliateInvoicePaymentRisks,
 } from "@workspace/db";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
-import { hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
+import {
+  getReviewedAffiliateAcceptance, reviewedAffiliateAgreementVersion,
+} from "../lib/affiliate-agreement-state.js";
 import { verifyExpressRecipient } from "../lib/affiliate-connect-account.js";
-import { stripeTaxStatus } from "../lib/affiliate-connect-tax.js";
+import { affiliateConnectChecklistStatus } from "../lib/affiliate-connect-checklist-status.js";
 import { SAMPLE_AGREEMENT_BODY, SAMPLE_AGREEMENT_VERSION, sampleAgreementAvailable } from "../lib/affiliate-sample-agreement.js";
 import { calculateAffiliatePayoutEligibility, auditBlockedPayoutAttempt, PAYOUT_MINIMUM_USD } from "../lib/affiliate-payout-eligibility.js";
+import { buildAffiliatePayoutChecklist } from "../lib/affiliate-payout-checklist.js";
 import {
   auditCompliance, ensureBaselineDocuments, ensureComplianceRecord,
   containsSensitiveFinancialNumber,
@@ -30,6 +33,10 @@ import {
 } from "../stripeClient.js";
 import { quarterBounds } from "../lib/affiliate-commission.js";
 import { eligibleQuarterCommission, sumCommissionCents } from "../lib/affiliate-quarterly-payout.js";
+import {
+  affiliatePayoutStatementCsv, buildAffiliatePayoutStatement,
+  canAffiliateViewPayoutStatement,
+} from "../lib/affiliate-payout-statement.js";
 import { createHash, randomUUID } from "node:crypto";
 
 const router: IRouter = Router();
@@ -37,6 +44,31 @@ const LEGAL_DOCUMENT_TYPES = new Set(["privacy", "ftc_disclosure", "marketing_gu
 const PAYMENT_AUTH_DOCUMENT_TYPE = "payment_authorization";
 const currentParam = (raw: string | string[] | undefined) => Array.isArray(raw) ? raw[0] : raw ?? "";
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+
+async function lockPayoutClaimsAndCheckTestRecords(tx: any, payoutId: string, affiliateId: string) {
+  // The caller holds the affiliate lock first. Locking each claimed commission
+  // and client row makes a concurrent client Test-flag change serialize with
+  // approval/send. Historical claims stay untouched if a flag is added later.
+  const claims = await tx.select({
+    claimId: affiliatePayoutWorkflowCommissions.id,
+    commissionId: affiliateCommissions.id,
+    accountId: accounts.id,
+    accountIsTest: accounts.isTest,
+    commissionAmount: affiliatePayoutWorkflowCommissions.commissionAmount,
+    claimStatus: affiliatePayoutWorkflowCommissions.status,
+  }).from(affiliatePayoutWorkflowCommissions)
+    .innerJoin(affiliateCommissions, eq(affiliateCommissions.id, affiliatePayoutWorkflowCommissions.commissionId))
+    .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+    .where(and(
+      eq(affiliatePayoutWorkflowCommissions.payoutWorkflowId, payoutId),
+      eq(affiliatePayoutWorkflowCommissions.affiliateId, affiliateId),
+      eq(affiliatePayoutWorkflowCommissions.status, "claimed"),
+    )).for("update");
+  return {
+    claims,
+    hasTestClient: claims.some((claim: { accountIsTest: boolean }) => claim.accountIsTest),
+  };
+}
 
 async function requireAffiliate(req: any, res: any, next: any): Promise<void> {
   const auth = getAuth(req);
@@ -100,6 +132,121 @@ async function getPublishedDocument(documentType: string) {
   return rows[0] ?? null;
 }
 
+const PAYOUT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function loadAffiliatePayoutStatement(id: string, affiliateId?: string) {
+  const [payout] = await db.select({
+    id: affiliatePayoutWorkflow.id,
+    affiliateId: affiliatePayoutWorkflow.affiliateId,
+    payoutPeriodStart: affiliatePayoutWorkflow.payoutPeriodStart,
+    payoutPeriodEnd: affiliatePayoutWorkflow.payoutPeriodEnd,
+    payoutStatus: affiliatePayoutWorkflow.payoutStatus,
+    currency: affiliatePayoutWorkflow.currency,
+    grossCommissionAmount: affiliatePayoutWorkflow.grossCommissionAmount,
+    adjustmentsAmount: affiliatePayoutWorkflow.adjustmentsAmount,
+    netPayoutAmount: affiliatePayoutWorkflow.netPayoutAmount,
+    stripeTransferId: affiliatePayoutWorkflow.stripeTransferId,
+    createdAt: affiliatePayoutWorkflow.createdAt,
+    paidAt: affiliatePayoutWorkflow.paidAt,
+  }).from(affiliatePayoutWorkflow).where(eq(affiliatePayoutWorkflow.id, id)).limit(1);
+  if (!payout || (affiliateId && !canAffiliateViewPayoutStatement(payout.affiliateId, affiliateId))) return null;
+
+  // Establish ownership before loading affiliate or client names. Only completed
+  // Stripe transfers count; pending/review states are never projected as paid.
+  const [affiliate] = await db.select({
+    contactName: affiliates.contactName,
+    companyName: affiliates.companyName,
+  })
+    .from(affiliates).where(eq(affiliates.id, payout.affiliateId)).limit(1);
+  if (!affiliate) return null;
+  const statementDate = payout.paidAt ? new Date(payout.paidAt) : new Date();
+  if (!Number.isFinite(statementDate.getTime())) throw new Error("Payout statement contains an invalid statement date.");
+  const yearToDateYear = statementDate.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(yearToDateYear, 0, 1));
+  const paidYtdRows = await db.select({
+    netPayoutAmount: affiliatePayoutWorkflow.netPayoutAmount,
+  }).from(affiliatePayoutWorkflow).where(and(
+    eq(affiliatePayoutWorkflow.affiliateId, payout.affiliateId),
+    eq(affiliatePayoutWorkflow.payoutStatus, "paid"),
+    isNotNull(affiliatePayoutWorkflow.stripeTransferId),
+    gte(affiliatePayoutWorkflow.paidAt, yearStart),
+    lte(affiliatePayoutWorkflow.paidAt, statementDate),
+    sql`upper(${affiliatePayoutWorkflow.currency}) = 'USD'`,
+  ));
+  const yearToDatePaidUsd = paidYtdRows.reduce(
+    (sum, row) => sum + Number(row.netPayoutAmount),
+    0,
+  );
+  const periodStart = new Date(payout.payoutPeriodStart);
+  if (!Number.isFinite(periodStart.getTime())) throw new Error("Payout statement contains an invalid payout period.");
+  const quarter = `${periodStart.getUTCFullYear()} Q${Math.floor(periodStart.getUTCMonth() / 3) + 1}`;
+
+  const claims = await db.select({
+    commissionAmount: affiliatePayoutWorkflowCommissions.commissionAmount,
+    commissionStatus: affiliateCommissions.status,
+    qualifyingRevenueUsd: affiliateCommissions.qualifyingRevenueUsd,
+    ratePct: affiliateCommissions.ratePct,
+    accruedAt: affiliateCommissions.accruedAt,
+    payableAt: affiliateCommissions.payableAt,
+    billingMonth: affiliateCommissions.billingMonth,
+    billingMonthSource: affiliateCommissions.billingMonthSource,
+    facilityName: accounts.facilityName,
+  }).from(affiliatePayoutWorkflowCommissions)
+    .innerJoin(affiliateCommissions, eq(affiliateCommissions.id, affiliatePayoutWorkflowCommissions.commissionId))
+    .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+    .where(and(
+      eq(affiliatePayoutWorkflowCommissions.payoutWorkflowId, payout.id),
+      eq(affiliatePayoutWorkflowCommissions.affiliateId, payout.affiliateId),
+    ))
+    .orderBy(affiliateCommissions.accruedAt, accounts.facilityName);
+  return buildAffiliatePayoutStatement({
+    ...payout,
+    affiliateName: affiliate.contactName || affiliate.companyName || payout.affiliateId,
+    quarter,
+  }, claims, { paidUsd: yearToDatePaidUsd, year: yearToDateYear });
+}
+
+function sendPayoutStatement(req: any, res: any, statement: Awaited<ReturnType<typeof loadAffiliatePayoutStatement>>) {
+  if (!statement) {
+    res.status(404).json({ error: "Payout not found." });
+    return;
+  }
+  res.setHeader("Cache-Control", "private, no-store");
+  if (req.query.format === "csv") {
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="affiliate-payout-statement-${statement.payout.id}.csv"`);
+    res.send(affiliatePayoutStatementCsv(statement));
+    return;
+  }
+  res.json(redactSensitiveFinancialData(statement));
+}
+
+router.get("/portal/payouts", requireAffiliate, async (req: any, res) => {
+  const payouts = await db.select({
+    id: affiliatePayoutWorkflow.id,
+    affiliateId: affiliatePayoutWorkflow.affiliateId,
+    payoutPeriodStart: affiliatePayoutWorkflow.payoutPeriodStart,
+    payoutPeriodEnd: affiliatePayoutWorkflow.payoutPeriodEnd,
+    payoutStatus: affiliatePayoutWorkflow.payoutStatus,
+    currency: affiliatePayoutWorkflow.currency,
+    grossCommissionAmount: affiliatePayoutWorkflow.grossCommissionAmount,
+    adjustmentsAmount: affiliatePayoutWorkflow.adjustmentsAmount,
+    netPayoutAmount: affiliatePayoutWorkflow.netPayoutAmount,
+    createdAt: affiliatePayoutWorkflow.createdAt,
+    paidAt: affiliatePayoutWorkflow.paidAt,
+  }).from(affiliatePayoutWorkflow)
+    .where(eq(affiliatePayoutWorkflow.affiliateId, req.affiliateId))
+    .orderBy(desc(affiliatePayoutWorkflow.createdAt));
+  res.setHeader("Cache-Control", "private, no-store");
+  res.json(redactSensitiveFinancialData(payouts));
+});
+
+router.get("/portal/payouts/:id/statement", requireAffiliate, async (req: any, res) => {
+  const id = currentParam(req.params.id);
+  if (!PAYOUT_ID_PATTERN.test(id)) { res.status(404).json({ error: "Payout not found." }); return; }
+  sendPayoutStatement(req, res, await loadAffiliatePayoutStatement(id, req.affiliateId));
+});
+
 router.get("/portal", requireAffiliate, async (req: any, res) => {
   await ensureBaselineDocuments();
   const affiliateId = req.affiliateId as string;
@@ -117,7 +264,7 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
       return;
     }
   }
-  const [status, publishedDocs, acknowledgements, paymentAuth, eligibility] = await Promise.all([
+  const [status, publishedDocs, acknowledgements, paymentAuth, activeHolds, eligibility, agreementAcceptance] = await Promise.all([
     db.select().from(affiliateComplianceStatus).where(eq(affiliateComplianceStatus.affiliateId, affiliateId)).limit(1),
     db.select().from(affiliateDocumentVersions).where(and(
       eq(affiliateDocumentVersions.status, "published"),
@@ -131,24 +278,27 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
       eq(affiliatePaymentAuthorizations.affiliateId, affiliateId),
       eq(affiliatePaymentAuthorizations.status, "current"),
     )).orderBy(desc(affiliatePaymentAuthorizations.acceptedAt)).limit(1),
+    db.select({ id: affiliatePayoutHolds.id }).from(affiliatePayoutHolds).where(and(
+      eq(affiliatePayoutHolds.affiliateId, affiliateId),
+      eq(affiliatePayoutHolds.status, "active"),
+    )),
     calculateAffiliatePayoutEligibility(affiliateId),
+    getReviewedAffiliateAcceptance(affiliateId),
   ]);
   const docs = new Map<string, typeof publishedDocs[number]>();
   for (const doc of publishedDocs) {
     const existing = docs.get(doc.documentType);
     if (!existing || (doc.effectiveAt ?? doc.publishedAt ?? doc.createdAt) > (existing.effectiveAt ?? existing.publishedAt ?? existing.createdAt)) docs.set(doc.documentType, doc);
   }
-  const accepted = new Map(acknowledgements.map((ack) => [ack.documentType, ack]));
   const paymentAuthorizationDoc = docs.get(PAYMENT_AUTH_DOCUMENT_TYPE);
   const paymentAuthorizationAccepted = Boolean(paymentAuthorizationDoc && paymentAuth[0]
     && paymentAuth[0].authorizationDocumentVersionId === paymentAuthorizationDoc.id
     && paymentAuth[0].authorizationVersion === paymentAuthorizationDoc.version);
   const agreementVersion = reviewedAffiliateAgreementVersion();
   const showSample = !agreementVersion && sampleAgreementAvailable();
-  const [agreement, agreementAccepted, sampleAcceptance] = await Promise.all([
+  const [agreement, sampleAcceptance] = await Promise.all([
     agreementVersion ? db.select({ version: affiliateAgreements.version, body: affiliateAgreements.body })
       .from(affiliateAgreements).where(eq(affiliateAgreements.version, agreementVersion)).limit(1) : Promise.resolve([]),
-    hasReviewedAffiliateAcceptance(affiliateId),
     showSample ? db.select({
       acceptedAt: affiliateAgreementAcceptances.acceptedAt,
       agreementVersion: affiliateAgreementAcceptances.agreementVersion,
@@ -162,34 +312,19 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
       )).limit(1) : Promise.resolve([]),
   ]);
   const country = status[0]?.country ?? "US";
-  const checklist = [
-    { key: "agreement", title: "Affiliate Partner Agreement", status: agreementAccepted ? "Complete" : "Action needed", version: agreementVersion },
-    { key: "privacy", title: "Privacy Notice", status: accepted.get("privacy")?.documentVersionId === docs.get("privacy")?.id ? "Complete" : "Action needed", document: docs.get("privacy") ? { ...docs.get("privacy"), url: "/privacy" } : null },
-    {
-      key: "tax", title: "Tax information (via Stripe)",
-      status: !["US", "USA", "United States"].includes(country) ? "Not eligible"
-        : !status[0]?.state ? "Not started"
-        : status[0]?.taxStatus === "verified_complete" ? "Complete"
-        : status[0]?.taxStatus === "submitted_to_stripe" ? "Submitted" : "Action needed",
-      ...(!["US", "USA", "United States"].includes(country) ? { message: "U.S. tax information is not requested for international affiliates." }
-        : !status[0]?.state ? { message: "Submit your country and state before beginning tax information setup." }
-        : { message: "Stripe collects your tax ID during secure onboarding. We only receive Stripe's provided and requirements status; this does not confirm a signed W-9 form." }),
-    },
-    {
-      key: "payment", title: "Payment setup",
-      status: !["US", "USA", "United States"].includes(country) ? "Not eligible"
-        : !status[0]?.state ? "Not started"
-        : !paymentAuthorizationAccepted ? "Action needed"
-        : status[0]?.stripeOnboardingStatus === "complete" && status[0]?.stripePayoutsEnabled && status[0]?.stripeDetailsSubmitted ? "Complete"
-        : status[0]?.stripeConnectedAccountId ? "Submitted" : "Action needed",
-      ...(!["US", "USA", "United States"].includes(country) ? { message: "International payment setup is not available yet." }
-        : !status[0]?.state ? { message: "Submit your country and state before starting secure payment setup." }
-        : !paymentAuthorizationAccepted ? { message: "Review and accept the payment authorization before starting secure payment setup." } : {}),
-    },
-    { key: "ftc", title: "FTC affiliate disclosure acknowledgement", status: accepted.get("ftc_disclosure")?.documentVersionId === docs.get("ftc_disclosure")?.id ? "Complete" : "Action needed", document: docs.get("ftc_disclosure") ?? null },
-    { key: "marketing", title: "Marketing and brand guidelines acknowledgement", status: accepted.get("marketing_guidelines")?.documentVersionId === docs.get("marketing_guidelines")?.id ? "Complete" : "Action needed", document: docs.get("marketing_guidelines") ?? null },
-    { key: "admin", title: "Admin approval", status: status[0]?.adminApprovalStatus === "approved" ? "Complete" : "Under review" },
-  ];
+  const checklistSummary = buildAffiliatePayoutChecklist({
+    agreementAcceptance,
+    publishedDocuments: [...docs.values()],
+    acknowledgements,
+    compliance: status[0] ?? null,
+    paymentAuthorizationCurrent: paymentAuthorizationAccepted,
+    adminApplicationHeld: Boolean(req.affiliate.applicationHeldAt),
+    activeComplianceHold: activeHolds.length > 0,
+    affiliateStatus: req.affiliate.status,
+    payoutEligible: eligibility.eligible,
+    paymentAuthorizationDocument: paymentAuthorizationDoc,
+  });
+  const checklist = checklistSummary.items;
   res.setHeader("Cache-Control", "private, no-store");
   res.json(redactSensitiveFinancialData({
     affiliate: { id: req.affiliate.id, contactName: req.affiliate.contactName, companyName: req.affiliate.companyName, email: req.affiliate.email },
@@ -198,6 +333,7 @@ router.get("/portal", requireAffiliate, async (req: any, res) => {
       : null),
     sampleAgreementAcceptance: sampleAcceptance[0] ?? null,
     checklist,
+    checklistSummary,
     overall_status: eligibility.overall_status,
     eligible: eligibility.eligible,
     blocking_reasons: eligibility.blocking_reasons,
@@ -323,10 +459,11 @@ router.post("/portal/region", requireAffiliate, async (req: any, res) => {
 });
 
 router.post("/portal/acknowledgements", requireAffiliate, async (req: any, res) => {
-  const { documentVersionId, typedLegalName, agreed } = req.body ?? {};
+  const { documentVersionId, typedLegalName, agreed, confirmedReviewed } = req.body ?? {};
   const name = typeof typedLegalName === "string" ? typedLegalName.trim() : "";
-  if (typeof documentVersionId !== "string" || name.length < 2 || name.length > 200 || containsSensitiveFinancialNumber(name) || agreed !== true) {
-    res.status(400).json({ error: "Review the document, enter your legal name, and confirm your agreement." }); return;
+  if (typeof documentVersionId !== "string" || name.length < 2 || name.length > 200
+      || containsSensitiveFinancialNumber(name) || agreed !== true || confirmedReviewed !== true) {
+    res.status(400).json({ error: "Open and review the current document, enter your legal name, and click I acknowledge." }); return;
   }
   const [document] = await db.select().from(affiliateDocumentVersions).where(and(
     eq(affiliateDocumentVersions.id, documentVersionId), eq(affiliateDocumentVersions.status, "published"),
@@ -477,17 +614,14 @@ async function synchronizeStripeAccount(affiliateId: string) {
   if ("deleted" in account && account.deleted) throw new Error("Connected account unavailable");
   const verifiedAccount = await verifyExpressRecipient(stripe, account, getStripeConnectLivemode());
   if (!verifiedAccount.valid) throw new Error("Connected account is not a mode-matched Express recipient");
-  const due = [...(account.requirements?.currently_due ?? []), ...(account.requirements?.past_due ?? [])].filter((v): v is string => typeof v === "string").slice(0, 50);
-  const detailsSubmitted = Boolean(account.details_submitted);
-  const payoutsEnabled = Boolean(account.payouts_enabled) && verifiedAccount.transferCapabilityActive;
+  const stripeStatus = affiliateConnectChecklistStatus(account, verifiedAccount.transferCapabilityActive);
+  const { detailsSubmitted, payoutsEnabled, requirementsDue: due, onboardingComplete, taxStatus } = stripeStatus;
   const now = new Date();
-  const onboardingComplete = detailsSubmitted && payoutsEnabled && due.length === 0;
-  const taxStatus = stripeTaxStatus(account);
   await db.transaction(async (tx) => {
     await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, affiliateId)).for("update").limit(1);
     await tx.update(affiliateComplianceStatus).set({
       stripeAccountType: "express", stripeDetailsSubmitted: detailsSubmitted, stripePayoutsEnabled: payoutsEnabled,
-      stripeChargesEnabled: Boolean(account.charges_enabled), stripeRequirementsDue: due,
+      stripeChargesEnabled: stripeStatus.chargesEnabled, stripeRequirementsDue: due,
       stripeOnboardingStatus: onboardingComplete ? "complete" : "action_required",
       stripeOnboardingCompletedAt: onboardingComplete ? (status.stripeOnboardingCompletedAt ?? now) : null,
       stripeAccountLastSyncedAt: now,
@@ -511,10 +645,13 @@ router.post("/portal/connect/sync", requireAffiliate, async (req: any, res) => {
 });
 
 router.get("/admin", requireAnyAdmin, async (req, res) => {
-  const rows = await db.select().from(affiliates).orderBy(desc(affiliates.createdAt));
+  const includeTest = req.query.includeTest === "true";
+  const rows = includeTest
+    ? await db.select().from(affiliates).orderBy(desc(affiliates.createdAt))
+    : await db.select().from(affiliates).where(eq(affiliates.isTest, false)).orderBy(desc(affiliates.createdAt));
   const output = await Promise.all(rows.map(async (affiliate) => ({
     id: affiliate.id, legalName: affiliate.contactName, businessName: affiliate.companyName, email: affiliate.email,
-    status: affiliate.status, referralCode: affiliate.referralCode,
+    status: affiliate.status, referralCode: affiliate.referralCode, isTest: affiliate.isTest,
     eligibility: await calculateAffiliatePayoutEligibility(affiliate.id),
     compliance: (await db.select().from(affiliateComplianceStatus).where(eq(affiliateComplianceStatus.affiliateId, affiliate.id)).limit(1))[0] ?? null,
   })));
@@ -532,7 +669,7 @@ router.get("/admin", requireAnyAdmin, async (req, res) => {
       || (filter === "missing_payment_authorization" && !snapshot.paymentAuthorization)
       || (filter === "missing_ftc" && !snapshot.documents?.ftc_disclosure)
       || (filter === "missing_marketing" && !snapshot.documents?.marketing_guidelines)
-      || (filter === "under_review" && snapshot.adminApprovalStatus !== "approved")
+      || (filter === "under_review" && snapshot.adminApprovalStatus === "pending")
       || (filter === "admin_hold" && Number(snapshot.activeHolds) > 0)
       || (filter === "international" && row.eligibility.overall_status === "international_review_required")
       || (filter === "inactive" && ["suspended", "terminated"].includes(row.status))
@@ -548,11 +685,123 @@ router.get("/admin/documents", requireAnyAdmin, async (_req, res) => {
   res.json(redactSensitiveFinancialData(await db.select().from(affiliateDocumentVersions).orderBy(desc(affiliateDocumentVersions.createdAt))));
 });
 
-router.get("/admin/payouts", requireAnyAdmin, async (_req, res) => {
-  const payouts = await db.select().from(affiliatePayoutWorkflow).orderBy(desc(affiliatePayoutWorkflow.createdAt));
-  res.json(redactSensitiveFinancialData(await Promise.all(payouts.map(async (payout) => ({
-    ...payout, eligibility: await calculateAffiliatePayoutEligibility(payout.affiliateId),
+router.get("/admin/payouts", requireAnyAdmin, async (req, res) => {
+  const includeTest = req.query.includeTest === "true";
+  const allPayouts = await db.select().from(affiliatePayoutWorkflow).orderBy(desc(affiliatePayoutWorkflow.createdAt));
+  const testLinkedIds = new Set<string>();
+  if (allPayouts.length) {
+    const testLinked = await db.select({ id: affiliatePayoutWorkflow.id })
+      .from(affiliatePayoutWorkflow)
+      .innerJoin(affiliates, eq(affiliates.id, affiliatePayoutWorkflow.affiliateId))
+      .leftJoin(affiliatePayoutWorkflowCommissions,
+        eq(affiliatePayoutWorkflowCommissions.payoutWorkflowId, affiliatePayoutWorkflow.id))
+      .leftJoin(affiliateCommissions,
+        eq(affiliateCommissions.id, affiliatePayoutWorkflowCommissions.commissionId))
+      .leftJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+      .where(and(inArray(affiliatePayoutWorkflow.id, allPayouts.map((payout) => payout.id)),
+        or(eq(affiliates.isTest, true), eq(accounts.isTest, true))));
+    for (const row of testLinked) testLinkedIds.add(row.id);
+  }
+  const visiblePayouts = includeTest
+    ? allPayouts
+    : allPayouts.filter((payout) => !testLinkedIds.has(payout.id));
+  res.setHeader("Cache-Control", "private, no-store");
+  res.json(redactSensitiveFinancialData(await Promise.all(visiblePayouts.map(async (payout) => ({
+    ...payout,
+    testLinked: testLinkedIds.has(payout.id),
+    // Already-sent mixed payouts are historical facts: surface them only in
+    // explicit review rather than rewriting or implicitly reversing them.
+    eligibility: await calculateAffiliatePayoutEligibility(payout.affiliateId),
   })))));
+});
+
+router.get("/admin/payouts/:id/statement", requireAnyAdmin, async (req: any, res) => {
+  const id = currentParam(req.params.id);
+  if (!PAYOUT_ID_PATTERN.test(id)) { res.status(404).json({ error: "Payout not found." }); return; }
+  sendPayoutStatement(req, res, await loadAffiliatePayoutStatement(id));
+});
+
+router.get("/admin/payouts/recovery-reviews", requireAnyAdmin, async (_req, res) => {
+  const reviews = await db.select({
+    stripeInvoiceId: affiliateInvoicePaymentRisks.stripeInvoiceId,
+    affiliateId: affiliateInvoicePaymentRisks.affiliateId,
+    affiliateName: affiliates.contactName,
+    companyName: affiliates.companyName,
+    chargeAmountMinor: affiliateInvoicePaymentRisks.chargeAmountMinor,
+    cumulativeRefundedMinor: affiliateInvoicePaymentRisks.cumulativeRefundedMinor,
+    disputeStatus: affiliateInvoicePaymentRisks.disputeStatus,
+    recoveryReviewReason: affiliateInvoicePaymentRisks.recoveryReviewReason,
+    updatedAt: affiliateInvoicePaymentRisks.updatedAt,
+  }).from(affiliateInvoicePaymentRisks)
+    .leftJoin(affiliates, eq(affiliates.id, affiliateInvoicePaymentRisks.affiliateId))
+    .where(eq(affiliateInvoicePaymentRisks.manualRecoveryReviewRequired, true))
+    .orderBy(desc(affiliateInvoicePaymentRisks.updatedAt));
+  res.setHeader("Cache-Control", "private, no-store");
+  res.json(redactSensitiveFinancialData(reviews.map((review) => ({
+    ...review,
+    affiliateName: review.affiliateName || review.companyName || review.affiliateId || "Unknown affiliate",
+    chargeAmountUsd: (review.chargeAmountMinor / 100).toFixed(2),
+    refundedAmountUsd: (review.cumulativeRefundedMinor / 100).toFixed(2),
+  }))));
+});
+
+router.post("/admin/payouts/recovery-reviews/:invoiceId/resolve", requireSuperAdmin, async (req: any, res) => {
+  const stripeInvoiceId = currentParam(req.params.invoiceId);
+  const decision = req.body?.decision;
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!stripeInvoiceId || stripeInvoiceId.length > 255
+      || !["recovered", "waived"].includes(decision)
+      || reason.length < 10 || containsSensitiveFinancialNumber(reason)) {
+    res.status(400).json({ error: "Provide a valid recovery decision and a safe Admin reconciliation reason of at least 10 characters." });
+    return;
+  }
+
+  const outcome = await db.transaction(async (tx) => {
+    const [reference] = await tx.select({
+      affiliateId: affiliateInvoicePaymentRisks.affiliateId,
+    }).from(affiliateInvoicePaymentRisks)
+      .where(eq(affiliateInvoicePaymentRisks.stripeInvoiceId, stripeInvoiceId)).limit(1);
+    if (!reference?.affiliateId) return "not_found" as const;
+    // Use the same affiliate-first lock order as Stripe risk ingestion and
+    // payout execution, then lock the invoice decision being reconciled.
+    await tx.select({ id: affiliates.id }).from(affiliates)
+      .where(eq(affiliates.id, reference.affiliateId)).for("update").limit(1);
+    const [risk] = await tx.select().from(affiliateInvoicePaymentRisks)
+      .where(eq(affiliateInvoicePaymentRisks.stripeInvoiceId, stripeInvoiceId))
+      .for("update").limit(1);
+    if (!risk || risk.affiliateId !== reference.affiliateId) return "not_found" as const;
+    if (!risk.manualRecoveryReviewRequired) return "already_resolved" as const;
+
+    const now = new Date();
+    await tx.update(affiliateInvoicePaymentRisks).set({
+      manualRecoveryReviewRequired: false,
+      recoveryReviewReason: null,
+      updatedAt: now,
+    }).where(and(
+      eq(affiliateInvoicePaymentRisks.stripeInvoiceId, stripeInvoiceId),
+      eq(affiliateInvoicePaymentRisks.manualRecoveryReviewRequired, true),
+    ));
+    await tx.insert(affiliateComplianceAuditLog).values({
+      affiliateId: risk.affiliateId,
+      actorType: "admin",
+      actorId: req.clerkUserId,
+      eventType: "commission_recovery_review_resolved",
+      priorValue: {
+        reviewRequired: true,
+        disputeStatus: risk.disputeStatus,
+        cumulativeRefundedMinor: risk.cumulativeRefundedMinor,
+      },
+      newValue: { reviewRequired: false, decision },
+      reason,
+      metadata: { stripeInvoiceId },
+      createdAt: now,
+    });
+    return "resolved" as const;
+  });
+
+  if (outcome === "not_found") { res.status(404).json({ error: "Recovery review not found." }); return; }
+  if (outcome === "already_resolved") { res.status(409).json({ error: "Recovery review is already resolved." }); return; }
+  res.json({ resolved: true, decision });
 });
 
 router.get("/admin/email-templates", requireAnyAdmin, async (_req, res) => {
@@ -565,7 +814,8 @@ router.get("/admin/:id", requireAnyAdmin, async (req, res) => {
   const [affiliate] = await db.select().from(affiliates).where(eq(affiliates.id, id)).limit(1);
   if (!affiliate) { res.status(404).json({ error: "Affiliate not found." }); return; }
   await ensureComplianceRecord(id);
-  const [[status], acknowledgements, authorizations, holds, auditLog, commissions, payouts] = await Promise.all([
+  await ensureBaselineDocuments();
+  const [[status], acknowledgements, authorizations, holds, auditLog, commissions, payouts, publishedDocuments, agreementAcceptance, eligibility] = await Promise.all([
     db.select().from(affiliateComplianceStatus).where(eq(affiliateComplianceStatus.affiliateId, id)).limit(1),
     db.select().from(affiliateDocumentAcknowledgements).where(eq(affiliateDocumentAcknowledgements.affiliateId, id)).orderBy(desc(affiliateDocumentAcknowledgements.acceptedAt)),
     db.select().from(affiliatePaymentAuthorizations).where(eq(affiliatePaymentAuthorizations.affiliateId, id)).orderBy(desc(affiliatePaymentAuthorizations.acceptedAt)),
@@ -578,10 +828,41 @@ router.get("/admin/:id", requireAnyAdmin, async (req, res) => {
       payoutId: affiliateCommissions.payoutId,
     }).from(affiliateCommissions).where(eq(affiliateCommissions.affiliateId, id)).orderBy(desc(affiliateCommissions.accruedAt)).limit(500),
     db.select().from(affiliatePayoutWorkflow).where(eq(affiliatePayoutWorkflow.affiliateId, id)).orderBy(desc(affiliatePayoutWorkflow.createdAt)),
+    db.select().from(affiliateDocumentVersions).where(and(
+      eq(affiliateDocumentVersions.status, "published"),
+      lte(affiliateDocumentVersions.effectiveAt, new Date()),
+    )),
+    getReviewedAffiliateAcceptance(id),
+    calculateAffiliatePayoutEligibility(id),
   ]);
+  const documents = new Map<string, typeof publishedDocuments[number]>();
+  for (const document of publishedDocuments) {
+    const existing = documents.get(document.documentType);
+    if (!existing || (document.effectiveAt ?? document.publishedAt ?? document.createdAt)
+        > (existing.effectiveAt ?? existing.publishedAt ?? existing.createdAt)) {
+      documents.set(document.documentType, document);
+    }
+  }
+  const paymentAuthorizationDocument = documents.get(PAYMENT_AUTH_DOCUMENT_TYPE);
+  const paymentAuthorizationCurrent = Boolean(paymentAuthorizationDocument && authorizations.some((authorization) =>
+    authorization.status === "current"
+      && authorization.authorizationDocumentVersionId === paymentAuthorizationDocument.id
+      && authorization.authorizationVersion === paymentAuthorizationDocument.version));
+  const checklistSummary = buildAffiliatePayoutChecklist({
+    agreementAcceptance,
+    publishedDocuments: [...documents.values()],
+    acknowledgements,
+    compliance: status ?? null,
+    paymentAuthorizationCurrent,
+    adminApplicationHeld: Boolean(affiliate.applicationHeldAt),
+    activeComplianceHold: holds.some((hold) => hold.status === "active"),
+    affiliateStatus: affiliate.status,
+    payoutEligible: eligibility.eligible,
+    paymentAuthorizationDocument: paymentAuthorizationDocument ?? null,
+  });
   res.json(redactSensitiveFinancialData({
     affiliate, compliance: status ?? null, acknowledgements, paymentAuthorizations: authorizations,
-    holds, auditLog, commissions, payouts, eligibility: await calculateAffiliatePayoutEligibility(id),
+    holds, auditLog, commissions, payouts, checklist: checklistSummary.items, checklistSummary, eligibility,
   }));
 });
 
@@ -821,16 +1102,20 @@ async function createReviewedDraft(affiliateId: string, start: Date, end: Date, 
       id: affiliateCommissions.id, amount: affiliateCommissions.commissionUsd,
       payableAt: affiliateCommissions.payableAt, accruedAt: affiliateCommissions.accruedAt,
       payoutId: affiliateCommissions.payoutId, status: affiliateCommissions.status,
-    }).from(affiliateCommissions).where(and(
+      accountId: affiliateCommissions.accountId,
+    }).from(affiliateCommissions)
+      .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+      .where(and(
       eq(affiliateCommissions.affiliateId, affiliateId),
       eq(affiliateCommissions.status, "payable"),
       isNull(affiliateCommissions.payoutId),
+      eq(accounts.isTest, false),
       quarterly ? lt(affiliateCommissions.payableAt, end) : and(
         gte(affiliateCommissions.accruedAt, start),
         lte(affiliateCommissions.accruedAt, end),
       ),
        lte(affiliateCommissions.payableAt, new Date()),
-    )).for("update");
+     )).for("update");
     const existingClaims = periodCommissions.length
       ? await tx.select({ commissionId: affiliatePayoutWorkflowCommissions.commissionId })
         .from(affiliatePayoutWorkflowCommissions)
@@ -874,23 +1159,45 @@ function completedQuarter(value: unknown) {
   return bounds && bounds.end <= new Date() ? bounds : null;
 }
 
-async function quarterlyCandidates(end: Date) {
+async function quarterlyCandidates(end: Date, includeTest = false) {
   // Include an already-created period so a repeat run explicitly reports it,
   // even when its commissions are no longer payable.
   const [due, existing] = await Promise.all([
     db.select({ affiliateId: affiliateCommissions.affiliateId }).from(affiliateCommissions)
+      .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+      .innerJoin(affiliates, eq(affiliates.id, affiliateCommissions.affiliateId))
       .where(and(eq(affiliateCommissions.status, "payable"), isNull(affiliateCommissions.payoutId),
-        lt(affiliateCommissions.payableAt, end), lte(affiliateCommissions.payableAt, new Date()))),
-    db.select({ affiliateId: affiliatePayoutWorkflow.affiliateId }).from(affiliatePayoutWorkflow)
+        lt(affiliateCommissions.payableAt, end), lte(affiliateCommissions.payableAt, new Date()),
+        ...(includeTest ? [] : [eq(accounts.isTest, false), eq(affiliates.isTest, false)]))),
+    db.select({ id: affiliatePayoutWorkflow.id, affiliateId: affiliatePayoutWorkflow.affiliateId })
+      .from(affiliatePayoutWorkflow)
       .where(eq(affiliatePayoutWorkflow.payoutPeriodEnd, end)),
   ]);
-  return [...new Set([...due, ...existing].map((row) => row.affiliateId))].sort();
+  const hiddenWorkflowIds = new Set<string>();
+  if (!includeTest && existing.length) {
+    const hidden = await db.select({ id: affiliatePayoutWorkflow.id })
+      .from(affiliatePayoutWorkflow)
+      .innerJoin(affiliates, eq(affiliates.id, affiliatePayoutWorkflow.affiliateId))
+      .leftJoin(affiliatePayoutWorkflowCommissions,
+        eq(affiliatePayoutWorkflowCommissions.payoutWorkflowId, affiliatePayoutWorkflow.id))
+      .leftJoin(affiliateCommissions,
+        eq(affiliateCommissions.id, affiliatePayoutWorkflowCommissions.commissionId))
+      .leftJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+      .where(and(eq(affiliatePayoutWorkflow.payoutPeriodEnd, end),
+        or(eq(affiliates.isTest, true), eq(accounts.isTest, true))));
+    for (const row of hidden) hiddenWorkflowIds.add(row.id);
+  }
+  const visibleExisting = existing.filter((row) => !hiddenWorkflowIds.has(row.id));
+  return [...new Set([...due, ...visibleExisting.map((row) => ({ affiliateId: row.affiliateId }))])]
+    .sort((a, b) => a.affiliateId.localeCompare(b.affiliateId))
+    .map((row) => row.affiliateId);
 }
 
 router.get("/admin/payouts/quarterly-preview", requireAnyAdmin, async (req, res) => {
   const bounds = completedQuarter(req.query.quarter);
   if (!bounds) { res.status(400).json({ error: "Choose a completed quarter like 2026-Q1." }); return; }
-  const ids = await quarterlyCandidates(bounds.end);
+  const includeTest = req.query.includeTest === "true";
+  const ids = await quarterlyCandidates(bounds.end, includeTest);
   const rows = await Promise.all(ids.map(async (affiliateId) => {
     const [[affiliate], eligibility, claims, existing, active] = await Promise.all([
       db.select({ contactName: affiliates.contactName, companyName: affiliates.companyName, email: affiliates.email })
@@ -899,9 +1206,12 @@ router.get("/admin/payouts/quarterly-preview", requireAnyAdmin, async (req, res)
       db.select({ id: affiliateCommissions.id, amount: affiliateCommissions.commissionUsd,
         payableAt: affiliateCommissions.payableAt, accruedAt: affiliateCommissions.accruedAt,
         payoutId: affiliateCommissions.payoutId, status: affiliateCommissions.status })
-        .from(affiliateCommissions).where(and(eq(affiliateCommissions.affiliateId, affiliateId),
+        .from(affiliateCommissions)
+        .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+        .where(and(eq(affiliateCommissions.affiliateId, affiliateId),
           eq(affiliateCommissions.status, "payable"), isNull(affiliateCommissions.payoutId),
-          lt(affiliateCommissions.payableAt, bounds.end), lte(affiliateCommissions.payableAt, new Date()))),
+          lt(affiliateCommissions.payableAt, bounds.end), lte(affiliateCommissions.payableAt, new Date()),
+          eq(accounts.isTest, false))),
       db.select({ id: affiliatePayoutWorkflow.id }).from(affiliatePayoutWorkflow)
         .where(and(eq(affiliatePayoutWorkflow.affiliateId, affiliateId),
           eq(affiliatePayoutWorkflow.payoutPeriodStart, bounds.start),
@@ -1002,6 +1312,15 @@ router.post("/admin/payouts/:id/approve", requireSuperAdmin, async (req: any, re
     await tx.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, payout.affiliateId)).for("update").limit(1);
     const eligibility = await calculateAffiliatePayoutEligibility(payout.affiliateId, tx);
     if (!eligibility.eligible) { blocked.push(...eligibility.blocking_reasons); return null; }
+    const claimCheck = await lockPayoutClaimsAndCheckTestRecords(tx, id, payout.affiliateId);
+    if (!claimCheck.claims.length) {
+      blocked.push("Payout has no active commission claims to approve.");
+      return null;
+    }
+    if (claimCheck.hasTestClient) {
+      blocked.push("Payout contains a commission linked to a Test client; void this draft and prepare a clean claim set before approval.");
+      return null;
+    }
     const [updated] = await tx.update(affiliatePayoutWorkflow).set({
       payoutStatus: "approved_for_payout", approvedByAdminId: req.clerkUserId, approvedAt: new Date(), updatedAt: new Date(),
     }).where(and(eq(affiliatePayoutWorkflow.id, id), eq(affiliatePayoutWorkflow.payoutStatus, "payable_pending_admin_approval"))).returning();
@@ -1059,6 +1378,15 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
     if (!current || current.stripeTransferId || current.payoutStatus !== "approved_for_payout") return false;
     const eligibility = await calculateAffiliatePayoutEligibility(payout.affiliateId, tx);
     if (!eligibility.eligible) { blocked.push(...eligibility.blocking_reasons); return false; }
+    const claimCheck = await lockPayoutClaimsAndCheckTestRecords(tx, id, current.affiliateId);
+    if (!claimCheck.claims.length) {
+      blocked.push("Payout has no active commission claims to send.");
+      return false;
+    }
+    if (claimCheck.hasTestClient) {
+      blocked.push("Payout contains a commission linked to a Test client and cannot be sent.");
+      return false;
+    }
     await tx.update(affiliatePayoutWorkflow).set({
       payoutStatus: "payout_processing",
       failureReason: "Transfer attempt in progress. Do not void or retry without reconciliation.",
@@ -1086,17 +1414,22 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
         blocked.push("Stripe Express payout account is not verified and enabled.");
         return null;
       }
-      const claims = await tx.select().from(affiliatePayoutWorkflowCommissions).where(and(
-        eq(affiliatePayoutWorkflowCommissions.payoutWorkflowId, locked.id),
-        eq(affiliatePayoutWorkflowCommissions.affiliateId, locked.affiliateId),
-        eq(affiliatePayoutWorkflowCommissions.status, "claimed"),
-      )).for("update");
+      const claimCheck = await lockPayoutClaimsAndCheckTestRecords(tx, locked.id, locked.affiliateId);
+      const claims = claimCheck.claims;
+      if (!claims.length) {
+        blocked.push("Payout has no active commission claims to send.");
+        return null;
+      }
+      if (claimCheck.hasTestClient) {
+        blocked.push("Payout contains a commission linked to a Test client and cannot be sent.");
+        return null;
+      }
       const payable = claims.length ? await tx.select({
         id: affiliateCommissions.id, affiliateId: affiliateCommissions.affiliateId,
         amount: affiliateCommissions.commissionUsd, status: affiliateCommissions.status,
         payoutId: affiliateCommissions.payoutId,
       }).from(affiliateCommissions).where(and(
-        inArray(affiliateCommissions.id, claims.map((claim) => claim.commissionId)),
+        inArray(affiliateCommissions.id, claims.map((claim: { commissionId: string }) => claim.commissionId)),
         eq(affiliateCommissions.affiliateId, locked.affiliateId),
         eq(affiliateCommissions.status, "payable"),
       )).for("update") : [];
@@ -1104,15 +1437,17 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
       const transferredClaims = claims.length ? await tx.select({ id: affiliatePayoutWorkflowCommissions.id })
         .from(affiliatePayoutWorkflowCommissions)
         .innerJoin(affiliatePayoutWorkflow, eq(affiliatePayoutWorkflow.id, affiliatePayoutWorkflowCommissions.payoutWorkflowId))
-        .where(and(inArray(affiliatePayoutWorkflowCommissions.commissionId, claims.map((claim) => claim.commissionId)),
+        .where(and(inArray(affiliatePayoutWorkflowCommissions.commissionId,
+          claims.map((claim: { commissionId: string }) => claim.commissionId)),
           isNotNull(affiliatePayoutWorkflow.stripeTransferId),
           ne(affiliatePayoutWorkflow.id, locked.id))).limit(1) : [];
       const claimsMatchLedger = claims.length > 0 && payable.length === claims.length
-        && claims.every((claim) => {
+        && claims.every((claim: { commissionId: string; commissionAmount: string | number }) => {
           const row = payableById.get(claim.commissionId);
           return row && row.payoutId == null && Math.round(Number(row.amount) * 100) === Math.round(Number(claim.commissionAmount) * 100);
         });
-      const selectedAmountCents = claims.reduce((sum, claim) => sum + Math.round(Number(claim.commissionAmount) * 100), 0);
+      const selectedAmountCents = claims.reduce((sum: number, claim: { commissionAmount: string | number }) =>
+        sum + Math.round(Number(claim.commissionAmount) * 100), 0);
       if (transferredClaims.length || !claimsMatchLedger || selectedAmountCents !== Math.round(Number(locked.netPayoutAmount) * 100)
           || locked.currency.toLowerCase() !== "usd") {
         blocked.push("Payable commissions changed after this payout was drafted; void it and create a new draft.");
@@ -1153,7 +1488,7 @@ router.post("/admin/payouts/:id/send", requireSuperAdmin, async (req: any, res) 
         stripeTransferId: transfer.id, payoutStatus: "paid", paidAt: now, updatedAt: now,
       }).where(eq(affiliatePayoutWorkflow.id, locked.id)).returning();
       const settled = await tx.update(affiliateCommissions).set({ status: "paid", paidAt: now, payoutId: locked.id })
-        .where(and(inArray(affiliateCommissions.id, claims.map((claim) => claim.commissionId)), eq(affiliateCommissions.status, "payable")))
+        .where(and(inArray(affiliateCommissions.id, claims.map((claim: { commissionId: string }) => claim.commissionId)), eq(affiliateCommissions.status, "payable")))
         .returning({ id: affiliateCommissions.id });
       if (settled.length !== claims.length) throw new Error("The commission ledger changed during payout settlement.");
       await tx.update(affiliatePayoutWorkflowCommissions).set({ status: "paid", updatedAt: now })

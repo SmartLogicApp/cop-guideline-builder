@@ -4704,20 +4704,42 @@ function AffiliateApplicationsSection({ basePath, isSuperAdmin, getToken }) {
               onClick={() => releaseHold(row)} style={{ ...reviewButtonStyle, marginRight: "8px", marginTop: "12px" }}>
               Release hold
             </button>}
-            {isSuperAdmin && agreementStatus?.published && row.agreementAcceptance?.version === agreementStatus.version && !row.applicationHeldAt && <>
+            {isSuperAdmin && (() => {
+              const currentAgreementAccepted = Boolean(
+                agreementStatus?.published && row.agreementAcceptance?.version === agreementStatus.version,
+              );
+              const canActivate = currentAgreementAccepted && !row.applicationHeldAt;
+              const activationBlockReason = row.applicationHeldAt
+                ? "Release the application hold before activation."
+                : !agreementStatus
+                  ? "The current published agreement could not be confirmed. Refresh before activation."
+                  : !agreementStatus.published
+                    ? "Publish the current reviewed agreement before activation."
+                    : !row.agreementAcceptance
+                      ? "The applicant must accept the current published agreement before activation."
+                      : !currentAgreementAccepted
+                        ? "The applicant must accept the current published agreement version before activation."
+                        : "";
+              return <>
               <label style={{ color: "#fff", fontSize: "12px", marginRight: "8px" }}>
                 Commission rate{" "}
                 <select aria-label={`Commission rate for ${row.companyName}`} value={ratesById[row.id] ?? 20}
+                  disabled={!canActivate}
                   onChange={(event) => setRatesById((current) => ({ ...current, [row.id]: Number(event.target.value) }))}
-                  style={{ background: "#FFFFFF", color: "#0B1F3A", border: "1px solid #94A3B8", borderRadius: "4px", padding: "5px" }}>
+                  style={{ background: canActivate ? "#FFFFFF" : "#E2E8F0", color: "#0B1F3A", border: "1px solid #94A3B8", borderRadius: "4px", padding: "5px" }}>
                   <option value={20}>20%</option><option value={10}>10%</option>
                 </select>
               </label>
-              <button type="button" disabled={approvingId != null} onClick={() => approve(row)}
-              style={{ ...inviteButtonStyle, marginTop: "12px", cursor: approvingId ? "wait" : "pointer" }}>
-                {approvingId === row.id ? "Approving…" : "Approve"}
+              <button type="button" disabled={approvingId != null || !canActivate} onClick={() => approve(row)}
+              aria-describedby={!canActivate ? `activation-reason-${row.id}` : undefined}
+              style={{ ...inviteButtonStyle, marginTop: "12px", opacity: canActivate ? 1 : 0.65, cursor: approvingId === row.id ? "wait" : canActivate ? "pointer" : "not-allowed" }}>
+                {approvingId === row.id ? "Activating…" : "Activate"}
               </button>
-            </>}
+              {!canActivate && <p id={`activation-reason-${row.id}`} role="status" style={{ color: "#FBBF24", fontSize: "12px", marginTop: "8px" }}>
+                {activationBlockReason}
+              </p>}
+            </>;
+            })()}
             {isSuperAdmin && <button type="button" disabled={approvingId != null} onClick={() => disapprove(row)}
               style={{ ...reviewButtonStyle, marginTop: "12px", marginLeft: "8px", borderColor: "#FCA5A5", background: "#7F1D1D", cursor: approvingId ? "wait" : "pointer" }}>
               {approvingId === row.id ? "Updating…" : "Disapprove application"}

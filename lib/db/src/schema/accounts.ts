@@ -30,6 +30,7 @@ export const accounts = pgTable("accounts", {
   trialWarningEmailSentAt: timestamp("trial_warning_email_sent_at", { withTimezone: true }),
   termsAcceptedAt:      timestamp("terms_accepted_at", { withTimezone: true }),
   termsVersion:         text("terms_version"),
+  isTest:               boolean("is_test").default(false).notNull(),
   // Which affiliate, if any, this account is attributed to. Captured from the
   // signup URL at registration and never changed afterwards — attribution that
   // can be edited later is attribution that will be argued about later.
@@ -64,6 +65,18 @@ export const adminUsers = pgTable("admin_users", {
   isActive:    boolean("is_active").default(true).notNull(),
   addedBy:     text("added_by").notNull(),          // Clerk user ID of the super-admin who granted access
   addedAt:     timestamp("added_at", { withTimezone: true }).defaultNow(),
+});
+
+/** Append-only record of reversible Super Admin test-flag changes. */
+export const adminTestFlagAudit = pgTable("admin_test_flag_audit", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id").notNull(),
+  actorId: text("actor_id").notNull(),
+  priorValue: boolean("prior_value").notNull(),
+  newValue: boolean("new_value").notNull(),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ── Token usage — one row per AI generation request ─────────────────────────

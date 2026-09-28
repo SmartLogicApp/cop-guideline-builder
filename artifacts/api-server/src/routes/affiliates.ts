@@ -12,7 +12,7 @@ import {
   affiliateComplianceAuditLog,
   affiliateRateNoticeDeliveries,
 } from "@workspace/db";
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { requireAnyAdmin, requireCronOrSuperAdmin, requireSuperAdmin } from "../lib/admin-guards.js";
 import { currentReviewedAffiliateAcceptanceCondition, hasReviewedAffiliateAcceptance, reviewedAffiliateAgreementExists, reviewedAffiliateAgreementVersion } from "../lib/affiliate-agreement-state.js";
 import { applicationAcceptanceEvidence } from "../lib/affiliate-application-acceptance.js";
@@ -285,8 +285,11 @@ async function provisionalReferralCode(companyName: string): Promise<string> {
  */
 router.get("/", requireAnyAdmin, async (req, res) => {
   const now = new Date();
+  const includeTest = req.query.includeTest === "true";
   try {
-    const rows = await db.select().from(affiliates).orderBy(desc(affiliates.createdAt));
+    const rows = includeTest
+      ? await db.select().from(affiliates).orderBy(desc(affiliates.createdAt))
+      : await db.select().from(affiliates).where(eq(affiliates.isTest, false)).orderBy(desc(affiliates.createdAt));
     if (rows.length === 0) return res.json([]);
 
     const ids = rows.map((r) => r.id);
@@ -299,6 +302,9 @@ router.get("/", requireAnyAdmin, async (req, res) => {
           active: sql<number>`count(*) filter (where ${accounts.subscriptionStatus} = 'active')::int`,
         })
         .from(accounts)
+        .leftJoin(affiliates, eq(accounts.referralCode, affiliates.referralCode))
+        .where(includeTest ? undefined : and(eq(accounts.isTest, false),
+          or(isNull(affiliates.id), eq(affiliates.isTest, false))))
         .groupBy(accounts.referralCode),
       db
         .select({
@@ -308,7 +314,10 @@ router.get("/", requireAnyAdmin, async (req, res) => {
           count: sql<number>`count(*)::int`,
         })
         .from(affiliateCommissions)
-        .where(inArray(affiliateCommissions.affiliateId, ids))
+        .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+        .innerJoin(affiliates, eq(affiliates.id, affiliateCommissions.affiliateId))
+        .where(and(inArray(affiliateCommissions.affiliateId, ids),
+          ...(includeTest ? [] : [eq(accounts.isTest, false), eq(affiliates.isTest, false)])))
         .groupBy(affiliateCommissions.affiliateId, affiliateCommissions.status),
       db.select({
         affiliateId: affiliateAgreementAcceptances.affiliateId,
@@ -358,6 +367,7 @@ router.get("/", requireAnyAdmin, async (req, res) => {
         contactName: row.contactName,
         email: row.email,
         phone: row.phone,
+        isTest: row.isTest,
         referralPlan: row.status === "pending" && row.adminNotes?.startsWith("Application note: ")
           ? row.adminNotes.slice("Application note: ".length)
           : null,
@@ -393,23 +403,44 @@ router.get("/", requireAnyAdmin, async (req, res) => {
 router.get("/stats", requireAnyAdmin, async (req, res) => {
   const { start, end, label } = monthBounds(typeof req.query.month === "string" ? req.query.month : undefined);
   const now = new Date();
+  const includeTest = req.query.includeTest === "true";
   try {
     const [affiliateRows, monthCommissions, outstanding, monthSignups] = await Promise.all([
-      db.select().from(affiliates),
-      db.select().from(affiliateCommissions)
-        .where(and(gte(affiliateCommissions.accruedAt, start), lt(affiliateCommissions.accruedAt, end))),
+      includeTest ? db.select().from(affiliates)
+        : db.select().from(affiliates).where(eq(affiliates.isTest, false)),
+      db.select({
+        affiliateId: affiliateCommissions.affiliateId,
+        status: affiliateCommissions.status,
+        commissionUsd: affiliateCommissions.commissionUsd,
+        qualifyingRevenueUsd: affiliateCommissions.qualifyingRevenueUsd,
+      }).from(affiliateCommissions)
+        .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+        .innerJoin(affiliates, eq(affiliates.id, affiliateCommissions.affiliateId))
+        .where(and(
+          gte(affiliateCommissions.accruedAt, start),
+          lt(affiliateCommissions.accruedAt, end),
+          ...(includeTest ? [] : [eq(accounts.isTest, false), eq(affiliates.isTest, false)]),
+        )),
       db.select({
         status: affiliateCommissions.status,
         total: sql<number>`coalesce(sum(${affiliateCommissions.commissionUsd}), 0)`,
       }).from(affiliateCommissions)
-        .where(inArray(affiliateCommissions.status, [...OUTSTANDING_STATUSES]))
+        .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+        .innerJoin(affiliates, eq(affiliates.id, affiliateCommissions.affiliateId))
+        .where(and(inArray(affiliateCommissions.status, [...OUTSTANDING_STATUSES]),
+          ...(includeTest ? [] : [eq(accounts.isTest, false), eq(affiliates.isTest, false)])))
         .groupBy(affiliateCommissions.status),
       db.select({ total: sql<number>`count(*)::int` })
         .from(accounts)
+        .leftJoin(affiliates, eq(accounts.referralCode, affiliates.referralCode))
         .where(and(
           sql`${accounts.referralCode} is not null`,
           gte(accounts.createdAt, start),
           lt(accounts.createdAt, end),
+          ...(includeTest ? [] : [
+            eq(accounts.isTest, false),
+            or(isNull(affiliates.id), eq(affiliates.isTest, false))!,
+          ]),
         )),
     ]);
 
@@ -470,10 +501,16 @@ router.get("/:id", requireAnyAdmin, async (req, res) => {
         subscriptionStatus: accounts.subscriptionStatus,
         createdAt: accounts.createdAt,
       }).from(accounts).where(eq(accounts.referralCode, row.referralCode)).orderBy(desc(accounts.createdAt)),
-      db.select().from(affiliateCommissions)
+      db.select({
+        affiliateId: affiliateCommissions.affiliateId,
+        commissionUsd: affiliateCommissions.commissionUsd,
+      }).from(affiliateCommissions)
         .where(eq(affiliateCommissions.affiliateId, row.id))
         .orderBy(desc(affiliateCommissions.accruedAt)).limit(500),
-      db.select().from(affiliatePayouts)
+      db.select({
+        affiliateId: affiliatePayouts.affiliateId,
+        netUsd: affiliatePayouts.netUsd,
+      }).from(affiliatePayouts)
         .where(eq(affiliatePayouts.affiliateId, row.id))
         .orderBy(desc(affiliatePayouts.createdAt)),
       db.select().from(affiliateRateChanges)
@@ -951,7 +988,14 @@ router.post("/:id/commissions", requireSuperAdmin, async (req, res) => {
         .for("update")
         .limit(1);
       if (!row) return { kind: "not-found" as const };
+      if (row.isTest) return { kind: "test-record" as const };
       if (row.status === "pending") return { kind: "pending" as const };
+      const [account] = await tx.select().from(accounts)
+        .where(eq(accounts.id, accountId))
+        .for("update")
+        .limit(1);
+      if (!account) return { kind: "account-not-found" as const };
+      if (account.isTest) return { kind: "test-record" as const };
       if (!await hasCurrentAffiliateV4Acceptance(
         row.id,
         row.email,
@@ -979,6 +1023,10 @@ router.post("/:id/commissions", requireSuperAdmin, async (req, res) => {
     });
 
     if (outcome.kind === "not-found") return res.status(404).json({ error: "Affiliate not found" });
+    if (outcome.kind === "account-not-found") return res.status(404).json({ error: "Client account not found" });
+    if (outcome.kind === "test-record") {
+      return res.status(409).json({ error: "Test clients and affiliates cannot accrue commissions." });
+    }
     if (outcome.kind === "pending") {
       return res.status(409).json({ error: "Pending applications cannot accrue commissions." });
     }
@@ -1564,21 +1612,42 @@ router.get("/payouts/preview", requireAnyAdmin, async (req, res) => {
 
   try {
     const [affiliateRows, payable, reversals, priorCarried] = await Promise.all([
-      db.select().from(affiliates),
-      db.select().from(affiliateCommissions).where(and(
+      db.select().from(affiliates).where(eq(affiliates.isTest, false)),
+      db.select({
+        affiliateId: affiliateCommissions.affiliateId,
+        commissionUsd: affiliateCommissions.commissionUsd,
+      }).from(affiliateCommissions)
+        .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+        .innerJoin(affiliates, eq(affiliates.id, affiliateCommissions.affiliateId))
+        .where(and(
         eq(affiliateCommissions.status, "payable"),
+        eq(accounts.isTest, false),
+        eq(affiliates.isTest, false),
         lt(affiliateCommissions.payableAt, bounds.end),
       )),
       // Reversals of ALREADY PAID commissions inside this quarter — these are
       // the §25 deductions. Reversals of unpaid rows need no adjustment: the
       // row simply never becomes payable.
-      db.select().from(affiliateCommissions).where(and(
+      db.select({
+        affiliateId: affiliateCommissions.affiliateId,
+        commissionUsd: affiliateCommissions.commissionUsd,
+      }).from(affiliateCommissions)
+        .innerJoin(accounts, eq(accounts.id, affiliateCommissions.accountId))
+        .innerJoin(affiliates, eq(affiliates.id, affiliateCommissions.affiliateId))
+        .where(and(
         eq(affiliateCommissions.status, "reversed"),
+        eq(accounts.isTest, false),
+        eq(affiliates.isTest, false),
         gte(affiliateCommissions.reversedAt, bounds.start),
         lt(affiliateCommissions.reversedAt, bounds.end),
         sql`${affiliateCommissions.paidAt} is not null`,
       )),
-      db.select().from(affiliatePayouts).where(eq(affiliatePayouts.status, "carried")),
+      db.select({
+        affiliateId: affiliatePayouts.affiliateId,
+        netUsd: affiliatePayouts.netUsd,
+      }).from(affiliatePayouts)
+        .innerJoin(affiliates, eq(affiliates.id, affiliatePayouts.affiliateId))
+        .where(and(eq(affiliatePayouts.status, "carried"), eq(affiliates.isTest, false))),
     ]);
 
     const byAffiliate = new Map<string, { lines: { commissionUsd: number }[]; reversed: number; carried: number }>();
@@ -1790,23 +1859,32 @@ router.patch("/payouts/:payoutId", requireSuperAdmin, blockUnsafeLegacySettlemen
 
 router.get("/reports/download", requireAnyAdmin, async (req, res) => {
   const type = typeof req.query.type === "string" ? req.query.type : "";
+  const includeTest = req.query.includeTest === "true";
   const now = new Date();
 
   try {
     if (type === "affiliates") {
-      const rows = await db.select().from(affiliates).orderBy(desc(affiliates.createdAt));
-      const referred = await db
+      const affiliateQuery = db.select().from(affiliates).orderBy(desc(affiliates.createdAt));
+      const rows = includeTest ? await affiliateQuery
+        : await affiliateQuery.where(eq(affiliates.isTest, false));
+      const referredQuery = db
         .select({
           referralCode: accounts.referralCode,
           total: sql<number>`count(*)::int`,
           active: sql<number>`count(*) filter (where ${accounts.subscriptionStatus} = 'active')::int`,
         })
         .from(accounts).groupBy(accounts.referralCode);
+      const referred = includeTest ? await referredQuery
+        : await db.select({
+          referralCode: accounts.referralCode,
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) filter (where ${accounts.subscriptionStatus} = 'active')::int`,
+        }).from(accounts).where(eq(accounts.isTest, false)).groupBy(accounts.referralCode);
       const referredByCode = new Map(referred.filter((r) => r.referralCode).map((r) => [r.referralCode as string, r]));
 
       const csv = toCsv(
         ["Referral Code", "Company", "Contact", "Email", "Status", "Rate %", "Activity Status",
-         "Last Qualifying Referral", "Referred Accounts", "Active Referred", "Tax Info On File", "Enrolled"],
+         "Last Qualifying Referral", "Referred Accounts", "Active Referred", "Tax Info On File", "Enrolled", "Test"],
         rows.map((r) => {
           const ref = referredByCode.get(r.referralCode);
           return [
@@ -1816,6 +1894,7 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
             ref?.total ?? 0, ref?.active ?? 0,
             r.taxInfoReceivedAt ? "yes" : "no",
             r.createdAt?.toISOString().slice(0, 10) ?? "",
+            r.isTest ? "yes" : "no",
           ];
         }),
       );
@@ -1835,21 +1914,28 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
           referralCode: affiliates.referralCode,
           companyName: affiliates.companyName,
           facilityName: accounts.facilityName,
+          affiliateIsTest: affiliates.isTest,
+          clientIsTest: accounts.isTest,
         })
         .from(affiliateCommissions)
         .innerJoin(affiliates, eq(affiliateCommissions.affiliateId, affiliates.id))
         .innerJoin(accounts, eq(affiliateCommissions.accountId, accounts.id))
-        .where(and(gte(affiliateCommissions.accruedAt, start), lt(affiliateCommissions.accruedAt, end)))
+        .where(and(
+          gte(affiliateCommissions.accruedAt, start),
+          lt(affiliateCommissions.accruedAt, end),
+          ...(includeTest ? [] : [eq(affiliates.isTest, false), eq(accounts.isTest, false)]),
+        ))
         .orderBy(desc(affiliateCommissions.accruedAt));
 
       const csv = toCsv(
         ["Accrued", "Payable", "Status", "Referral Code", "Affiliate", "Customer",
-         "Qualifying Revenue USD", "Rate %", "Commission USD"],
+         "Qualifying Revenue USD", "Rate %", "Commission USD", "Test Affiliate", "Test Client"],
         rows.map((r) => [
           r.accruedAt?.toISOString().slice(0, 10) ?? "",
           r.payableAt?.toISOString().slice(0, 10) ?? "",
           r.status, r.referralCode, r.companyName, r.facilityName,
           (r.qualifyingRevenueUsd ?? 0).toFixed(2), r.ratePct, (r.commissionUsd ?? 0).toFixed(2),
+          r.affiliateIsTest ? "yes" : "no", r.clientIsTest ? "yes" : "no",
         ]),
       );
       return sendCsv(res, `cop-suite-affiliate-commissions-${label.replace(/ /g, "-")}.csv`, redactSensitiveFinancialData(csv));
@@ -1867,17 +1953,20 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
           reference: affiliatePayouts.reference,
           referralCode: affiliates.referralCode,
           companyName: affiliates.companyName,
+          affiliateIsTest: affiliates.isTest,
         })
         .from(affiliatePayouts)
         .innerJoin(affiliates, eq(affiliatePayouts.affiliateId, affiliates.id))
+        .where(includeTest ? undefined : eq(affiliates.isTest, false))
         .orderBy(desc(affiliatePayouts.createdAt));
 
       const csv = toCsv(
-        ["Quarter", "Referral Code", "Affiliate", "Status", "Gross USD", "Adjustments USD", "Net USD", "Paid", "Reference"],
+        ["Quarter", "Referral Code", "Affiliate", "Status", "Gross USD", "Adjustments USD", "Net USD", "Paid", "Reference", "Test Affiliate"],
         rows.map((r) => [
           r.periodLabel, r.referralCode, r.companyName, r.status,
           (r.grossUsd ?? 0).toFixed(2), (r.adjustmentsUsd ?? 0).toFixed(2), (r.netUsd ?? 0).toFixed(2),
           r.paidAt?.toISOString().slice(0, 10) ?? "", r.reference ?? "",
+          r.affiliateIsTest ? "yes" : "no",
         ]),
       );
       return sendCsv(res, `cop-suite-affiliate-payouts-${now.toISOString().slice(0, 10)}.csv`, redactSensitiveFinancialData(csv));
@@ -1896,18 +1985,25 @@ router.get("/reports/download", requireAnyAdmin, async (req, res) => {
           createdAt: accounts.createdAt,
           state: accounts.state,
           affiliateName: affiliates.companyName,
+          clientIsTest: accounts.isTest,
+          affiliateIsTest: affiliates.isTest,
         })
         .from(accounts)
         .leftJoin(affiliates, eq(accounts.referralCode, affiliates.referralCode))
-        .where(sql`${accounts.referralCode} is not null`)
+        .where(and(sql`${accounts.referralCode} is not null`,
+          ...(includeTest ? [] : [
+            eq(accounts.isTest, false),
+            or(isNull(affiliates.id), eq(affiliates.isTest, false))!,
+          ])))
         .orderBy(desc(accounts.createdAt));
 
       const csv = toCsv(
-        ["Registered", "Customer", "State", "Subscription", "Referral Code", "Matched Affiliate"],
+        ["Registered", "Customer", "State", "Subscription", "Referral Code", "Matched Affiliate", "Test Client", "Test Affiliate"],
         rows.map((r) => [
           r.createdAt?.toISOString().slice(0, 10) ?? "",
           r.facilityName, r.state, r.subscriptionStatus, r.referralCode,
           r.affiliateName ?? "— UNMATCHED CODE —",
+          r.clientIsTest ? "yes" : "no", r.affiliateIsTest ? "yes" : "no",
         ]),
       );
       return sendCsv(res, `cop-suite-affiliate-attribution-${now.toISOString().slice(0, 10)}.csv`, redactSensitiveFinancialData(csv));

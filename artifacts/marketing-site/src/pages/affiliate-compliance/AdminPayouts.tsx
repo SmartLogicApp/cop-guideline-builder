@@ -8,11 +8,15 @@ import {
   useAdminPayoutDraft,
   useAdminPayoutApprove,
   useAdminPayoutSend,
-  useAdminPayoutVoid
+  useAdminPayoutVoid,
+  useAdminAccountAccess,
 } from './hooks';
-import { Loader2, CheckCircle2, AlertCircle, Plus, ShieldAlert, Check } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Plus, ShieldAlert, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { PayoutStatement, PayoutStatus } from './PayoutStatement';
+import type { PayoutSummary } from './types';
+import { RecoveryReviewQueue } from './RecoveryReviewQueue';
 
 function lastCompletedQuarter(): string {
   const previous = new Date();
@@ -22,7 +26,11 @@ function lastCompletedQuarter(): string {
 }
 
 export default function AdminPayouts() {
-  const { data: payouts, isLoading: isLoadingPayouts } = useAdminPayouts();
+  const [includeTest, setIncludeTest] = useState(false);
+  const adminAccess = useAdminAccountAccess(true);
+  const isSuperAdmin = !adminAccess.isLoading && !adminAccess.isFetching
+    && !adminAccess.isError && adminAccess.data?.isSuperAdmin === true;
+  const { data: payouts, isLoading: isLoadingPayouts, error: payoutsError, refetch: retryPayouts } = useAdminPayouts(includeTest && isSuperAdmin);
   const { data: affiliates, isLoading: isLoadingAffiliates } = useAdminAffiliates();
   const { toast } = useToast();
 
@@ -60,11 +68,12 @@ export default function AdminPayouts() {
   };
 
   if (isLoadingPayouts || isLoadingAffiliates) {
-    return <AdminShell title="Affiliate Payouts"><div className="flex justify-center p-12"><Loader2 className="animate-spin text-slate-800" /></div></AdminShell>;
+    return <AdminShell title="Affiliate Payouts"><div role="status" className="space-y-3 p-8 animate-pulse"><div className="h-12 rounded bg-slate-100" /><div className="h-20 rounded bg-slate-100" /><div className="h-20 rounded bg-slate-100" /><span className="sr-only">Loading payouts</span></div></AdminShell>;
   }
 
   return (
     <AdminShell title="Affiliate Payouts" subtitle="Manage and process commission payouts">
+      <RecoveryReviewQueue />
       <div className="mb-6 flex justify-between items-center">
         <div className="bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 flex-shrink-0" />
@@ -74,6 +83,18 @@ export default function AdminPayouts() {
           <Plus className="w-4 h-4 mr-2" /> Draft New Payout
         </Button>
       </div>
+      <section className="mb-6 rounded-lg border bg-white p-4" aria-label="Test payout visibility">
+        <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+          <input type="checkbox" checked={includeTest && isSuperAdmin} disabled={!isSuperAdmin}
+            onChange={(event) => setIncludeTest(event.target.checked)}
+            className="rounded border-slate-300" data-testid="toggle-show-test-payouts" />
+          Show test payouts
+        </label>
+        {!isSuperAdmin && <p className="mt-2 text-sm text-slate-600">Test payout review is available only to a verified Super Admin.</p>}
+        {includeTest && isSuperAdmin && <p className="mt-2 text-sm text-amber-900" role="note">
+          Review mode only: test payouts may appear below with a Test badge. Test records remain excluded from normal admin counts and payout selection.
+        </p>}
+      </section>
 
       <section className="bg-white border rounded-xl shadow-sm p-6 mb-6 space-y-4" aria-label="Quarterly payout preparation">
         <div>
@@ -168,6 +189,9 @@ export default function AdminPayouts() {
         </form>
       )}
 
+      {payoutsError && <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        Could not load payouts: {payoutsError.message} <Button type="button" size="sm" variant="outline" className="ml-3" onClick={() => void retryPayouts()}>Retry</Button>
+      </div>}
       <div className="bg-white border rounded-xl shadow-sm overflow-x-auto">
         <table className="w-full text-left text-sm text-slate-600">
           <thead className="bg-slate-50 text-slate-900 border-b">
@@ -181,13 +205,13 @@ export default function AdminPayouts() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {payouts?.map((payout: any) => {
+            {payouts?.map((payout: PayoutSummary) => {
               const affiliate = affiliates?.find((a: any) => a.id === payout.affiliateId);
               return (
                 <PayoutRow key={payout.id} payout={payout} affiliate={affiliate} />
               );
             })}
-            {(!payouts || payouts.length === 0) && (
+            {!payoutsError && (!payouts || payouts.length === 0) && (
               <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-500">No payouts found.</td></tr>
             )}
           </tbody>
@@ -197,8 +221,9 @@ export default function AdminPayouts() {
   );
 }
 
-function PayoutRow({ payout, affiliate }: { payout: any, affiliate: any }) {
+function PayoutRow({ payout, affiliate }: { payout: PayoutSummary, affiliate: any }) {
   const [action, setAction] = useState<'approve' | 'send' | 'void' | null>(null);
+  const [statementOpen, setStatementOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   
@@ -209,6 +234,7 @@ function PayoutRow({ payout, affiliate }: { payout: any, affiliate: any }) {
   const { toast } = useToast();
 
   const affiliateName = affiliate?.legalName || affiliate?.businessName || affiliate?.email || 'Unknown';
+  const isTestPayout = payout.testLinked === true || affiliate?.isTest === true;
   
   const isPending = approve.isPending || send.isPending || voidPayout.isPending;
 
@@ -245,17 +271,12 @@ function PayoutRow({ payout, affiliate }: { payout: any, affiliate: any }) {
         <td className="px-4 py-4 font-mono text-xs">{payout.id.substring(0, 8)}...</td>
         <td className="px-4 py-4">
           <div className="font-semibold text-slate-900">{affiliateName}</div>
+          {isTestPayout && <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900" data-testid={`badge-test-payout-${payout.id}`}>Test</span>}
           <div className="text-xs text-slate-500">{new Date(payout.payoutPeriodStart).toLocaleDateString()} - {new Date(payout.payoutPeriodEnd).toLocaleDateString()}</div>
         </td>
         <td className="px-4 py-4 font-semibold text-slate-900">${(Number(payout.netPayoutAmount)).toFixed(2)}</td>
         <td className="min-w-[180px] whitespace-normal px-4 py-4">
-          <span className={`inline-flex max-w-[180px] whitespace-normal break-words px-2 py-0.5 rounded text-xs font-medium
-            ${payout.payoutStatus === 'paid' ? 'bg-emerald-100 text-emerald-800' : 
-              payout.payoutStatus === 'voided' || payout.payoutStatus === 'failed' ? 'bg-red-100 text-red-800' : 
-              payout.payoutStatus === 'reversal_review_required' ? 'bg-amber-100 text-amber-900' :
-              'bg-blue-100 text-blue-800'}`}>
-            {payout.payoutStatus.replace(/_/g, ' ')}
-          </span>
+          <PayoutStatus status={payout.payoutStatus} />
           {payout.failureReason && <p className="mt-2 max-w-52 text-xs text-amber-800">{payout.failureReason}</p>}
         </td>
         <td className="px-4 py-4">
@@ -271,20 +292,29 @@ function PayoutRow({ payout, affiliate }: { payout: any, affiliate: any }) {
           )}
         </td>
         <td className="px-4 py-4 text-right space-x-2">
+          <Button type="button" size="sm" variant="outline" onClick={() => setStatementOpen(value => !value)}
+            aria-expanded={statementOpen} aria-controls={`statement-panel-${payout.id}`} data-testid={`button-toggle-statement-${payout.id}`}>
+            {statementOpen ? 'Hide statement' : 'View statement'}
+          </Button>
           {payout.payoutStatus === 'payable_pending_admin_approval' && (
             <>
-              <Button size="sm" variant="outline" disabled={!payout.eligibility?.eligible} className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setAction('approve')}>Approve</Button>
+              <Button size="sm" variant="outline" disabled={isTestPayout || !payout.eligibility?.eligible} className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setAction('approve')}>Approve</Button>
               <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => setAction('void')}>Void</Button>
             </>
           )}
           {payout.payoutStatus === 'approved_for_payout' && (
             <>
-              <Button size="sm" variant="outline" disabled={!payout.eligibility?.eligible} className="border-blue-200 text-blue-700 hover:bg-blue-50" onClick={() => setAction('send')}>Send</Button>
+              <Button size="sm" variant="outline" disabled={isTestPayout || !payout.eligibility?.eligible} className="border-blue-200 text-blue-700 hover:bg-blue-50" onClick={() => setAction('send')}>Send</Button>
               <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => setAction('void')}>Void</Button>
             </>
           )}
+          {isTestPayout && <span className="mt-2 block text-xs font-medium text-amber-900">Test payouts cannot be approved or sent.</span>}
         </td>
       </tr>
+
+      {statementOpen && <tr><td colSpan={6} id={`statement-panel-${payout.id}`} className="p-3 sm:p-5 bg-slate-50">
+        <PayoutStatement scope="admin" id={payout.id} />
+      </td></tr>}
 
       {action && (
         <tr>
